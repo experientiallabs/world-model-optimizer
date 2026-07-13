@@ -12,8 +12,23 @@ from collections.abc import Callable
 
 from pydantic import BaseModel
 
-from wmh.core.types import Action, Observation, Trace
+from wmh.core.types import Action, EnvState, Observation, Trace
 from wmh.engine.world_model import WorldModel
+
+
+def seed_state_for(trace: Trace) -> EnvState | None:
+    """The first step's recorded env state, when it carries something worth seeding.
+
+    Returns `None` for an empty snapshot (no structured config and no scratchpad) so the session
+    falls back to `new_session`'s default `EnvState()` rather than being handed a pointless empty
+    seed. Most provider traces leave `state_before` empty; benchmarks that capture a compact env
+    state (e.g. bird-sql) populate it, and seeding it lets the replay start from the real initial
+    state instead of the world model hallucinating it.
+    """
+    if not trace.steps:
+        return None
+    state = trace.steps[0].state_before
+    return state if (state.structured or state.scratchpad) else None
 
 
 class DemoStep(BaseModel):
@@ -55,7 +70,7 @@ def run_demo(
     if not trace.steps:
         raise ValueError(f"trace {trace.trace_id!r} has no steps to replay")
     task = trace.steps[0].task
-    session = world_model.new_session(task=task)
+    session = world_model.new_session(task=task, seed_state=seed_state_for(trace))
     replayed = trace.steps[:max_steps]
     if skip:
         world_model.seed_session(session.id, replayed[:skip])

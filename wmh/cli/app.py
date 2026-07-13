@@ -70,7 +70,7 @@ from wmh.config.card import make_build_card, save_card
 from wmh.core.types import JsonObject
 from wmh.engine.build import build as run_build
 from wmh.engine.build import ingest
-from wmh.engine.demo import run_demo
+from wmh.engine.demo import run_demo, seed_state_for
 from wmh.engine.eval_suites import (
     discover_eval_suites,
     list_eval_results,
@@ -1421,8 +1421,12 @@ def demo(
 
 
 def _first_prompt(wm: WorldModel, trace) -> str:  # noqa: ANN001 - core Trace
-    """Render the first step's env prompt on a throwaway session (display only)."""
-    probe = wm.new_session(task=trace.steps[0].task)
+    """Render the first step's env prompt on a throwaway session (display only).
+
+    Seeds the probe session with the trace's initial `state_before` the same way `run_demo` does,
+    so the previewed step-1 prompt matches the state the actual replay session runs against.
+    """
+    probe = wm.new_session(task=trace.steps[0].task, seed_state=seed_state_for(trace))
     try:
         return wm.render_step_prompt(probe.id, trace.steps[0].action)
     finally:

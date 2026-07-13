@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from wmh.core.types import Action, ActionKind, Observation, Step, Trace
+from wmh.core.types import Action, ActionKind, EnvState, Observation, Step, Trace
 from wmh.engine.demo import run_demo
 from wmh.engine.world_model import WorldModel
 from wmh.providers.base import Completion, Message, ProviderConfig, ProviderKind
@@ -118,3 +118,40 @@ def test_run_demo_caps_steps() -> None:
     trace = Trace(trace_id="long", steps=[_step(f"t{i}", "x") for i in range(9)])
     result = run_demo(wm, trace, max_steps=3)
     assert len(result.steps) == 3
+
+
+def test_run_demo_seeds_session_from_first_step_state_before() -> None:
+    wm = _world_model(ScriptedProvider())
+    seeded = EnvState(structured={"cart": ["A1"]}, scratchpad="logged in as u1")
+    trace = Trace(
+        trace_id="scenario",
+        steps=[
+            Step(
+                action=Action(kind=ActionKind.TOOL_CALL, name="get_user", arguments={"id": "u1"}),
+                observation=Observation(content="found u1"),
+                state_before=seeded,
+                task="look up users",
+            )
+        ],
+    )
+
+    result = run_demo(wm, trace, max_steps=5)
+
+    session = next(iter(wm._sessions.values()))
+    assert session.state.structured == {"cart": ["A1"]}
+    # The seeded state renders into the step-1 prompt the world model actually saw.
+    assert '"cart":["A1"]' in result.first_env_prompt
+    assert "logged in as u1" in result.first_env_prompt
+
+
+def test_run_demo_empty_state_before_starts_with_default_state() -> None:
+    wm = _world_model(ScriptedProvider())
+    # _step leaves state_before at its default (empty structured + scratchpad).
+    trace = Trace(trace_id="scenario", steps=[_step("get_user", "found u1")])
+
+    run_demo(wm, trace, max_steps=5)
+
+    session = next(iter(wm._sessions.values()))
+    assert session.state == EnvState()
+    assert session.state.structured == {}
+    assert session.state.scratchpad == ""

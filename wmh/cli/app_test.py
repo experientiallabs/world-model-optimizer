@@ -341,9 +341,9 @@ def test_examples_run_invokes_task_launcher(monkeypatch) -> None:  # noqa: ANN00
 
     assert result.exit_code == 0, result.output
     command = cast(list[str], seen["command"])
-    assert command[0].endswith("environment-capture/tau-bench/run.sh")
+    assert Path(command[0]).as_posix().endswith("environment-capture/tau-bench/run.sh")
     assert command[1:] == ["--trace", "0"]
-    assert str(seen["cwd"]).endswith("environment-capture/tau-bench")
+    assert Path(cast(str, seen["cwd"])).as_posix().endswith("environment-capture/tau-bench")
     assert seen["check"] is False
 
 
@@ -599,6 +599,33 @@ def test_providers_verify_reports_built_model_provider(patched_provider, tmp_pat
     assert result.exit_code == 0, result.output
     # The bedrock provider configured at build time shows up in the verify report.
     assert "bedrock" in result.output
+
+
+def test_providers_list_shows_offline_credential_status(monkeypatch) -> None:  # noqa: ANN001
+    for var in (
+        "ANTHROPIC_API_KEY",
+        "AWS_REGION",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AZURE_OPENAI_API_KEY",
+        "AZURE_OPENAI_ENDPOINT",
+        "OPENAI_API_KEY",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    result = runner.invoke(app, ["providers", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert "OPENAI_API_KEY" in result.output
+    assert "ANTHROPIC_API_KEY" in result.output
+    lines = result.output.splitlines()
+    openai_line = next(
+        line for line in lines if " openai " in f" {line} " and "openai_responses" not in line
+    )
+    anthropic_line = next(line for line in lines if "anthropic" in line)
+    assert "yes" in openai_line.lower()
+    assert "no" in anthropic_line.lower()
 
 
 def test_scenario_role_llms_resolve_from_settings(monkeypatch) -> None:  # noqa: ANN001

@@ -46,6 +46,7 @@ from wmh.cli.ui import (
     build_summary_panel,
     judge_model_default,
     models_table,
+    providers_credential_table,
     run_build_wizard,
     run_play_repl,
     select_model,
@@ -170,6 +171,12 @@ def config_telemetry(
         raise typer.BadParameter("action must be one of: status, enable, disable")
     state = "enabled" if settings.telemetry.enabled else "disabled"
     _console.print(f"telemetry {state} ({settings_path(root)})")
+
+
+@providers_app.command("list")
+def providers_list() -> None:
+    """Show which provider credentials are present in the environment (no API calls)."""
+    _console.print(providers_credential_table())
 
 
 @providers_app.command("verify")

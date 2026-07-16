@@ -81,9 +81,7 @@ def main() -> None:
     label_of = {n: i for i, n in enumerate(names)}
     labels = np.asarray([label_of[cluster_of[i]] for i in pool_ids])
     facets = [
-        TraceFacet(
-            trace_id=i, task_summary=s["task"], tool_signature="", outcome=Outcome.UNKNOWN
-        )
+        TraceFacet(trace_id=i, task_summary=s["task"], tool_signature="", outcome=Outcome.UNKNOWN)
         for i, s in zip(pool_ids, pool["scenarios"])
     ]
     corrected = hybrid_select(facets, embeddings, labels, K)

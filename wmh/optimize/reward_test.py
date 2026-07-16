@@ -94,3 +94,22 @@ def test_judge_never_sees_gold_trace() -> None:
     _system, user = provider.calls[0]
     assert "gold" not in user.lower()
     assert "reference" not in user.lower()
+
+
+def test_rubric_reaches_the_judge_prompt_and_shapes_the_system() -> None:
+    """A scenario's success rubric anchors the judgement (D65 source-2 fix)."""
+    provider = FakeProvider(
+        json.dumps({"success": True, "reward": 1.0, "step_rewards": [1.0], "critique": "ok"})
+    )
+    rubric = "Task is complete iff reservation is moved to 2024-05-24 and paid by gift card."
+    EpisodeRewardJudge(provider).score("change my flight", [_step()], rubric=rubric)
+    system, user = provider.calls[0]
+    assert rubric in user
+    assert "SUCCESS RUBRIC" in user
+    # without a rubric the prompt must not carry an empty rubric section
+    provider2 = FakeProvider(
+        json.dumps({"success": True, "reward": 1.0, "step_rewards": [1.0], "critique": "ok"})
+    )
+    EpisodeRewardJudge(provider2).score("change my flight", [_step()])
+    _s2, user2 = provider2.calls[0]
+    assert "SUCCESS RUBRIC" not in user2

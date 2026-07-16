@@ -106,10 +106,16 @@ class BedrockProvider:
             # "standard" mode makes max_attempts mean TOTAL attempts (legacy mode still
             # sneaks in one internal retry, which showed up as a long silent stall before the
             # CLI's own narrated backoff could react).
+            # `tcp_keepalive` guards the other stall mode: a keep-alive connection the LB
+            # silently dropped during an idle gap. Without it, the next call on that socket
+            # hangs until read_timeout (observed as ~10-minute stalls on the FIRST call after
+            # idle: turn-1 WM steps, sparse judge calls); with it, the OS detects the dead
+            # peer and the call fails fast into the failover chain.
             client_config = Config(
                 connect_timeout=15,
                 read_timeout=600,
                 retries={"max_attempts": 1, "mode": "standard"},
+                tcp_keepalive=True,
             )
             self._client = boto3.client(
                 "bedrock-runtime", region_name=self.config.region, config=client_config

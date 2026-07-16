@@ -536,6 +536,11 @@ def test_load_reads_artifact(tmp_path) -> None:  # noqa: ANN001 - pytest fixture
     )
     assert len(restored) == 1 and restored[0].observation.content == "ok"
 
+    # top_k=0 override disables retrieval demos (no-RAG ablation serve); the artifact's
+    # pinned value must survive when the override is omitted (asserted above).
+    no_rag = WorldModel.load(str(root), FakeProvider("{}"), top_k=0)
+    assert no_rag._top_k == 0
+
 
 def test_load_named_model_uses_project_root_for_telemetry_opt_out(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path

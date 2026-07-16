@@ -93,6 +93,8 @@ python_files = ["*_test.py"]
 testpaths = ["wmh", "packages"]
 # tau2-bench is a local clone of the external real-environment runner (own test suite, own
 # deps) that lives beside the tau-bench member data; it is not part of this gate.
+# (Benchmark rl/ helpers carry unique, benchmark-prefixed basenames — tau_real_eval.py,
+# swe_pin_scenarios.py — so flat collection works; keep new helpers unique too.)
 norecursedirs = ["tau2-bench"]
 
 [tool.ruff]

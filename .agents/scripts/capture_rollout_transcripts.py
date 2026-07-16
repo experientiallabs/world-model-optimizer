@@ -176,8 +176,10 @@ def main() -> None:
     out = OUT_DIR / "rollout_transcripts_tau_bench.json"
     out.write_text(
         json.dumps(
-            {"prompts": {"agent_system": AGENT_SYSTEM, "judge_system": CHECKLIST_SYSTEM},
-             "transcripts": transcripts},
+            {
+                "prompts": {"agent_system": AGENT_SYSTEM, "judge_system": CHECKLIST_SYSTEM},
+                "transcripts": transcripts,
+            },
             indent=2,
         ),
         encoding="utf-8",

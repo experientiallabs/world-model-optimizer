@@ -309,6 +309,28 @@ def test_end_session_returns_usage_and_frees_the_session() -> None:
     assert client.get(f"/world_models/airline/sessions/{session_id}").status_code == 404
 
 
+def test_score_accepts_a_rubric_body_and_stays_backward_compatible() -> None:
+    wm = _rewarded_world_model()
+    client = TestClient(create_app(world_models={"airline": wm}))
+    session_id = client.post("/world_models/airline/sessions", json={"task": "t"}).json()[
+        "session_id"
+    ]
+    client.post(
+        f"/world_models/airline/sessions/{session_id}/step",
+        json={"action": {"kind": "tool_call", "name": "get_user", "arguments": {}}},
+    )
+    # with a rubric body
+    assert (
+        client.post(
+            f"/world_models/airline/sessions/{session_id}/score",
+            json={"rubric": "complete iff X"},
+        ).status_code
+        == 200
+    )
+    # and without one (existing consumers unchanged)
+    assert client.post(f"/world_models/airline/sessions/{session_id}/score").status_code == 200
+
+
 def _knowledge_world_model(tmp_path) -> WorldModel:  # noqa: ANN001 - pytest fixture
     kb = KnowledgeBase(tmp_path / "knowledge")
     kb.write_file("rules.md", "- gate: auth required")

@@ -114,3 +114,9 @@ SMOKE SUMMARY
 - **`scenarios_from_traces` first-seen order.** For a tau-bench train split it picks whatever
   trace hashed lowest first. If a downstream chat wants a specific scenario, filter/sort by
   `provenance` rather than assuming index 0 is stable across runs.
+
+## Results
+
+The BENCH-B2 results-of-record narrative (all arm tables, findings, failure analysis)
+lives at `.agents/docs/research/bench_b2_results.md`; the finished fidelity→transfer
+writeup is promoted to `docs/research/fidelity_transfer_curve.md`.

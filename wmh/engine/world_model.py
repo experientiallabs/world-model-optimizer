@@ -100,6 +100,7 @@ class WorldModel:
         embedder: Embedder | None = None,
         telemetry_root: str | Path | None = None,
         reward_provider: Provider | None = None,
+        top_k: int | None = None,
         max_fidelity: bool = False,
     ) -> WorldModel:
         """Construct from a built `.wmh/` artifact (optimized prompt + indexed replay buffer).
@@ -108,7 +109,9 @@ class WorldModel:
         when omitted we reconstruct the configured embedder (`embed_provider` + `embed_dim`), which
         defaults to the offline `HashingEmbedder` so loading needs no embedding credentials.
         `reward_provider` backs `score_session` (defaults to `provider`) — pass it to judge with a
-        different model than the one simulating the environment.
+        different model than the one simulating the environment. `top_k` overrides the artifact's
+        pinned retrieval depth (0 disables retrieval demos entirely, a "no-RAG" ablation serve)
+        and beats any `max_fidelity` winner.
 
         A plain load runs pure RAG unless agentic flags were set explicitly at build
         (config.toml's `reasoning`/`knowledge`/`verify`/`grounder`). `max_fidelity=True` turns on
@@ -152,6 +155,8 @@ class WorldModel:
                 reasoning, verify = True, True
                 knowledge_on = paths.knowledge.is_dir()
                 grounder_kind = "fetch" if grounder_kind == "none" else grounder_kind
+        if top_k is not None:
+            top_k_override = top_k  # the caller's explicit depth beats the max_fidelity winner
         return cls(
             provider,
             retriever,
@@ -232,7 +237,7 @@ class WorldModel:
         """Return up to `n` steps from the replay buffer (used to seed the demo agent)."""
         return self._retriever.sample(n)
 
-    def score_session(self, session_id: str) -> EpisodeScore:
+    def score_session(self, session_id: str, rubric: str | None = None) -> EpisodeScore:
         """Judge the session's rollout so far: episode reward, per-step rewards, and a critique.
 
         This is the RL reward signal. The reward judge sees the session's task and its full step
@@ -250,7 +255,7 @@ class WorldModel:
             if tracker is not None
             else self._reward_provider
         )
-        score = EpisodeRewardJudge(provider).score(session.task, session.history)
+        score = EpisodeRewardJudge(provider).score(session.task, session.history, rubric=rubric)
         # The scalar rides the final observation too, so replay-buffer consumers that read
         # Observation.reward (DreamGym-style terminal r) see the same number the API returned.
         if session.history:

@@ -106,7 +106,7 @@ def main() -> None:
     out = {
         "benchmark": bench,
         "fidelity": round(mean, 4),
-        "std": round(var ** 0.5, 4),
+        "std": round(var**0.5, 4),
         "n_steps": len(scores),
         "error_flag_accuracy": round(err_acc, 4) if err_acc is not None else None,
     }

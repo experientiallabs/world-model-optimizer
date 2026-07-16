@@ -42,7 +42,9 @@ log = logging.getLogger(__name__)
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--budget", type=int, default=95, help="synthesis budget (target 50-80 valid)")
+    parser.add_argument(
+        "--budget", type=int, default=95, help="synthesis budget (target 50-80 valid)"
+    )
     parser.add_argument("--out", default="eval_pool_v2.json")
     args = parser.parse_args()
     t0 = time.time()
@@ -57,8 +59,11 @@ def main() -> None:
         facet.model_copy(update={"domain": trace_domain(trace)})
         for facet, trace in zip(facets, eval_traces, strict=True)
     ]
-    log.info("eval split: %d traces, domains %s", len(eval_traces),
-             dict(Counter(f.domain or "?" for f in facets)))
+    log.info(
+        "eval split: %d traces, domains %s",
+        len(eval_traces),
+        dict(Counter(f.domain or "?" for f in facets)),
+    )
 
     pool = build_scenario_set(
         eval_traces,
@@ -74,9 +79,14 @@ def main() -> None:
     by_id = {t.trace_id: t for t in eval_traces}
     for s in pool.scenarios:
         domains[trace_domain(by_id[s.provenance[0]]) or "?"] += 1
-    log.info("eval_pool_v2: %d valid scenarios, %d clusters, domains %s -> %s (%.0fs)",
-             len(pool.scenarios), len({s.cluster_name for s in pool.scenarios}),
-             dict(domains), out, time.time() - t0)
+    log.info(
+        "eval_pool_v2: %d valid scenarios, %d clusters, domains %s -> %s (%.0fs)",
+        len(pool.scenarios),
+        len({s.cluster_name for s in pool.scenarios}),
+        dict(domains),
+        out,
+        time.time() - t0,
+    )
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ Modes (`--mode`):
 - `multi`    one attempt per scenario with the frozen cross-task memory from `collect`
              injected (the CLaaS paper's ICL arm shape).
 
-Everything an arm consumes is PINNED (see pin_scenarios.py): the scenario sets AND the
+Everything an arm consumes is PINNED (see tau_pin_scenarios.py): the scenario sets AND the
 per-domain tool inventory (tools.json) — nothing is re-derived from the corpus at run time.
 Rows key on scenario provenance and are appended to the results file as each scenario
 completes, so a mid-run failure keeps every finished row. Policy backends:

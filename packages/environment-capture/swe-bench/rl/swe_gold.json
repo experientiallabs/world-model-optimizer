@@ -1,0 +1,2896 @@
+{
+ "astropy__astropy-12907": {
+  "base_commit": "d16bfe05a744909de4b27f5875fe0d4ed41ce607",
+  "fail_to_pass": [
+   "astropy/modeling/tests/test_separable.py::test_separable[compound_model6-result6]",
+   "astropy/modeling/tests/test_separable.py::test_separable[compound_model9-result9]"
+  ],
+  "pass_to_pass_count": 13,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-13033": {
+  "base_commit": "298ccb478e6bf092953bca67a3d29dc6c35f6752",
+  "fail_to_pass": [
+   "astropy/timeseries/tests/test_sampled.py::test_required_columns"
+  ],
+  "pass_to_pass_count": 20,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-13236": {
+  "base_commit": "6ed769d58d89380ebaa1ef52b300691eefda8928",
+  "fail_to_pass": [
+   "astropy/table/tests/test_mixin.py::test_ndarray_mixin[False]",
+   "astropy/table/tests/test_table.py::test_structured_masked_column"
+  ],
+  "pass_to_pass_count": 644,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-13398": {
+  "base_commit": "6500928dc0e57be8f06d1162eacc3ba5e2eff692",
+  "fail_to_pass": [
+   "astropy/coordinates/tests/test_intermediate_transformations.py::test_cirs_itrs_topo",
+   "astropy/coordinates/tests/test_intermediate_transformations.py::test_itrs_straight_overhead",
+   "astropy/coordinates/tests/test_intermediate_transformations.py::test_itrs_topo_to_altaz_with_refraction",
+   "astropy/coordinates/tests/test_intermediate_transformations.py::test_itrs_topo_to_hadec_with_refraction"
+  ],
+  "pass_to_pass_count": 68,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-13453": {
+  "base_commit": "19cc80471739bcb67b7e8099246b391c355023ee",
+  "fail_to_pass": [
+   "astropy/io/ascii/tests/test_html.py::test_write_table_formatted_columns"
+  ],
+  "pass_to_pass_count": 9,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-13579": {
+  "base_commit": "0df94ff7097961e92fd7812036a24b145bc13ca8",
+  "fail_to_pass": [
+   "astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py::test_coupled_world_slicing"
+  ],
+  "pass_to_pass_count": 40,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-13977": {
+  "base_commit": "5250b2442501e6c671c6b380536f1edb352602d1",
+  "fail_to_pass": [
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[None-duck_quantity0-quantity0-add]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[None-duck_quantity0-quantity0-less]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[None-duck_quantity0-quantity1-add]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[None-duck_quantity0-quantity1-less]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[None-duck_quantity1-quantity0-add]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[None-duck_quantity1-quantity0-less]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[None-duck_quantity1-quantity1-add]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[None-duck_quantity1-quantity1-less]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[empty-duck_quantity0-quantity0-add]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[empty-duck_quantity0-quantity0-less]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[empty-duck_quantity0-quantity0-multiply]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[empty-duck_quantity0-quantity1-add]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[empty-duck_quantity0-quantity1-less]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[empty-duck_quantity0-quantity1-multiply]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[empty-duck_quantity1-quantity0-add]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[empty-duck_quantity1-quantity0-less]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[empty-duck_quantity1-quantity0-multiply]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[empty-duck_quantity1-quantity1-add]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[empty-duck_quantity1-quantity1-less]",
+   "astropy/units/tests/test_quantity_ufuncs.py::TestUfuncReturnsNotImplemented::TestBinaryUfuncs::test_full[empty-duck_quantity1-quantity1-multiply]"
+  ],
+  "pass_to_pass_count": 322,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-14096": {
+  "base_commit": "1a4462d72eb03f30dc83a879b1dd57aac8b2c18b",
+  "fail_to_pass": [
+   "astropy/coordinates/tests/test_sky_coord.py::test_subclass_property_exception_error"
+  ],
+  "pass_to_pass_count": 426,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-14182": {
+  "base_commit": "a5917978be39d13cd90b517e1de4e7a539ffaa48",
+  "fail_to_pass": [
+   "astropy/io/ascii/tests/test_rst.py::test_rst_with_header_rows"
+  ],
+  "pass_to_pass_count": 9,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-14309": {
+  "base_commit": "cdb66059a2feb44ee49021874605ba90801f9986",
+  "fail_to_pass": [
+   "astropy/io/fits/tests/test_connect.py::test_is_fits_gh_14305"
+  ],
+  "pass_to_pass_count": 141,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-14365": {
+  "base_commit": "7269fa3e33e8d02485a647da91a5a2a60a06af61",
+  "fail_to_pass": [
+   "astropy/io/ascii/tests/test_qdp.py::test_roundtrip[True]"
+  ],
+  "pass_to_pass_count": 8,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-14369": {
+  "base_commit": "fa4e8d1cd279acf9b24560813c8652494ccd5922",
+  "fail_to_pass": [
+   "astropy/units/tests/test_format.py::test_cds_grammar[strings4-unit4]",
+   "astropy/units/tests/test_format.py::test_cds_grammar[strings6-unit6]",
+   "astropy/units/tests/test_format.py::test_cds_grammar_fail[km/s.Mpc-1]"
+  ],
+  "pass_to_pass_count": 732,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-14508": {
+  "base_commit": "a3f4ae6cd24d5ecdf49f213d77b3513dd509a06c",
+  "fail_to_pass": [
+   "astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_floating_point_string_representation_card"
+  ],
+  "pass_to_pass_count": 174,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-14539": {
+  "base_commit": "c0a24c1dc957a3b565294213f435fefb2ec99714",
+  "fail_to_pass": [
+   "astropy/io/fits/tests/test_diff.py::TestDiff::test_different_table_data",
+   "astropy/io/fits/tests/test_diff.py::TestDiff::test_identical_tables"
+  ],
+  "pass_to_pass_count": 46,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-14598": {
+  "base_commit": "80c3854a5f4f4a6ab86c03d9db7854767fcd83c1",
+  "fail_to_pass": [
+   "astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_long_string_value_with_quotes"
+  ],
+  "pass_to_pass_count": 175,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-14995": {
+  "base_commit": "b16c7d12ccbc7b2d20364b89fb44285bcbfede54",
+  "fail_to_pass": [
+   "astropy/nddata/mixins/tests/test_ndarithmetic.py::test_nddata_bitmask_arithmetic"
+  ],
+  "pass_to_pass_count": 179,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-7166": {
+  "base_commit": "26d147868f8a891a6009a25cd6a8576d2e1bd747",
+  "fail_to_pass": [
+   "astropy/utils/tests/test_misc.py::test_inherit_docstrings"
+  ],
+  "pass_to_pass_count": 6,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-7336": {
+  "base_commit": "732d89c2940156bdc0e200bb36dc38b5e424bcba",
+  "fail_to_pass": [
+   "astropy/units/tests/test_quantity_annotations.py::test_return_annotation_none"
+  ],
+  "pass_to_pass_count": 339,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-7606": {
+  "base_commit": "3cedd79e6c121910220f8e6df77c54a0b344ea94",
+  "fail_to_pass": [
+   "astropy/units/tests/test_units.py::test_unknown_unit3"
+  ],
+  "pass_to_pass_count": 241,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-7671": {
+  "base_commit": "a7141cd90019b62688d507ae056298507678c058",
+  "fail_to_pass": [
+   "astropy/utils/tests/test_introspection.py::test_minversion"
+  ],
+  "pass_to_pass_count": 3,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-8707": {
+  "base_commit": "a85a0747c54bac75e9c3b2fe436b105ea029d6cf",
+  "fail_to_pass": [
+   "astropy/io/fits/tests/test_header.py::TestHeaderFunctions::test_card_from_bytes"
+  ],
+  "pass_to_pass_count": 11,
+  "repo": "astropy/astropy"
+ },
+ "astropy__astropy-8872": {
+  "base_commit": "b750a0e6ee76fb6b8a099a4d16ec51977be46bf6",
+  "fail_to_pass": [
+   "astropy/units/tests/test_quantity.py::TestQuantityCreation::test_preserve_dtype"
+  ],
+  "pass_to_pass_count": 80,
+  "repo": "astropy/astropy"
+ },
+ "django__django-10097": {
+  "base_commit": "b9cf764be62e77b4777b3a75ec256f6209a57671",
+  "fail_to_pass": [
+   "A uidb64 that decodes to a non-UUID doesn't crash.",
+   "Data for a ManyToManyField is a list rather than a lazy QuerySet.",
+   "Ensure keys and blank character strings are tested for uniqueness.",
+   "Executing the changepassword management command should change joe's password",
+   "If logged in, go to custom redirected URL.",
+   "If logged in, go to default redirected URL.",
+   "If next is specified as a GET parameter, go there.",
+   "If not logged in, stay on the same page.",
+   "ModelForm test of unique_together constraint",
+   "Named URLs should be reversible",
+   "Stay on the login page by default.",
+   "Test for primary_key being in the form and failing validation.",
+   "The system username is used if --username isn't provided.",
+   "test_F_reuse (expressions.tests.ExpressionsTests)",
+   "test_PasswordChangeDoneView (auth_tests.test_templates.AuthTemplateTests)",
+   "test_PasswordResetChangeView (auth_tests.test_templates.AuthTemplateTests)",
+   "test_PasswordResetCompleteView (auth_tests.test_templates.AuthTemplateTests)",
+   "test_PasswordResetConfirmView_invalid_token (auth_tests.test_templates.AuthTemplateTests)",
+   "test_PasswordResetConfirmView_valid_token (auth_tests.test_templates.AuthTemplateTests)",
+   "test_PasswordResetDoneView (auth_tests.test_templates.AuthTemplateTests)",
+   "test_PasswordResetView (auth_tests.test_templates.AuthTemplateTests)",
+   "test_abstract_inherited_unique (model_forms.tests.UniqueTest)",
+   "test_abstract_inherited_unique_together (model_forms.tests.UniqueTest)",
+   "test_add_domain (syndication_tests.tests.SyndicationFeedTest)",
+   "test_add_efficiency (many_to_one_null.tests.ManyToOneNullTests)",
+   "test_add_form_deletion_when_invalid (inline_formsets.tests.DeletionTests)",
+   "test_aggregates (expressions.tests.ReprTests)",
+   "test_any_iterable_allowed_as_argument_to_exclude (inline_formsets.tests.InlineFormsetFactoryTest)",
+   "test_article_form (model_forms.tests.ModelFormBaseTest)",
+   "test_ascii_validator (auth_tests.test_validators.UsernameValidatorsTests)",
+   "test_assign_clear_related_set (many_to_one_null.tests.ManyToOneNullTests)",
+   "test_assign_with_queryset (many_to_one_null.tests.ManyToOneNullTests)",
+   "test_assignment_of_none (model_forms.tests.ModelOneToOneFieldTests)",
+   "test_assignment_of_none_null_false (model_forms.tests.ModelOneToOneFieldTests)",
+   "test_atom_feed (syndication_tests.tests.SyndicationFeedTest)",
+   "test_atom_feed_published_and_updated_elements (syndication_tests.tests.SyndicationFeedTest)",
+   "test_atom_multiple_enclosures (syndication_tests.tests.SyndicationFeedTest)",
+   "test_atom_single_enclosure (syndication_tests.tests.SyndicationFeedTest)",
+   "test_auto_id (model_forms.tests.ModelFormBasicTests)",
+   "test_aware_datetime_conversion (syndication_tests.tests.SyndicationFeedTest)",
+   "test_bad_form (model_forms.tests.ModelFormBaseTest)",
+   "test_base_form (model_forms.tests.ModelFormBaseTest)",
+   "test_base_form (model_forms.tests.ModelFormBasicTests)",
+   "test_basic_creation (model_forms.tests.ModelFormBasicTests)",
+   "test_basic_lookup (custom_lookups.tests.LookupTests)",
+   "test_basics (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_bilateral_fexpr (custom_lookups.tests.BilateralTransformTests)",
+   "test_bilateral_inner_qs (custom_lookups.tests.BilateralTransformTests)",
+   "test_bilateral_multi_value (custom_lookups.tests.BilateralTransformTests)",
+   "test_bilateral_order (custom_lookups.tests.BilateralTransformTests)",
+   "test_bilateral_upper (custom_lookups.tests.BilateralTransformTests)",
+   "test_blank_false_with_null_true_foreign_key_field (model_forms.tests.ModelFormBaseTest)",
+   "test_blank_with_null_foreign_key_field (model_forms.tests.ModelFormBaseTest)",
+   "test_cache_key_i18n_formatting (cache.tests.CacheI18nTest)",
+   "test_cache_key_i18n_formatting (cache.tests.PrefixedCacheI18nTest)",
+   "test_cache_key_i18n_timezone (cache.tests.CacheI18nTest)",
+   "test_cache_key_i18n_timezone (cache.tests.PrefixedCacheI18nTest)",
+   "test_cache_key_i18n_translation (cache.tests.CacheI18nTest)",
+   "test_cache_key_i18n_translation (cache.tests.PrefixedCacheI18nTest)",
+   "test_cache_key_i18n_translation_accept_language (cache.tests.CacheI18nTest)",
+   "test_cache_key_i18n_translation_accept_language (cache.tests.PrefixedCacheI18nTest)",
+   "test_cache_key_no_i18n (cache.tests.CacheI18nTest)",
+   "test_cache_key_no_i18n (cache.tests.PrefixedCacheI18nTest)",
+   "test_call_order (custom_lookups.tests.LookupTransformCallOrderTests)",
+   "test_callable_called_each_time_form_is_instantiated (model_forms.tests.LimitChoicesToTests)",
+   "test_callable_field_default (model_forms.tests.OtherModelFormTests)",
+   "test_chained_values_with_expression (expressions.test_queryset_values.ValuesExpressionsTests)",
+   "test_change_form_deletion_when_invalid (inline_formsets.tests.DeletionTests)",
+   "test_choice_iterator_passes_model_to_widget (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_choices (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_choices_bool (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_choices_bool_empty_label (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_choices_freshness (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_choices_not_fetched_when_not_rendering (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_choices_type (model_forms.tests.OtherModelFormTests)",
+   "test_clean_does_deduplicate_values (model_forms.tests.ModelMultipleChoiceFieldTests)",
+   "test_clear_efficiency (many_to_one_null.tests.ManyToOneNullTests)",
+   "test_complex_expressions (expressions.tests.ExpressionsNumericTests)",
+   "test_complex_expressions_do_not_introduce_sql_injection_via_untrusted_string_inclusion (expressions.tests.IterableLookupInnerExpressionsTests)",
+   "test_confirm_valid_custom_user (auth_tests.test_views.CustomUserPasswordResetTest)",
+   "test_confirm_valid_custom_user (auth_tests.test_views.UUIDUserPasswordResetTest)",
+   "test_confused_form (model_forms.tests.ModelFormBaseTest)",
+   "test_create_save_error (model_forms.test_uuid.ModelFormBaseTest)",
+   "test_createcachetable_observes_database_router (cache.tests.CreateCacheTableForDBCacheTests)",
+   "test_created_via_related_set (many_to_one_null.tests.ManyToOneNullTests)",
+   "test_created_without_related (many_to_one_null.tests.ManyToOneNullTests)",
+   "test_current_site_in_context_after_login (auth_tests.test_views.LoginTest)",
+   "test_custom (auth_tests.test_views.LoginRedirectUrlTest)",
+   "test_custom_exact_lookup_none_rhs (custom_lookups.tests.LookupTests)",
+   "test_custom_feed_generator (syndication_tests.tests.SyndicationFeedTest)",
+   "test_custom_field_with_queryset_but_no_limit_choices_to (model_forms.tests.LimitChoicesToTests)",
+   "test_custom_form_fields (model_forms.tests.ModelFormBasicTests)",
+   "test_custom_implementation_year_exact (custom_lookups.tests.YearLteTests)",
+   "test_custom_name_lookup (custom_lookups.tests.LookupTests)",
+   "test_custom_valid_name_callable_upload_to (file_storage.tests.FileFieldStorageTests)",
+   "test_dates (reserved_names.tests.ReservedNameTests)",
+   "test_dates_query (extra_regress.tests.ExtraRegressTests)",
+   "test_deconstruct (expressions.tests.ValueTests)",
+   "test_deconstruct_output_field (expressions.tests.ValueTests)",
+   "test_deepcopies_widget (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_default (auth_tests.test_views.LoginRedirectUrlTest)",
+   "test_default_filefield (model_forms.tests.ModelFormBaseTest)",
+   "test_default_logout_then_login (auth_tests.test_views.LogoutThenLoginTests)",
+   "test_default_not_populated_on_checkboxselectmultiple (model_forms.tests.ModelFormBaseTest)",
+   "test_default_not_populated_on_optional_checkbox_input (model_forms.tests.ModelFormBaseTest)",
+   "test_default_not_populated_on_selectmultiple (model_forms.tests.ModelFormBaseTest)",
+   "test_default_populated_on_optional_field (model_forms.tests.ModelFormBaseTest)",
+   "test_default_selectdatewidget (model_forms.tests.ModelFormBaseTest)",
+   "test_default_splitdatetime_field (model_forms.tests.ModelFormBaseTest)",
+   "test_deletion (inline_formsets.tests.DeletionTests)",
+   "test_disabled_modelchoicefield (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_disabled_modelchoicefield_has_changed (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_disabled_modelmultiplechoicefield_has_changed (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_disabled_multiplemodelchoicefield (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_div3_bilateral_extract (custom_lookups.tests.BilateralTransformTests)",
+   "test_div3_extract (custom_lookups.tests.LookupTests)",
+   "test_duplicate_filename (file_storage.tests.FileFieldStorageTests)",
+   "test_empty (empty.tests.EmptyModelTests)",
+   "test_empty_fields_on_modelform (model_forms.tests.ModelFormBaseTest)",
+   "test_empty_fields_to_construct_instance (model_forms.tests.ModelFormBaseTest)",
+   "test_empty_fields_to_fields_for_model (model_forms.tests.ModelFormBaseTest)",
+   "test_empty_password_validator_help_text_html (auth_tests.test_validators.PasswordValidationTest)",
+   "test_empty_update (update.tests.SimpleTest)",
+   "test_empty_update_with_inheritance (update.tests.SimpleTest)",
+   "test_empty_upload_to (file_storage.tests.FileFieldStorageTests)",
+   "test_equal (expressions.tests.ValueTests)",
+   "test_equal_output_field (expressions.tests.ValueTests)",
+   "test_exception_on_unspecified_foreign_key (inline_formsets.tests.InlineFormsetFactoryTest)",
+   "test_exclude_and_validation (model_forms.tests.ModelFormBaseTest)",
+   "test_exclude_fields (model_forms.tests.ModelFormBaseTest)",
+   "test_exclude_fields_with_string (model_forms.tests.ModelFormBaseTest)",
+   "test_exclude_nonexistent_field (model_forms.tests.ModelFormBaseTest)",
+   "test_expressions (expressions.tests.ReprTests)",
+   "test_expressions_in_lookups_join_choice (expressions.tests.IterableLookupInnerExpressionsTests)",
+   "test_extended_length_storage (file_storage.tests.FileFieldStorageTests)",
+   "test_extra_args (schema.test_logging.SchemaLoggerTests)",
+   "test_extra_declared_field_model_form (model_forms.tests.ModelFormBaseTest)",
+   "test_extra_field_model_form (model_forms.tests.ModelFormBaseTest)",
+   "test_extra_field_modelform_factory (model_forms.tests.ModelFormBaseTest)",
+   "test_extra_fields (model_forms.tests.ModelFormBaseTest)",
+   "test_extra_stay_tied (extra_regress.tests.ExtraRegressTests)",
+   "test_extra_values_distinct_ordering (extra_regress.tests.ExtraRegressTests)",
+   "test_feed_last_modified_time (syndication_tests.tests.SyndicationFeedTest)",
+   "test_feed_last_modified_time_naive_date (syndication_tests.tests.SyndicationFeedTest)",
+   "test_feed_url (syndication_tests.tests.SyndicationFeedTest)",
+   "test_fields (reserved_names.tests.ReservedNameTests)",
+   "test_fields_for_model_applies_limit_choices_to (model_forms.tests.LimitChoicesToTests)",
+   "test_file_object (file_storage.tests.FileFieldStorageTests)",
+   "test_file_truncation (file_storage.tests.FileFieldStorageTests)",
+   "test_filefield_default (file_storage.tests.FileFieldStorageTests)",
+   "test_filefield_pickling (file_storage.tests.FileFieldStorageTests)",
+   "test_filefield_read (file_storage.tests.FileFieldStorageTests)",
+   "test_filefield_reopen (file_storage.tests.FileFieldStorageTests)",
+   "test_filefield_write (file_storage.tests.FileFieldStorageTests)",
+   "test_files (file_storage.tests.FileFieldStorageTests)",
+   "test_fill_with_value_from_same_object (expressions.tests.ExpressionsNumericTests)",
+   "test_filter_not_equals_other_field (expressions.tests.ExpressionsNumericTests)",
+   "test_filtered_aggregates (expressions.tests.ReprTests)",
+   "test_fk_in_all_formset_forms (inline_formsets.tests.InlineFormsetFactoryTest)",
+   "test_fk_name_not_foreign_key_field_from_child (inline_formsets.tests.InlineFormsetFactoryTest)",
+   "test_fk_not_duplicated_in_form_fields (inline_formsets.tests.InlineFormsetFactoryTest)",
+   "test_force_update (force_insert_update.tests.ForceTests)",
+   "test_force_update_on_inherited_model (force_insert_update.tests.InheritanceTests)",
+   "test_force_update_on_inherited_model_without_fields (force_insert_update.tests.InheritanceTests)",
+   "test_force_update_on_proxy_model (force_insert_update.tests.InheritanceTests)",
+   "test_foreign_key_update_with_id (update.tests.SimpleTest)",
+   "test_foreignkeys_which_use_to_field (model_forms.tests.OtherModelFormTests)",
+   "test_foreignobject_lookup_registration (custom_lookups.tests.LookupTests)",
+   "test_functions (expressions.tests.ReprTests)",
+   "test_get_default_password_validators (auth_tests.test_validators.PasswordValidationTest)",
+   "test_get_pass (auth_tests.test_management.ChangepasswordManagementCommandTestCase)",
+   "test_get_pass_no_input (auth_tests.test_management.ChangepasswordManagementCommandTestCase)",
+   "test_get_password_validators_custom (auth_tests.test_validators.PasswordValidationTest)",
+   "test_get_related (many_to_one_null.tests.ManyToOneNullTests)",
+   "test_getter (properties.tests.PropertyTests)",
+   "test_hash (expressions.tests.ValueTests)",
+   "test_header_disappears (auth_tests.test_remote_user.AllowAllUsersRemoteUserBackendTest)",
+   "test_header_disappears (auth_tests.test_remote_user.CustomHeaderRemoteUserTest)",
+   "test_header_disappears (auth_tests.test_remote_user.PersistentRemoteUserTest)",
+   "test_header_disappears (auth_tests.test_remote_user.RemoteUserCustomTest)",
+   "test_header_disappears (auth_tests.test_remote_user.RemoteUserNoCreateTest)",
+   "test_header_disappears (auth_tests.test_remote_user.RemoteUserTest)",
+   "test_help_text (auth_tests.test_validators.CommonPasswordValidatorTest)",
+   "test_help_text (auth_tests.test_validators.UserAttributeSimilarityValidatorTest)",
+   "test_https_login_url (auth_tests.test_views.LoginURLSettings)",
+   "test_in_lookup_allows_F_expressions_and_expressions_for_datetimes (expressions.tests.IterableLookupInnerExpressionsTests)",
+   "test_in_lookup_allows_F_expressions_and_expressions_for_integers (expressions.tests.IterableLookupInnerExpressionsTests)",
+   "test_inactive_user (auth_tests.test_remote_user.AllowAllUsersRemoteUserBackendTest)",
+   "test_inactive_user (auth_tests.test_remote_user.CustomHeaderRemoteUserTest)",
+   "test_inactive_user (auth_tests.test_remote_user.PersistentRemoteUserTest)",
+   "test_inactive_user (auth_tests.test_remote_user.RemoteUserCustomTest)",
+   "test_inactive_user (auth_tests.test_remote_user.RemoteUserNoCreateTest)",
+   "test_inactive_user (auth_tests.test_remote_user.RemoteUserTest)",
+   "test_incorrect_field_expression (expressions.tests.ExpressionsNumericTests)",
+   "test_increment_value (expressions.tests.ExpressionsNumericTests)",
+   "test_inherited_unique (model_forms.tests.UniqueTest)",
+   "test_inherited_unique_for_date (model_forms.tests.UniqueTest)",
+   "test_inherited_unique_together (model_forms.tests.UniqueTest)",
+   "test_initial_values (model_forms.tests.ModelFormBasicTests)",
+   "test_inline_formset_factory (inline_formsets.tests.InlineFormsetFactoryTest)",
+   "test_insensitive_patterns_escape (expressions.tests.ExpressionsTests)",
+   "test_invalid_meta_model (model_forms.tests.ModelFormBaseTest)",
+   "test_item_link_error (syndication_tests.tests.SyndicationFeedTest)",
+   "test_iterable_model_m2m (model_forms.tests.OtherModelFormTests)",
+   "test_known_user (auth_tests.test_remote_user.AllowAllUsersRemoteUserBackendTest)",
+   "test_known_user (auth_tests.test_remote_user.CustomHeaderRemoteUserTest)",
+   "test_known_user (auth_tests.test_remote_user.PersistentRemoteUserTest)",
+   "test_known_user (auth_tests.test_remote_user.RemoteUserCustomTest)",
+   "test_known_user (auth_tests.test_remote_user.RemoteUserNoCreateTest)",
+   "test_known_user (auth_tests.test_remote_user.RemoteUserTest)",
+   "test_language_not_saved_to_session (i18n.tests.LocaleMiddlewareTests)",
+   "test_last_login (auth_tests.test_remote_user.AllowAllUsersRemoteUserBackendTest)",
+   "test_last_login (auth_tests.test_remote_user.CustomHeaderRemoteUserTest)",
+   "test_last_login (auth_tests.test_remote_user.PersistentRemoteUserTest)",
+   "test_last_login (auth_tests.test_remote_user.RemoteUserCustomTest)",
+   "test_last_login (auth_tests.test_remote_user.RemoteUserNoCreateTest)",
+   "test_last_login (auth_tests.test_remote_user.RemoteUserTest)",
+   "test_latest_post_date (syndication_tests.tests.SyndicationFeedTest)",
+   "test_lazy (i18n.tests.TestModels)",
+   "test_lazy_login_url (auth_tests.test_views.LoginURLSettings)",
+   "test_lefthand_addition (expressions.tests.ExpressionOperatorTests)",
+   "test_lefthand_bitwise_and (expressions.tests.ExpressionOperatorTests)",
+   "test_lefthand_bitwise_left_shift_operator (expressions.tests.ExpressionOperatorTests)",
+   "test_lefthand_bitwise_or (expressions.tests.ExpressionOperatorTests)",
+   "test_lefthand_bitwise_right_shift_operator (expressions.tests.ExpressionOperatorTests)",
+   "test_lefthand_division (expressions.tests.ExpressionOperatorTests)",
+   "test_lefthand_modulo (expressions.tests.ExpressionOperatorTests)",
+   "test_lefthand_multiplication (expressions.tests.ExpressionOperatorTests)",
+   "test_lefthand_power (expressions.tests.ExpressionOperatorTests)",
+   "test_lefthand_subtraction (expressions.tests.ExpressionOperatorTests)",
+   "test_limit_choices_to_callable_for_fk_rel (model_forms.tests.LimitChoicesToTests)",
+   "test_limit_choices_to_callable_for_m2m_rel (model_forms.tests.LimitChoicesToTests)",
+   "test_limit_fields_with_string (model_forms.tests.ModelFormBaseTest)",
+   "test_limit_nonexistent_field (model_forms.tests.ModelFormBaseTest)",
+   "test_login_csrf_rotate (auth_tests.test_views.LoginTest)",
+   "test_login_form_contains_request (auth_tests.test_views.LoginTest)",
+   "test_login_session_without_hash_session_key (auth_tests.test_views.LoginTest)",
+   "test_login_url_with_querystring (auth_tests.test_views.LoginURLSettings)",
+   "test_logout_then_login_with_custom_login (auth_tests.test_views.LogoutThenLoginTests)",
+   "test_lookups_caching (custom_lookups.tests.LookupTests)",
+   "test_m2m_editing (model_forms.tests.ModelFormBasicTests)",
+   "test_m2m_initial_callable (model_forms.tests.ModelFormBasicTests)",
+   "test_media_on_modelform (model_forms.tests.OtherModelFormTests)",
+   "test_middleware (cache.tests.CacheI18nTest)",
+   "test_middleware (cache.tests.PrefixedCacheI18nTest)",
+   "test_middleware_doesnt_cache_streaming_response (cache.tests.CacheI18nTest)",
+   "test_middleware_doesnt_cache_streaming_response (cache.tests.PrefixedCacheI18nTest)",
+   "test_missing_fields_attribute (model_forms.tests.ModelFormBaseTest)",
+   "test_mixmodel_form (model_forms.tests.ModelFormBaseTest)",
+   "test_model_field_that_returns_none_to_exclude_itself_with_explicit_fields (model_forms.tests.OtherModelFormTests)",
+   "test_model_form_applies_localize_to_all_fields (model_forms.tests.LocalizedModelFormTest)",
+   "test_model_form_applies_localize_to_some_fields (model_forms.tests.LocalizedModelFormTest)",
+   "test_model_form_clean_applies_to_model (model_forms.tests.CustomCleanTests)",
+   "test_model_form_refuses_arbitrary_string (model_forms.tests.LocalizedModelFormTest)",
+   "test_model_multiple_choice_field (model_forms.tests.ModelMultipleChoiceFieldTests)",
+   "test_model_multiple_choice_field_22745 (model_forms.tests.ModelMultipleChoiceFieldTests)",
+   "test_model_multiple_choice_field_uuid_pk (model_forms.test_uuid.ModelFormBaseTest)",
+   "test_model_multiple_choice_number_of_queries (model_forms.tests.ModelMultipleChoiceFieldTests)",
+   "test_model_multiple_choice_required_false (model_forms.tests.ModelMultipleChoiceFieldTests)",
+   "test_model_multiple_choice_run_validators (model_forms.tests.ModelMultipleChoiceFieldTests)",
+   "test_model_multiple_choice_show_hidden_initial (model_forms.tests.ModelMultipleChoiceFieldTests)",
+   "test_modelform_onetoonefield (model_forms.tests.ModelOneToOneFieldTests)",
+   "test_modelform_subclassed_model (model_forms.tests.ModelOneToOneFieldTests)",
+   "test_month_aggregation (expressions.tests.FieldTransformTests)",
+   "test_month_filter (reserved_names.tests.ReservedNameTests)",
+   "test_multi_fields (model_forms.tests.ModelFormBasicTests)",
+   "test_multiple_field_unique_together (model_forms.tests.UniqueTest)",
+   "test_multiple_transforms_in_values (expressions.tests.FieldTransformTests)",
+   "test_naive_datetime_conversion (syndication_tests.tests.SyndicationFeedTest)",
+   "test_named (auth_tests.test_views.LoginRedirectUrlTest)",
+   "test_named_login_url (auth_tests.test_views.LoginURLSettings)",
+   "test_no_extra_query_when_accessing_attrs (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_no_model_class (model_forms.tests.ModelFormBaseTest)",
+   "test_no_remote_user (auth_tests.test_remote_user.AllowAllUsersRemoteUserBackendTest)",
+   "test_no_remote_user (auth_tests.test_remote_user.CustomHeaderRemoteUserTest)",
+   "test_no_remote_user (auth_tests.test_remote_user.PersistentRemoteUserTest)",
+   "test_no_remote_user (auth_tests.test_remote_user.RemoteUserCustomTest)",
+   "test_no_remote_user (auth_tests.test_remote_user.RemoteUserNoCreateTest)",
+   "test_no_remote_user (auth_tests.test_remote_user.RemoteUserTest)",
+   "test_non_foreign_key_field (inline_formsets.tests.InlineFormsetFactoryTest)",
+   "test_nonempty_update (update.tests.SimpleTest)",
+   "test_nonempty_update_with_inheritance (update.tests.SimpleTest)",
+   "test_nonexistent_username (auth_tests.test_management.ChangepasswordManagementCommandTestCase)",
+   "test_num_queries (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_onetoonefield (model_forms.tests.ModelOneToOneFieldTests)",
+   "test_order_by (reserved_names.tests.ReservedNameTests)",
+   "test_orderfields2_form (model_forms.tests.ModelFormBaseTest)",
+   "test_orderfields_form (model_forms.tests.ModelFormBaseTest)",
+   "test_overridable_choice_iterator (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_overridden_get_lookup (custom_lookups.tests.CustomisedMethodsTests)",
+   "test_overridden_get_lookup_chain (custom_lookups.tests.CustomisedMethodsTests)",
+   "test_overridden_get_transform (custom_lookups.tests.CustomisedMethodsTests)",
+   "test_overridden_get_transform_chain (custom_lookups.tests.CustomisedMethodsTests)",
+   "test_override_clean (model_forms.tests.CustomCleanTests)",
+   "test_override_field (model_forms.tests.ModelFormBaseTest)",
+   "test_override_unique_for_date_message (model_forms.tests.UniqueTest)",
+   "test_override_unique_message (model_forms.tests.UniqueTest)",
+   "test_override_unique_together_message (model_forms.tests.UniqueTest)",
+   "test_password_change_done_fails (auth_tests.test_views.ChangePasswordTest)",
+   "test_password_change_done_succeeds (auth_tests.test_views.ChangePasswordTest)",
+   "test_password_change_fails_with_invalid_old_password (auth_tests.test_views.ChangePasswordTest)",
+   "test_password_change_fails_with_mismatched_passwords (auth_tests.test_views.ChangePasswordTest)",
+   "test_password_change_redirect_custom (auth_tests.test_views.ChangePasswordTest)",
+   "test_password_change_redirect_custom_named (auth_tests.test_views.ChangePasswordTest)",
+   "test_password_change_redirect_default (auth_tests.test_views.ChangePasswordTest)",
+   "test_password_change_succeeds (auth_tests.test_views.ChangePasswordTest)",
+   "test_password_changed (auth_tests.test_validators.PasswordValidationTest)",
+   "test_password_validation (auth_tests.test_management.ChangepasswordManagementCommandTestCase)",
+   "test_password_validators_help_text_html (auth_tests.test_validators.PasswordValidationTest)",
+   "test_password_validators_help_text_html_escaping (auth_tests.test_validators.PasswordValidationTest)",
+   "test_password_validators_help_texts (auth_tests.test_validators.PasswordValidationTest)",
+   "test_patterns_escape (expressions.tests.ExpressionsTests)",
+   "test_permission_required_logged_in (auth_tests.test_views.LoginRedirectAuthenticatedUser)",
+   "test_permission_required_not_logged_in (auth_tests.test_views.LoginRedirectAuthenticatedUser)",
+   "test_postgres_year_exact (custom_lookups.tests.YearLteTests)",
+   "test_prefetch_related_queryset (model_forms.tests.OtherModelFormTests)",
+   "test_prefixed_form_with_default_field (model_forms.tests.ModelFormBaseTest)",
+   "test_queryset_manager (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_queryset_none (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_raise_empty_expressionlist (expressions.tests.ValueTests)",
+   "test_random_upload_to (file_storage.tests.FileFieldStorageTests)",
+   "test_range_lookup_allows_F_expressions_and_expressions_for_integers (expressions.tests.IterableLookupInnerExpressionsTests)",
+   "test_recleaning_model_form_instance (model_forms.tests.ModelFormBasicTests)",
+   "test_redirect_loop (auth_tests.test_views.LoginRedirectAuthenticatedUser)",
+   "test_redirect_to_login_with_lazy (auth_tests.test_views.RedirectToLoginTests)",
+   "test_redirect_to_login_with_lazy_and_unicode (auth_tests.test_views.RedirectToLoginTests)",
+   "test_regression_10847 (extra_regress.tests.ExtraRegressTests)",
+   "test_regression_17877 (extra_regress.tests.ExtraRegressTests)",
+   "test_regression_7314_7372 (extra_regress.tests.ExtraRegressTests)",
+   "test_regression_7957 (extra_regress.tests.ExtraRegressTests)",
+   "test_regression_7961 (extra_regress.tests.ExtraRegressTests)",
+   "test_regression_8039 (extra_regress.tests.ExtraRegressTests)",
+   "test_regression_8063 (extra_regress.tests.ExtraRegressTests)",
+   "test_regression_8819 (extra_regress.tests.ExtraRegressTests)",
+   "test_related_null_to_field (many_to_one_null.tests.ManyToOneNullTests)",
+   "test_related_set (many_to_one_null.tests.ManyToOneNullTests)",
+   "test_remote (auth_tests.test_views.LoginRedirectUrlTest)",
+   "test_remote_login_url (auth_tests.test_views.LoginURLSettings)",
+   "test_remote_login_url_with_next_querystring (auth_tests.test_views.LoginURLSettings)",
+   "test_remove_from_wrong_set (many_to_one_null.tests.ManyToOneNullTests)",
+   "test_renderer_kwarg (model_forms.tests.ModelFormBaseTest)",
+   "test_replace_field (model_forms.tests.ModelFormBaseTest)",
+   "test_replace_field_variant_2 (model_forms.tests.ModelFormBaseTest)",
+   "test_replace_field_variant_3 (model_forms.tests.ModelFormBaseTest)",
+   "test_result_cache_not_shared (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_right_hand_addition (expressions.tests.ExpressionOperatorTests)",
+   "test_right_hand_division (expressions.tests.ExpressionOperatorTests)",
+   "test_right_hand_modulo (expressions.tests.ExpressionOperatorTests)",
+   "test_right_hand_multiplication (expressions.tests.ExpressionOperatorTests)",
+   "test_right_hand_subtraction (expressions.tests.ExpressionOperatorTests)",
+   "test_righthand_power (expressions.tests.ExpressionOperatorTests)",
+   "test_rss091_feed (syndication_tests.tests.SyndicationFeedTest)",
+   "test_rss2_feed (syndication_tests.tests.SyndicationFeedTest)",
+   "test_rss2_feed_guid_permalink_false (syndication_tests.tests.SyndicationFeedTest)",
+   "test_rss2_feed_guid_permalink_true (syndication_tests.tests.SyndicationFeedTest)",
+   "test_rss2_multiple_enclosures (syndication_tests.tests.SyndicationFeedTest)",
+   "test_rss2_single_enclosure (syndication_tests.tests.SyndicationFeedTest)",
+   "test_runtime_choicefield_populated (model_forms.tests.ModelFormBasicTests)",
+   "test_safestr (i18n.tests.TestModels)",
+   "test_save_blank_false_with_required_false (model_forms.tests.ModelFormBaseTest)",
+   "test_save_blank_null_unique_charfield_saves_null (model_forms.tests.ModelFormBaseTest)",
+   "test_save_commit_false (model_forms.tests.ModelFormBasicTests)",
+   "test_save_new (inline_formsets.tests.DeletionTests)",
+   "test_save_with_data_errors (model_forms.tests.ModelFormBasicTests)",
+   "test_secure_urls (syndication_tests.tests.SyndicationFeedTest)",
+   "test_security_check (auth_tests.test_views.LoginTest)",
+   "test_security_check_https (auth_tests.test_views.LoginTest)",
+   "test_session_key_flushed_on_login (auth_tests.test_views.LoginTest)",
+   "test_session_key_flushed_on_login_after_password_change (auth_tests.test_views.LoginTest)",
+   "test_set (many_to_one_null.tests.ManyToOneNullTests)",
+   "test_set_clear_non_bulk (many_to_one_null.tests.ManyToOneNullTests)",
+   "test_setattr_raises_validation_error_field_specific (model_forms.tests.StrictAssignmentTests)",
+   "test_setattr_raises_validation_error_non_field (model_forms.tests.StrictAssignmentTests)",
+   "test_setter (properties.tests.PropertyTests)",
+   "test_show_hidden_initial_changed_queries_efficiently (model_forms.tests.ModelMultipleChoiceFieldTests)",
+   "test_simple (reserved_names.tests.ReservedNameTests)",
+   "test_simple_unique (model_forms.tests.UniqueTest)",
+   "test_standard_login_url (auth_tests.test_views.LoginURLSettings)",
+   "test_streaming_response (i18n.tests.LocaleMiddlewareTests)",
+   "test_stringio (file_storage.tests.FileFieldStorageTests)",
+   "test_subcategory_form (model_forms.tests.ModelFormBaseTest)",
+   "test_subclassmeta_form (model_forms.tests.ModelFormBaseTest)",
+   "test_subquery_usage (custom_lookups.tests.SubqueryTransformTests)",
+   "test_subset_fields (model_forms.tests.ModelFormBasicTests)",
+   "test_success_url_allowed_hosts_safe_host (auth_tests.test_views.LoginSuccessURLAllowedHostsTest)",
+   "test_success_url_allowed_hosts_same_host (auth_tests.test_views.LoginSuccessURLAllowedHostsTest)",
+   "test_success_url_allowed_hosts_unsafe_host (auth_tests.test_views.LoginSuccessURLAllowedHostsTest)",
+   "test_that_changepassword_command_works_with_nonascii_output (auth_tests.test_management.ChangepasswordManagementCommandTestCase)",
+   "test_that_max_tries_exits_1 (auth_tests.test_management.ChangepasswordManagementCommandTestCase)",
+   "test_title_escaping (syndication_tests.tests.SyndicationFeedTest)",
+   "test_to_field_name_with_initial_data (model_forms.tests.ModelMultipleChoiceFieldTests)",
+   "test_transform_in_values (expressions.tests.FieldTransformTests)",
+   "test_transform_order_by (custom_lookups.tests.BilateralTransformTests)",
+   "test_unicode_validator (auth_tests.test_validators.UsernameValidatorsTests)",
+   "test_unique_for_date (model_forms.tests.UniqueTest)",
+   "test_unique_for_date_in_exclude (model_forms.tests.UniqueTest)",
+   "test_unique_for_date_with_nullable_date (model_forms.tests.UniqueTest)",
+   "test_unique_null (model_forms.tests.UniqueTest)",
+   "test_unknown_user (auth_tests.test_remote_user.AllowAllUsersRemoteUserBackendTest)",
+   "test_unknown_user (auth_tests.test_remote_user.CustomHeaderRemoteUserTest)",
+   "test_unknown_user (auth_tests.test_remote_user.PersistentRemoteUserTest)",
+   "test_unknown_user (auth_tests.test_remote_user.RemoteUserCustomTest)",
+   "test_unknown_user (auth_tests.test_remote_user.RemoteUserNoCreateTest)",
+   "test_unknown_user (auth_tests.test_remote_user.RemoteUserTest)",
+   "test_unsaved_fk_validate_unique (inline_formsets.tests.InlineFormsetFactoryTest)",
+   "test_update (update.tests.AdvancedTests)",
+   "test_update_TimeField_using_Value (expressions.tests.ValueTests)",
+   "test_update_UUIDField_using_Value (expressions.tests.ValueTests)",
+   "test_update_all (update.tests.AdvancedTests)",
+   "test_update_annotated_multi_table_queryset (update.tests.AdvancedTests)",
+   "test_update_annotated_queryset (update.tests.AdvancedTests)",
+   "test_update_fk (update.tests.AdvancedTests)",
+   "test_update_m2m_field (update.tests.AdvancedTests)",
+   "test_update_multiple_fields (update.tests.AdvancedTests)",
+   "test_update_multiple_objects (update.tests.AdvancedTests)",
+   "test_update_respects_to_field (update.tests.AdvancedTests)",
+   "test_update_save_error (model_forms.test_uuid.ModelFormBaseTest)",
+   "test_update_slice_fail (update.tests.AdvancedTests)",
+   "test_user_password_change_updates_session (auth_tests.test_views.SessionAuthenticationTests)",
+   "test_user_switch_forces_new_login (auth_tests.test_remote_user.AllowAllUsersRemoteUserBackendTest)",
+   "test_user_switch_forces_new_login (auth_tests.test_remote_user.CustomHeaderRemoteUserTest)",
+   "test_user_switch_forces_new_login (auth_tests.test_remote_user.PersistentRemoteUserTest)",
+   "test_user_switch_forces_new_login (auth_tests.test_remote_user.RemoteUserCustomTest)",
+   "test_user_switch_forces_new_login (auth_tests.test_remote_user.RemoteUserNoCreateTest)",
+   "test_user_switch_forces_new_login (auth_tests.test_remote_user.RemoteUserTest)",
+   "test_validate (auth_tests.test_validators.CommonPasswordValidatorTest)",
+   "test_validate (auth_tests.test_validators.UserAttributeSimilarityValidatorTest)",
+   "test_validate_custom_list (auth_tests.test_validators.CommonPasswordValidatorTest)",
+   "test_validate_password (auth_tests.test_validators.PasswordValidationTest)",
+   "test_validate_property (auth_tests.test_validators.UserAttributeSimilarityValidatorTest)",
+   "test_values_expression (expressions.test_queryset_values.ValuesExpressionsTests)",
+   "test_values_expression_group_by (expressions.test_queryset_values.ValuesExpressionsTests)",
+   "test_values_list_expression (expressions.test_queryset_values.ValuesExpressionsTests)",
+   "test_values_list_expression_flat (expressions.test_queryset_values.ValuesExpressionsTests)",
+   "test_values_with_extra (extra_regress.tests.ExtraRegressTests)",
+   "test_verbose_name (i18n.contenttypes.tests.ContentTypeTests)",
+   "test_year_lte_sql (custom_lookups.tests.YearLteTests)",
+   "test_zero_primary_key (inline_formsets.tests.InlineFormsetFactoryTest)"
+  ],
+  "pass_to_pass_count": 1432,
+  "repo": "django/django"
+ },
+ "django__django-10554": {
+  "base_commit": "14d026cccb144c6877294ba4cd4e03ebf0842498",
+  "fail_to_pass": [
+   "test_union_with_values_list_and_order (queries.test_qs_combinators.QuerySetSetOperationTests)",
+   "test_union_with_values_list_on_annotated_and_unannotated (queries.test_qs_combinators.QuerySetSetOperationTests)"
+  ],
+  "pass_to_pass_count": 23,
+  "repo": "django/django"
+ },
+ "django__django-10880": {
+  "base_commit": "838e432e3e5519c5383d12018e6c78f8ec7833c1",
+  "fail_to_pass": [
+   "test_count_distinct_expression (aggregation.tests.AggregateTestCase)"
+  ],
+  "pass_to_pass_count": 55,
+  "repo": "django/django"
+ },
+ "django__django-10914": {
+  "base_commit": "e7fd69d051eaa67cb17f172a39b57253e9cb831a",
+  "fail_to_pass": [
+   "test_override_file_upload_permissions (test_utils.tests.OverrideSettingsTests)"
+  ],
+  "pass_to_pass_count": 98,
+  "repo": "django/django"
+ },
+ "django__django-10973": {
+  "base_commit": "ddb293685235fd09e932805771ae97f72e817181",
+  "fail_to_pass": [
+   "SIGINT is ignored in Python and passed to psql to abort quries.",
+   "test_accent (dbshell.test_postgresql.PostgreSqlDbshellCommandTestCase)",
+   "test_basic (dbshell.test_postgresql.PostgreSqlDbshellCommandTestCase)",
+   "test_column (dbshell.test_postgresql.PostgreSqlDbshellCommandTestCase)",
+   "test_nopass (dbshell.test_postgresql.PostgreSqlDbshellCommandTestCase)"
+  ],
+  "pass_to_pass_count": 0,
+  "repo": "django/django"
+ },
+ "django__django-10999": {
+  "base_commit": "36300ef336e3f130a0dadc1143163ff3d23dc843",
+  "fail_to_pass": [
+   "test_negative (utils_tests.test_dateparse.DurationParseTests)",
+   "test_parse_postgresql_format (utils_tests.test_dateparse.DurationParseTests)"
+  ],
+  "pass_to_pass_count": 10,
+  "repo": "django/django"
+ },
+ "django__django-11066": {
+  "base_commit": "4b45b6c8e4d7c9701a332e80d3b1c84209dc36e2",
+  "fail_to_pass": [
+   "test_existing_content_type_rename_other_database (contenttypes_tests.test_operations.ContentTypeOperationsTests)"
+  ],
+  "pass_to_pass_count": 3,
+  "repo": "django/django"
+ },
+ "django__django-11087": {
+  "base_commit": "8180ffba21bf10f4be905cb0d4890dc2bcff2788",
+  "fail_to_pass": [
+   "test_only_referenced_fields_selected (delete.tests.DeletionTests)"
+  ],
+  "pass_to_pass_count": 41,
+  "repo": "django/django"
+ },
+ "django__django-11095": {
+  "base_commit": "7d49ad76562e8c0597a0eb66046ab423b12888d8",
+  "fail_to_pass": [
+   "test_get_inline_instances_override_get_inlines (generic_inline_admin.tests.GenericInlineModelAdminTest)"
+  ],
+  "pass_to_pass_count": 19,
+  "repo": "django/django"
+ },
+ "django__django-11099": {
+  "base_commit": "d26b2424437dabeeca94d7900b37d2df4410da0c",
+  "fail_to_pass": [
+   "test_ascii_validator (auth_tests.test_validators.UsernameValidatorsTests)",
+   "test_help_text (auth_tests.test_validators.UserAttributeSimilarityValidatorTest)",
+   "test_unicode_validator (auth_tests.test_validators.UsernameValidatorsTests)"
+  ],
+  "pass_to_pass_count": 19,
+  "repo": "django/django"
+ },
+ "django__django-11119": {
+  "base_commit": "d4df5e1b0b1c643fe0fc521add0236764ec8e92a",
+  "fail_to_pass": [
+   "test_autoescape_off (template_tests.test_engine.RenderToStringTest)"
+  ],
+  "pass_to_pass_count": 7,
+  "repo": "django/django"
+ },
+ "django__django-11133": {
+  "base_commit": "879cc3da6249e920b8d54518a0ae06de835d7373",
+  "fail_to_pass": [
+   "test_memoryview_content (httpwrappers.tests.HttpResponseTests)"
+  ],
+  "pass_to_pass_count": 64,
+  "repo": "django/django"
+ },
+ "django__django-11138": {
+  "base_commit": "c84b91b7603e488f7171fdff8f08368ef3d6b856",
+  "fail_to_pass": [
+   "test_query_convert_timezones (timezones.tests.NewDatabaseTests)"
+  ],
+  "pass_to_pass_count": 73,
+  "repo": "django/django"
+ },
+ "django__django-11141": {
+  "base_commit": "5d9cf79baf07fc4aed7ad1b06990532a65378155",
+  "fail_to_pass": [
+   "Migration directories without an __init__.py file are loaded."
+  ],
+  "pass_to_pass_count": 24,
+  "repo": "django/django"
+ },
+ "django__django-11149": {
+  "base_commit": "e245046bb6e8b32360aa48b8a41fb7050f0fc730",
+  "fail_to_pass": [
+   "test_inline_add_m2m_view_only_perm (admin_inlines.tests.TestInlinePermissions)",
+   "test_inline_change_m2m_view_only_perm (admin_inlines.tests.TestInlinePermissions)"
+  ],
+  "pass_to_pass_count": 46,
+  "repo": "django/django"
+ },
+ "django__django-11163": {
+  "base_commit": "e6588aa4e793b7f56f4cadbfa155b581e0efc59a",
+  "fail_to_pass": [
+   "test_modelform_subclassed_model (model_forms.tests.ModelOneToOneFieldTests)"
+  ],
+  "pass_to_pass_count": 141,
+  "repo": "django/django"
+ },
+ "django__django-11179": {
+  "base_commit": "19fc6376ce67d01ca37a91ef2f55ef769f50513a",
+  "fail_to_pass": [
+   "test_fast_delete_instance_set_pk_none (delete.tests.FastDeleteTests)"
+  ],
+  "pass_to_pass_count": 40,
+  "repo": "django/django"
+ },
+ "django__django-11206": {
+  "base_commit": "571ab44e8a8936014c22e7eebe4948d9611fd7ce",
+  "fail_to_pass": [
+   "test_decimal_numbers (utils_tests.test_numberformat.TestNumberFormat)",
+   "test_decimal_subclass (utils_tests.test_numberformat.TestNumberFormat)"
+  ],
+  "pass_to_pass_count": 4,
+  "repo": "django/django"
+ },
+ "django__django-11211": {
+  "base_commit": "ba726067604ce5a8ca3919edf653496722b433ab",
+  "fail_to_pass": [
+   "test_prefetch_GFK_uuid_pk (prefetch_related.tests.GenericRelationTests)"
+  ],
+  "pass_to_pass_count": 76,
+  "repo": "django/django"
+ },
+ "django__django-11239": {
+  "base_commit": "d87bd29c4f8dfcdf3f4a4eb8340e6770a2416fe3",
+  "fail_to_pass": [
+   "test_ssl_certificate (dbshell.test_postgresql.PostgreSqlDbshellCommandTestCase)"
+  ],
+  "pass_to_pass_count": 5,
+  "repo": "django/django"
+ },
+ "django__django-11265": {
+  "base_commit": "21aa2a5e785eef1f47beb1c3760fdd7d8915ae09",
+  "fail_to_pass": [
+   "test_with_exclude (filtered_relation.tests.FilteredRelationTests)"
+  ],
+  "pass_to_pass_count": 30,
+  "repo": "django/django"
+ },
+ "django__django-11276": {
+  "base_commit": "28d5262fa3315690395f04e3619ed554dbaf725b",
+  "fail_to_pass": [
+   "A message can be provided in addition to a request",
+   "A simple exception report can be generated",
+   "An exception report can be generated without request",
+   "Safe strings in local variables are escaped.",
+   "test_addslashes02 (template_tests.filter_tests.test_addslashes.AddslashesTests)",
+   "test_escape (utils_tests.test_html.TestUtilsHtml)",
+   "test_escapejs (utils_tests.test_html.TestUtilsHtml)",
+   "test_escaping (forms_tests.tests.test_forms.FormsTestCase)",
+   "test_html_escaped (forms_tests.widget_tests.test_clearablefileinput.ClearableFileInputTest)",
+   "test_initial_values (model_forms.tests.ModelFormBasicTests)",
+   "test_m2m_initial_callable (model_forms.tests.ModelFormBasicTests)",
+   "test_make_list02 (template_tests.filter_tests.test_make_list.MakeListTests)",
+   "test_message_only (view_tests.tests.test_debug.ExceptionReporterTests)",
+   "test_methods_with_arguments_display_arguments_default_value (admin_docs.test_views.TestModelDetailView)",
+   "test_multi_fields (model_forms.tests.ModelFormBasicTests)",
+   "test_no_referer (view_tests.tests.test_csrf.CsrfViewTests)",
+   "test_password_help_text (auth_tests.test_forms.UserCreationFormTest)",
+   "test_request_with_items_key (view_tests.tests.test_debug.ExceptionReporterTests)",
+   "test_runtime_choicefield_populated (model_forms.tests.ModelFormBasicTests)",
+   "test_templates_with_forms (forms_tests.tests.test_forms.FormsTestCase)",
+   "test_title1 (template_tests.filter_tests.test_title.TitleTests)",
+   "test_url12 (template_tests.syntax_tests.test_url.UrlTagTests)",
+   "test_url_split_chars (template_tests.filter_tests.test_urlize.FunctionTests)",
+   "test_urlize01 (template_tests.filter_tests.test_urlize.UrlizeTests)",
+   "test_urlize06 (template_tests.filter_tests.test_urlize.UrlizeTests)",
+   "test_wrapping_characters (template_tests.filter_tests.test_urlize.FunctionTests)"
+  ],
+  "pass_to_pass_count": 548,
+  "repo": "django/django"
+ },
+ "django__django-11292": {
+  "base_commit": "eb16c7260e573ec513d84cb586d96bdf508f3173",
+  "fail_to_pass": [
+   "test_skip_checks (user_commands.tests.CommandRunTests)"
+  ],
+  "pass_to_pass_count": 31,
+  "repo": "django/django"
+ },
+ "django__django-11299": {
+  "base_commit": "6866c91b638de5368c18713fa851bfe56253ea55",
+  "fail_to_pass": [
+   "test_simplecol_query (queries.test_query.TestQuery)"
+  ],
+  "pass_to_pass_count": 103,
+  "repo": "django/django"
+ },
+ "django__django-11333": {
+  "base_commit": "55b68de643b5c2d5f0a8ea7587ab3b2966021ccc",
+  "fail_to_pass": [
+   "test_resolver_cache_default__root_urlconf (urlpatterns.test_resolvers.ResolverCacheTests)"
+  ],
+  "pass_to_pass_count": 2,
+  "repo": "django/django"
+ },
+ "django__django-11400": {
+  "base_commit": "1f8382d34d54061eddc41df6994e20ee38c60907",
+  "fail_to_pass": [
+   "RelatedFieldListFilter ordering respects Model.ordering.",
+   "RelatedOnlyFieldListFilter ordering respects Meta.ordering.",
+   "RelatedOnlyFieldListFilter ordering respects ModelAdmin.ordering.",
+   "test_get_choices_default_ordering (model_fields.tests.GetChoicesOrderingTests)",
+   "test_get_choices_reverse_related_field_default_ordering (model_fields.tests.GetChoicesOrderingTests)",
+   "test_relatedfieldlistfilter_reverse_relationships_default_ordering (admin_filters.tests.ListFiltersTests)"
+  ],
+  "pass_to_pass_count": 58,
+  "repo": "django/django"
+ },
+ "django__django-11433": {
+  "base_commit": "21b1d239125f1228e579b1ce8d94d4d5feadd2a6",
+  "fail_to_pass": [
+   "test_default_not_populated_on_non_empty_value_in_cleaned_data (model_forms.tests.ModelFormBaseTest)"
+  ],
+  "pass_to_pass_count": 142,
+  "repo": "django/django"
+ },
+ "django__django-11451": {
+  "base_commit": "e065b293878b1e3ea56655aa9d33e87576cd77ff",
+  "fail_to_pass": [
+   "test_authentication_without_credentials (auth_tests.test_auth_backends.CustomPermissionsUserModelBackendTest)",
+   "test_authentication_without_credentials (auth_tests.test_auth_backends.ExtensionUserModelBackendTest)",
+   "test_authentication_without_credentials (auth_tests.test_auth_backends.ModelBackendTest)",
+   "test_custom_perms (auth_tests.test_auth_backends.CustomPermissionsUserModelBackendTest)",
+   "test_custom_perms (auth_tests.test_auth_backends.ExtensionUserModelBackendTest)",
+   "test_custom_perms (auth_tests.test_auth_backends.ModelBackendTest)"
+  ],
+  "pass_to_pass_count": 45,
+  "repo": "django/django"
+ },
+ "django__django-11477": {
+  "base_commit": "e28671187903e6aca2428374fdd504fca3032aee",
+  "fail_to_pass": [
+   "test_re_path_with_optional_parameter (urlpatterns.tests.SimplifiedURLTests)",
+   "test_translate_url_utility (i18n.patterns.tests.URLTranslationTests)",
+   "test_two_variable_at_start_of_path_pattern (urlpatterns.tests.SimplifiedURLTests)"
+  ],
+  "pass_to_pass_count": 151,
+  "repo": "django/django"
+ },
+ "django__django-11490": {
+  "base_commit": "a7038adbd02c916315b16939b835f021c2ee8880",
+  "fail_to_pass": [
+   "test_union_with_values (queries.test_qs_combinators.QuerySetSetOperationTests)"
+  ],
+  "pass_to_pass_count": 23,
+  "repo": "django/django"
+ },
+ "django__django-11532": {
+  "base_commit": "a5308514fb4bc5086c9a16a8a24a945eeebb073c",
+  "fail_to_pass": [
+   "test_non_ascii_dns_non_unicode_email (mail.tests.MailTests)"
+  ],
+  "pass_to_pass_count": 148,
+  "repo": "django/django"
+ },
+ "django__django-11551": {
+  "base_commit": "7991111af12056ec9a856f35935d273526338c1f",
+  "fail_to_pass": [
+   "test_valid_field_accessible_via_instance (modeladmin.test_checks.ListDisplayTests)"
+  ],
+  "pass_to_pass_count": 119,
+  "repo": "django/django"
+ },
+ "django__django-11555": {
+  "base_commit": "8dd5877f58f84f2b11126afbd0813e24545919ed",
+  "fail_to_pass": [
+   "test_order_by_ptr_field_with_default_ordering_by_expression (ordering.tests.OrderingTests)"
+  ],
+  "pass_to_pass_count": 26,
+  "repo": "django/django"
+ },
+ "django__django-11603": {
+  "base_commit": "f618e033acd37d59b536d6e6126e6c5be18037f6",
+  "fail_to_pass": [
+   "test_distinct_on_aggregate (aggregation.tests.AggregateTestCase)",
+   "test_empty_aggregate (aggregation.tests.AggregateTestCase)"
+  ],
+  "pass_to_pass_count": 58,
+  "repo": "django/django"
+ },
+ "django__django-11728": {
+  "base_commit": "05457817647368be4b019314fcc655445a5b4c0c",
+  "fail_to_pass": [
+   "test_app_not_found (admin_docs.test_views.TestModelDetailView)",
+   "test_simplify_regex (admin_docs.test_views.AdminDocViewFunctionsTests)"
+  ],
+  "pass_to_pass_count": 44,
+  "repo": "django/django"
+ },
+ "django__django-11734": {
+  "base_commit": "999891bd80b3d02dd916731a7a239e1036174885",
+  "fail_to_pass": [
+   "test_subquery_exclude_outerref (queries.tests.ExcludeTests)"
+  ],
+  "pass_to_pass_count": 275,
+  "repo": "django/django"
+ },
+ "django__django-11740": {
+  "base_commit": "003bb34b218adb23d1a7e67932a6ba9b3c4dcc81",
+  "fail_to_pass": [
+   "test_alter_field_to_fk_dependency_other_app (migrations.test_autodetector.AutodetectorTests)"
+  ],
+  "pass_to_pass_count": 109,
+  "repo": "django/django"
+ },
+ "django__django-11749": {
+  "base_commit": "350123f38c2b6217c38d70bfbd924a9ba3df1289",
+  "fail_to_pass": [
+   "test_mutually_exclusive_group_required_options (user_commands.tests.CommandTests)"
+  ],
+  "pass_to_pass_count": 34,
+  "repo": "django/django"
+ },
+ "django__django-11790": {
+  "base_commit": "b1d6b35e146aea83b171c1b921178bbaae2795ed",
+  "fail_to_pass": [
+   "test_username_field_max_length_defaults_to_254 (auth_tests.test_forms.AuthenticationFormTest)",
+   "test_username_field_max_length_matches_user_model (auth_tests.test_forms.AuthenticationFormTest)"
+  ],
+  "pass_to_pass_count": 77,
+  "repo": "django/django"
+ },
+ "django__django-11815": {
+  "base_commit": "e02f67ef2d03d48128e7a118bf75f0418e24e8ac",
+  "fail_to_pass": [
+   "test_serialize_class_based_validators (migrations.test_writer.WriterTests)",
+   "test_serialize_enums (migrations.test_writer.WriterTests)"
+  ],
+  "pass_to_pass_count": 44,
+  "repo": "django/django"
+ },
+ "django__django-11820": {
+  "base_commit": "c2678e49759e5c4c329bff0eeca2886267005d21",
+  "fail_to_pass": [
+   "test_ordering_pointing_multiple_times_to_model_fields (invalid_models_tests.test_models.OtherModelTests)",
+   "test_ordering_pointing_to_related_model_pk (invalid_models_tests.test_models.OtherModelTests)"
+  ],
+  "pass_to_pass_count": 61,
+  "repo": "django/django"
+ },
+ "django__django-11848": {
+  "base_commit": "f0adf3b9b7a19cdee05368ff0c0c2d087f011180",
+  "fail_to_pass": [
+   "test_parsing_rfc850 (utils_tests.test_http.HttpDateProcessingTests)",
+   "test_parsing_year_less_than_70 (utils_tests.test_http.HttpDateProcessingTests)"
+  ],
+  "pass_to_pass_count": 43,
+  "repo": "django/django"
+ },
+ "django__django-11880": {
+  "base_commit": "06909fe084f87a65459a83bd69d7cdbe4fce9a7c",
+  "fail_to_pass": [
+   "test_field_deep_copy_error_messages (forms_tests.tests.test_forms.FormsTestCase)"
+  ],
+  "pass_to_pass_count": 114,
+  "repo": "django/django"
+ },
+ "django__django-11885": {
+  "base_commit": "04ac9b45a34440fa447feb6ae934687aacbfc5f4",
+  "fail_to_pass": [
+   "test_fast_delete_combined_relationships (delete.tests.FastDeleteTests)"
+  ],
+  "pass_to_pass_count": 43,
+  "repo": "django/django"
+ },
+ "django__django-11951": {
+  "base_commit": "312049091288dbba2299de8d07ea3e3311ed7238",
+  "fail_to_pass": [
+   "test_explicit_batch_size_respects_max_batch_size (bulk_create.tests.BulkCreateTests)"
+  ],
+  "pass_to_pass_count": 21,
+  "repo": "django/django"
+ },
+ "django__django-11964": {
+  "base_commit": "fc2b1cc926e34041953738e58fa6ad3053059b22",
+  "fail_to_pass": [
+   "test_str (model_enums.tests.ChoicesTests)",
+   "test_textchoices (model_enums.tests.ChoicesTests)"
+  ],
+  "pass_to_pass_count": 15,
+  "repo": "django/django"
+ },
+ "django__django-11999": {
+  "base_commit": "84633905273fc916e3d17883810d9969c03f73c2",
+  "fail_to_pass": [
+   "test_overriding_FIELD_display (model_fields.tests.GetFieldDisplayTests)"
+  ],
+  "pass_to_pass_count": 30,
+  "repo": "django/django"
+ },
+ "django__django-12039": {
+  "base_commit": "58c1acb1d6054dfec29d0f30b1033bae6ef62aec",
+  "fail_to_pass": [
+   "test_descending_columns_list_sql (indexes.tests.SchemaIndexesTests)"
+  ],
+  "pass_to_pass_count": 11,
+  "repo": "django/django"
+ },
+ "django__django-12050": {
+  "base_commit": "b93a0e34d9b9b99d41103782b7e7aeabf47517e3",
+  "fail_to_pass": [
+   "test_iterable_lookup_value (queries.test_query.TestQuery)"
+  ],
+  "pass_to_pass_count": 10,
+  "repo": "django/django"
+ },
+ "django__django-12125": {
+  "base_commit": "89d41cba392b759732ba9f1db4ff29ed47da6a56",
+  "fail_to_pass": [
+   "test_serialize_nested_class (migrations.test_writer.WriterTests)",
+   "test_serialize_numbers (migrations.test_writer.WriterTests)"
+  ],
+  "pass_to_pass_count": 45,
+  "repo": "django/django"
+ },
+ "django__django-12143": {
+  "base_commit": "5573a54d409bb98b5c5acdb308310bed02d392c2",
+  "fail_to_pass": [
+   "test_get_list_editable_queryset_with_regex_chars_in_prefix (admin_changelist.tests.ChangeListTests)"
+  ],
+  "pass_to_pass_count": 52,
+  "repo": "django/django"
+ },
+ "django__django-12155": {
+  "base_commit": "e8fcdaad5c428878d0a5d6ba820d957013f75595",
+  "fail_to_pass": [
+   "test_parse_rst_with_docstring_no_leading_line_feed (admin_docs.test_utils.TestUtils)"
+  ],
+  "pass_to_pass_count": 6,
+  "repo": "django/django"
+ },
+ "django__django-12193": {
+  "base_commit": "3fb7c12158a2402f0f80824f6778112071235803",
+  "fail_to_pass": [
+   "test_get_context_does_not_mutate_attrs (forms_tests.widget_tests.test_checkboxinput.CheckboxInputTest)"
+  ],
+  "pass_to_pass_count": 11,
+  "repo": "django/django"
+ },
+ "django__django-12209": {
+  "base_commit": "5a68f024987e6d16c2626a31bf653a2edddea579",
+  "fail_to_pass": [
+   "partial(func, *args, **keywords) - new function with partial application"
+  ],
+  "pass_to_pass_count": 0,
+  "repo": "django/django"
+ },
+ "django__django-12262": {
+  "base_commit": "69331bb851c34f05bc77e9fc24020fe6908b9cd5",
+  "fail_to_pass": [
+   "test_inclusion_tag_errors (template_tests.test_custom.InclusionTagTests)",
+   "test_inclusion_tags (template_tests.test_custom.InclusionTagTests)",
+   "test_simple_tag_errors (template_tests.test_custom.SimpleTagTests)",
+   "test_simple_tags (template_tests.test_custom.SimpleTagTests)"
+  ],
+  "pass_to_pass_count": 18,
+  "repo": "django/django"
+ },
+ "django__django-12273": {
+  "base_commit": "927c903f3cd25c817c21738328b53991c035b415",
+  "fail_to_pass": [
+   "test_create_new_instance_with_pk_equals_none (model_inheritance_regress.tests.ModelInheritanceTest)",
+   "test_create_new_instance_with_pk_equals_none_multi_inheritance (model_inheritance_regress.tests.ModelInheritanceTest)"
+  ],
+  "pass_to_pass_count": 27,
+  "repo": "django/django"
+ },
+ "django__django-12276": {
+  "base_commit": "53d8646f799de7f92ab9defe9dc56c6125448102",
+  "fail_to_pass": [
+   "test_filefield_with_fileinput_required (forms_tests.tests.test_forms.FormsTestCase)",
+   "test_use_required_attribute (forms_tests.widget_tests.test_fileinput.FileInputTest)"
+  ],
+  "pass_to_pass_count": 117,
+  "repo": "django/django"
+ },
+ "django__django-12304": {
+  "base_commit": "4c1b401e8250f9f520b3c7dc369554477ce8b15a",
+  "fail_to_pass": [
+   "test_templates (model_enums.tests.ChoicesTests)"
+  ],
+  "pass_to_pass_count": 17,
+  "repo": "django/django"
+ },
+ "django__django-12308": {
+  "base_commit": "2e0f04507b17362239ba49830d26fec504d46978",
+  "fail_to_pass": [
+   "test_json_display_for_field (admin_utils.tests.UtilsTests)",
+   "test_label_for_field (admin_utils.tests.UtilsTests)"
+  ],
+  "pass_to_pass_count": 20,
+  "repo": "django/django"
+ },
+ "django__django-12325": {
+  "base_commit": "29c126bb349526b5f1cd78facbe9f25906f18563",
+  "fail_to_pass": [
+   "test_clash_parent_link (invalid_models_tests.test_relative_fields.ComplexClashTests)",
+   "test_onetoone_with_parent_model (invalid_models_tests.test_models.OtherModelTests)"
+  ],
+  "pass_to_pass_count": 201,
+  "repo": "django/django"
+ },
+ "django__django-12406": {
+  "base_commit": "335c9c94acf263901fb023404408880245b0c4b4",
+  "fail_to_pass": [
+   "test_choices_radio_blank (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_clean_model_instance (model_forms.test_modelchoicefield.ModelChoiceFieldTests)",
+   "test_non_blank_foreign_key_with_radio (model_forms.tests.ModelFormBaseTest)"
+  ],
+  "pass_to_pass_count": 165,
+  "repo": "django/django"
+ },
+ "django__django-12419": {
+  "base_commit": "7fa1a93c6c8109010a6ff3f604fda83b604e0e97",
+  "fail_to_pass": [
+   "test_middleware_headers (project_template.test_settings.TestStartProjectSettings)"
+  ],
+  "pass_to_pass_count": 0,
+  "repo": "django/django"
+ },
+ "django__django-12663": {
+  "base_commit": "fa5e7e46d875d4143510944f19d79df7b1739bab",
+  "fail_to_pass": [
+   "test_subquery_filter_by_lazy (expressions.tests.BasicExpressionsTests)"
+  ],
+  "pass_to_pass_count": 135,
+  "repo": "django/django"
+ },
+ "django__django-12708": {
+  "base_commit": "447980e72ac01da1594dd3373a03ba40b7ee6f80",
+  "fail_to_pass": [
+   "test_alter_index_together_remove_with_unique_together (migrations.test_operations.OperationTests)"
+  ],
+  "pass_to_pass_count": 101,
+  "repo": "django/django"
+ },
+ "django__django-12713": {
+  "base_commit": "5b884d45ac5b76234eca614d90c83b347294c332",
+  "fail_to_pass": [
+   "test_formfield_overrides_m2m_filter_widget (admin_widgets.tests.AdminFormfieldForDBFieldTests)"
+  ],
+  "pass_to_pass_count": 58,
+  "repo": "django/django"
+ },
+ "django__django-12741": {
+  "base_commit": "537d422942b53bc0a2b6a51968f379c0de07793c",
+  "fail_to_pass": [
+   "test_execute_sql_flush_statements (backends.base.test_operations.SqlFlushTests)",
+   "test_sequence_name_length_limits_flush (backends.tests.LongNameTest)"
+  ],
+  "pass_to_pass_count": 67,
+  "repo": "django/django"
+ },
+ "django__django-12754": {
+  "base_commit": "18759b2209ff556aed7f20d83cbf23e3d234e41c",
+  "fail_to_pass": [
+   "test_add_model_with_field_removed_from_base_model (migrations.test_autodetector.AutodetectorTests)"
+  ],
+  "pass_to_pass_count": 112,
+  "repo": "django/django"
+ },
+ "django__django-12774": {
+  "base_commit": "67f9d076cfc1858b94f9ed6d1a5ce2327dcc8d0d",
+  "fail_to_pass": [
+   "test_in_bulk_meta_constraint (lookup.tests.LookupTests)"
+  ],
+  "pass_to_pass_count": 41,
+  "repo": "django/django"
+ },
+ "django__django-12858": {
+  "base_commit": "f2051eb8a7febdaaa43bd33bf5a6108c5f428e59",
+  "fail_to_pass": [
+   "test_ordering_pointing_to_lookup_not_transform (invalid_models_tests.test_models.OtherModelTests)"
+  ],
+  "pass_to_pass_count": 73,
+  "repo": "django/django"
+ },
+ "django__django-12965": {
+  "base_commit": "437196da9a386bd4cc62b0ce3f2de4aba468613d",
+  "fail_to_pass": [
+   "test_fast_delete_all (delete.tests.FastDeleteTests)"
+  ],
+  "pass_to_pass_count": 52,
+  "repo": "django/django"
+ },
+ "django__django-13012": {
+  "base_commit": "22a59c01c00cf9fbefaee0e8e67fab82bbaf1fd2",
+  "fail_to_pass": [
+   "test_empty_group_by (expressions.tests.ExpressionWrapperTests)",
+   "test_non_empty_group_by (expressions.tests.ExpressionWrapperTests)"
+  ],
+  "pass_to_pass_count": 137,
+  "repo": "django/django"
+ },
+ "django__django-13023": {
+  "base_commit": "f83b44075dafa429d59e8755aa47e15577cc49f9",
+  "fail_to_pass": [
+   "test_invalid_value (model_fields.test_decimalfield.DecimalFieldTests)",
+   "test_lookup_really_big_value (model_fields.test_decimalfield.DecimalFieldTests)"
+  ],
+  "pass_to_pass_count": 9,
+  "repo": "django/django"
+ },
+ "django__django-13028": {
+  "base_commit": "78ad4b4b0201003792bfdbf1a7781cbc9ee03539",
+  "fail_to_pass": [
+   "test_field_with_filterable (queries.tests.Queries1Tests)",
+   "test_ticket8439 (queries.tests.Queries1Tests)"
+  ],
+  "pass_to_pass_count": 276,
+  "repo": "django/django"
+ },
+ "django__django-13033": {
+  "base_commit": "a59de6e89e8dc1f3e71c9a5a5bbceb373ea5247e",
+  "fail_to_pass": [
+   "test_order_by_self_referential_fk (ordering.tests.OrderingTests)"
+  ],
+  "pass_to_pass_count": 26,
+  "repo": "django/django"
+ },
+ "django__django-13089": {
+  "base_commit": "27c09043da52ca1f02605bf28600bfd5ace95ae4",
+  "fail_to_pass": [
+   "test_cull_delete_when_store_empty (cache.tests.DBCacheTests)",
+   "test_cull_delete_when_store_empty (cache.tests.DBCacheWithTimeZoneTests)"
+  ],
+  "pass_to_pass_count": 352,
+  "repo": "django/django"
+ },
+ "django__django-13109": {
+  "base_commit": "fbe82f82555bc25dccb476c749ca062f0b522be3",
+  "fail_to_pass": [
+   "test_FK_validates_using_base_manager (validation.tests.BaseModelValidationTests)",
+   "test_validate_foreign_key_to_model_with_overridden_manager (model_forms.tests.ModelFormBasicTests)"
+  ],
+  "pass_to_pass_count": 170,
+  "repo": "django/django"
+ },
+ "django__django-13112": {
+  "base_commit": "09914ccf688974e068941f55412b930729bafa06",
+  "fail_to_pass": [
+   "test_reference_mixed_case_app_label (migrations.test_state.StateTests)"
+  ],
+  "pass_to_pass_count": 63,
+  "repo": "django/django"
+ },
+ "django__django-13121": {
+  "base_commit": "ec5aa2161d8015a3fe57dcbbfe14200cd18f0a16",
+  "fail_to_pass": [
+   "test_duration_expressions (expressions.tests.FTimeDeltaTests)"
+  ],
+  "pass_to_pass_count": 168,
+  "repo": "django/django"
+ },
+ "django__django-13128": {
+  "base_commit": "2d67222472f80f251607ae1b720527afceba06ad",
+  "fail_to_pass": [
+   "test_date_case_subtraction (expressions.tests.FTimeDeltaTests)",
+   "test_date_subquery_subtraction (expressions.tests.FTimeDeltaTests)",
+   "test_date_subtraction (expressions.tests.FTimeDeltaTests)",
+   "test_datetime_subquery_subtraction (expressions.tests.FTimeDeltaTests)",
+   "test_datetime_subtraction_microseconds (expressions.tests.FTimeDeltaTests)",
+   "test_time_subquery_subtraction (expressions.tests.FTimeDeltaTests)",
+   "test_time_subtraction (expressions.tests.FTimeDeltaTests)"
+  ],
+  "pass_to_pass_count": 134,
+  "repo": "django/django"
+ },
+ "django__django-13158": {
+  "base_commit": "7af8f4127397279d19ef7c7899e93018274e2f9b",
+  "fail_to_pass": [
+   "test_union_none (queries.test_qs_combinators.QuerySetSetOperationTests)"
+  ],
+  "pass_to_pass_count": 29,
+  "repo": "django/django"
+ },
+ "django__django-13195": {
+  "base_commit": "156a2138db20abc89933121e4ff2ee2ce56a173a",
+  "fail_to_pass": [
+   "test_cookie_setings (messages_tests.test_cookie.CookieTests)",
+   "test_delete_cookie_samesite (responses.test_cookie.DeleteCookieTests)",
+   "test_delete_cookie_secure_samesite_none (responses.test_cookie.DeleteCookieTests)",
+   "test_session_delete_on_end (sessions_tests.tests.SessionMiddlewareTests)",
+   "test_session_delete_on_end_with_custom_domain_and_path (sessions_tests.tests.SessionMiddlewareTests)"
+  ],
+  "pass_to_pass_count": 382,
+  "repo": "django/django"
+ },
+ "django__django-13212": {
+  "base_commit": "f4e93919e4608cfc50849a1f764fd856e0917401",
+  "fail_to_pass": [
+   "test_value_placeholder_with_char_field (forms_tests.tests.test_validators.ValidatorCustomMessageTests)",
+   "test_value_placeholder_with_decimal_field (forms_tests.tests.test_validators.ValidatorCustomMessageTests)",
+   "test_value_placeholder_with_file_field (forms_tests.tests.test_validators.ValidatorCustomMessageTests)",
+   "test_value_placeholder_with_integer_field (forms_tests.tests.test_validators.ValidatorCustomMessageTests)",
+   "test_value_placeholder_with_null_character (forms_tests.tests.test_validators.ValidatorCustomMessageTests)"
+  ],
+  "pass_to_pass_count": 2,
+  "repo": "django/django"
+ },
+ "django__django-13279": {
+  "base_commit": "6e9c5ee88fc948e05b4a7d9f82a8861ed2b0343d",
+  "fail_to_pass": [
+   "test_default_hashing_algorith_legacy_decode (sessions_tests.tests.CacheDBSessionTests)",
+   "test_default_hashing_algorith_legacy_decode (sessions_tests.tests.CacheDBSessionWithTimeZoneTests)",
+   "test_default_hashing_algorith_legacy_decode (sessions_tests.tests.CacheSessionTests)",
+   "test_default_hashing_algorith_legacy_decode (sessions_tests.tests.CookieSessionTests)",
+   "test_default_hashing_algorith_legacy_decode (sessions_tests.tests.CustomDatabaseSessionTests)",
+   "test_default_hashing_algorith_legacy_decode (sessions_tests.tests.DatabaseSessionTests)",
+   "test_default_hashing_algorith_legacy_decode (sessions_tests.tests.DatabaseSessionWithTimeZoneTests)",
+   "test_default_hashing_algorith_legacy_decode (sessions_tests.tests.FileSessionPathLibTests)",
+   "test_default_hashing_algorith_legacy_decode (sessions_tests.tests.FileSessionTests)"
+  ],
+  "pass_to_pass_count": 346,
+  "repo": "django/django"
+ },
+ "django__django-13297": {
+  "base_commit": "8954f255bbf5f4ee997fd6de62cb50fc9b5dd697",
+  "fail_to_pass": [
+   "test_template_params_filtering (generic_views.test_base.DeprecationTests)"
+  ],
+  "pass_to_pass_count": 52,
+  "repo": "django/django"
+ },
+ "django__django-13315": {
+  "base_commit": "36bc47069ce071e80c8129500de3b8664d2058a7",
+  "fail_to_pass": [
+   "test_limit_choices_to_no_duplicates (model_forms.tests.LimitChoicesToTests)"
+  ],
+  "pass_to_pass_count": 146,
+  "repo": "django/django"
+ },
+ "django__django-13343": {
+  "base_commit": "ece18207cbb64dd89014e279ac636a6c9829828e",
+  "fail_to_pass": [
+   "test_deconstruction (file_storage.tests.FieldCallableFileStorageTests)"
+  ],
+  "pass_to_pass_count": 130,
+  "repo": "django/django"
+ },
+ "django__django-13344": {
+  "base_commit": "e39e727ded673e74016b5d3658d23cbe20234d11",
+  "fail_to_pass": [
+   "test_coroutine (deprecation.test_middleware_mixin.MiddlewareMixinTests)",
+   "test_deprecation (deprecation.test_middleware_mixin.MiddlewareMixinTests)"
+  ],
+  "pass_to_pass_count": 356,
+  "repo": "django/django"
+ },
+ "django__django-13346": {
+  "base_commit": "9c92924cd5d164701e2514e1c2d6574126bd7cc2",
+  "fail_to_pass": [
+   "test_key_in (model_fields.test_jsonfield.TestQuerying)",
+   "test_key_iregex (model_fields.test_jsonfield.TestQuerying)"
+  ],
+  "pass_to_pass_count": 65,
+  "repo": "django/django"
+ },
+ "django__django-13363": {
+  "base_commit": "76e0151ea0e0f56dca66cee846a78b89346d2c4c",
+  "fail_to_pass": [
+   "test_trunc_timezone_applied_before_truncation (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)"
+  ],
+  "pass_to_pass_count": 76,
+  "repo": "django/django"
+ },
+ "django__django-13401": {
+  "base_commit": "453967477e3ddae704cd739eac2449c0e13d464c",
+  "fail_to_pass": [
+   "Field instances from abstract models are not equal."
+  ],
+  "pass_to_pass_count": 32,
+  "repo": "django/django"
+ },
+ "django__django-13406": {
+  "base_commit": "84609b3205905097d7d3038d32e6101f012c0619",
+  "fail_to_pass": [
+   "test_annotation_values (queryset_pickle.tests.PickleabilityTestCase)",
+   "test_annotation_values_list (queryset_pickle.tests.PickleabilityTestCase)",
+   "test_annotation_with_callable_default (queryset_pickle.tests.PickleabilityTestCase)"
+  ],
+  "pass_to_pass_count": 32,
+  "repo": "django/django"
+ },
+ "django__django-13410": {
+  "base_commit": "580a4341cb0b4cbfc215a70afc004875a7e815f4",
+  "fail_to_pass": [
+   "test_exclusive_lock (files.tests.FileTests)",
+   "test_shared_lock (files.tests.FileTests)"
+  ],
+  "pass_to_pass_count": 40,
+  "repo": "django/django"
+ },
+ "django__django-13417": {
+  "base_commit": "71ae1ab0123582cc5bfe0f7d5f4cc19a9412f396",
+  "fail_to_pass": [
+   "test_annotated_default_ordering (queries.tests.QuerysetOrderedTests)",
+   "test_annotated_values_default_ordering (queries.tests.QuerysetOrderedTests)"
+  ],
+  "pass_to_pass_count": 280,
+  "repo": "django/django"
+ },
+ "django__django-13449": {
+  "base_commit": "2a55431a5678af52f669ffe7dff3dd0bd21727f8",
+  "fail_to_pass": [
+   "test_lag_decimalfield (expressions_window.tests.WindowFunctionTests)"
+  ],
+  "pass_to_pass_count": 46,
+  "repo": "django/django"
+ },
+ "django__django-13512": {
+  "base_commit": "b79088306513d5ed76d31ac40ab3c15f858946ea",
+  "fail_to_pass": [
+   "test_json_display_for_field (admin_utils.tests.UtilsTests)",
+   "test_label_for_field (admin_utils.tests.UtilsTests)",
+   "test_prepare_value (forms_tests.field_tests.test_jsonfield.JSONFieldTest)"
+  ],
+  "pass_to_pass_count": 32,
+  "repo": "django/django"
+ },
+ "django__django-13513": {
+  "base_commit": "6599608c4d0befdcb820ddccce55f183f247ae4f",
+  "fail_to_pass": [
+   "test_innermost_exception_without_traceback (view_tests.tests.test_debug.ExceptionReporterTests)"
+  ],
+  "pass_to_pass_count": 83,
+  "repo": "django/django"
+ },
+ "django__django-13516": {
+  "base_commit": "b7da588e883e12b8ac3bb8a486e654e30fc1c6c8",
+  "fail_to_pass": [
+   "test_outputwrapper_flush (user_commands.tests.CommandTests)"
+  ],
+  "pass_to_pass_count": 43,
+  "repo": "django/django"
+ },
+ "django__django-13551": {
+  "base_commit": "7f9e4524d6b23424cf44fbe1bf1f4e70f6bb066e",
+  "fail_to_pass": [
+   "Updating the user email address invalidates the token.",
+   "test_token_with_different_secret (auth_tests.test_tokens.TokenGeneratorTest)"
+  ],
+  "pass_to_pass_count": 56,
+  "repo": "django/django"
+ },
+ "django__django-13568": {
+  "base_commit": "ede9fac75807fe5810df66280a60e7068cc97e4a",
+  "fail_to_pass": [
+   "test_username_unique_with_model_constraint (auth_tests.test_checks.UserModelChecksTests)"
+  ],
+  "pass_to_pass_count": 13,
+  "repo": "django/django"
+ },
+ "django__django-13569": {
+  "base_commit": "257f8495d6c93e30ab0f52af4c488d7344bcf112",
+  "fail_to_pass": [
+   "Random() is not included in the GROUP BY when used for ordering."
+  ],
+  "pass_to_pass_count": 66,
+  "repo": "django/django"
+ },
+ "django__django-13590": {
+  "base_commit": "755dbf39fcdc491fe9b588358303e259c7750be4",
+  "fail_to_pass": [
+   "test_range_lookup_namedtuple (expressions.tests.IterableLookupInnerExpressionsTests)"
+  ],
+  "pass_to_pass_count": 145,
+  "repo": "django/django"
+ },
+ "django__django-13658": {
+  "base_commit": "0773837e15bb632afffb6848a58c59a791008fa1",
+  "fail_to_pass": [
+   "test_program_name_from_argv (admin_scripts.tests.ExecuteFromCommandLine)"
+  ],
+  "pass_to_pass_count": 181,
+  "repo": "django/django"
+ },
+ "django__django-13670": {
+  "base_commit": "c448e614c60cc97c6194c62052363f4f501e0953",
+  "fail_to_pass": [
+   "test_year_before_1000 (utils_tests.test_dateformat.DateFormatTests)"
+  ],
+  "pass_to_pass_count": 17,
+  "repo": "django/django"
+ },
+ "django__django-13741": {
+  "base_commit": "d746f28949c009251a8741ba03d156964050717f",
+  "fail_to_pass": [
+   "test_readonly_field_has_changed (auth_tests.test_forms.ReadOnlyPasswordHashTest)"
+  ],
+  "pass_to_pass_count": 82,
+  "repo": "django/django"
+ },
+ "django__django-13786": {
+  "base_commit": "bb64b99b78a579cb2f6178011a4cf9366e634438",
+  "fail_to_pass": [
+   "test_create_model_and_remove_model_options (migrations.test_optimizer.OptimizerTests)"
+  ],
+  "pass_to_pass_count": 33,
+  "repo": "django/django"
+ },
+ "django__django-13794": {
+  "base_commit": "fe886eee36be8022f34cfe59aa61ff1c21fe01d9",
+  "fail_to_pass": [
+   "test_add08 (template_tests.filter_tests.test_add.AddTests)",
+   "test_add09 (template_tests.filter_tests.test_add.AddTests)",
+   "test_lazy_add (utils_tests.test_functional.FunctionalTests)"
+  ],
+  "pass_to_pass_count": 24,
+  "repo": "django/django"
+ },
+ "django__django-13807": {
+  "base_commit": "89fc144dedc737a79929231438f035b1d4a993c9",
+  "fail_to_pass": [
+   "test_check_constraints_sql_keywords (backends.tests.FkConstraintsTests)"
+  ],
+  "pass_to_pass_count": 38,
+  "repo": "django/django"
+ },
+ "django__django-13809": {
+  "base_commit": "bef6f7584280f1cc80e5e2d80b7ad073a93d26ec",
+  "fail_to_pass": [
+   "test_skip_checks (admin_scripts.tests.ManageRunserver)"
+  ],
+  "pass_to_pass_count": 245,
+  "repo": "django/django"
+ },
+ "django__django-13810": {
+  "base_commit": "429d089d0a8fbd400e0c010708df4f0d16218970",
+  "fail_to_pass": [
+   "test_async_and_sync_middleware_chain_async_call (middleware_exceptions.tests.MiddlewareNotUsedTests)"
+  ],
+  "pass_to_pass_count": 30,
+  "repo": "django/django"
+ },
+ "django__django-13820": {
+  "base_commit": "98ad327864aed8df245fd19ea9d2743279e11643",
+  "fail_to_pass": [
+   "test_loading_package_without__file__ (migrations.test_loader.LoaderTests)"
+  ],
+  "pass_to_pass_count": 24,
+  "repo": "django/django"
+ },
+ "django__django-13821": {
+  "base_commit": "e64c1d8055a3e476122633da141f16b50f0c4a2d",
+  "fail_to_pass": [
+   "test_check_sqlite_version (backends.sqlite.tests.Tests)"
+  ],
+  "pass_to_pass_count": 14,
+  "repo": "django/django"
+ },
+ "django__django-13837": {
+  "base_commit": "415f50298f97fb17f841a9df38d995ccf347dfcc",
+  "fail_to_pass": [
+   "test_run_as_non_django_module (utils_tests.test_autoreload.TestChildArguments)"
+  ],
+  "pass_to_pass_count": 57,
+  "repo": "django/django"
+ },
+ "django__django-13925": {
+  "base_commit": "0c42cdf0d2422f4c080e93594d5d15381d6e955e",
+  "fail_to_pass": [
+   "test_auto_created_inherited_pk (check_framework.test_model_checks.ModelDefaultAutoFieldTests)",
+   "test_explicit_inherited_pk (check_framework.test_model_checks.ModelDefaultAutoFieldTests)"
+  ],
+  "pass_to_pass_count": 24,
+  "repo": "django/django"
+ },
+ "django__django-13933": {
+  "base_commit": "42e8cf47c7ee2db238bf91197ea398126c546741",
+  "fail_to_pass": [
+   "test_modelchoicefield_value_placeholder (forms_tests.tests.test_error_messages.ModelChoiceFieldErrorMessagesTestCase)"
+  ],
+  "pass_to_pass_count": 19,
+  "repo": "django/django"
+ },
+ "django__django-13964": {
+  "base_commit": "f39634ff229887bf7790c069d0c411b38494ca38",
+  "fail_to_pass": [
+   "test_save_fk_after_parent_with_non_numeric_pk_set_on_child (many_to_one.tests.ManyToOneTests)"
+  ],
+  "pass_to_pass_count": 36,
+  "repo": "django/django"
+ },
+ "django__django-14007": {
+  "base_commit": "619f26d2895d121854b1bed1b535d42b722e2eba",
+  "fail_to_pass": [
+   "test_auto_field_subclass_create (custom_pk.tests.CustomPKTests)"
+  ],
+  "pass_to_pass_count": 12,
+  "repo": "django/django"
+ },
+ "django__django-14011": {
+  "base_commit": "e4430f22c8e3d29ce5d9d0263fba57121938d06d",
+  "fail_to_pass": [
+   "A HTTP 1.1 server is supposed to support keep-alive. Since our",
+   "Data written to the database by a view can be read.",
+   "Each LiveServerTestCase binds to a unique port or fails to start a",
+   "Fixtures are properly loaded and visible to the live server thread.",
+   "Launched server serves with HTTP 1.1.",
+   "LiveServerTestCase reports a 404 status code when HTTP client",
+   "LiveServerTestCase.port customizes the server's port.",
+   "See `test_closes_connection_without_content_length` for details. This",
+   "test_404 (servers.tests.LiveServerViews)",
+   "test_check_model_instance_from_subview (servers.tests.LiveServerThreadedTests)",
+   "test_environ (servers.tests.LiveServerViews)",
+   "test_keep_alive_connection_clears_previous_request_data (servers.tests.LiveServerViews)",
+   "test_live_server_url_is_class_property (servers.tests.LiveServerAddress)",
+   "test_media_files (servers.tests.LiveServerViews)",
+   "test_static_files (servers.tests.LiveServerViews)",
+   "test_view (servers.tests.LiveServerViews)",
+   "test_view_calls_subview (servers.tests.LiveServerThreadedTests)"
+  ],
+  "pass_to_pass_count": 2,
+  "repo": "django/django"
+ },
+ "django__django-14017": {
+  "base_commit": "466920f6d726eee90d5566e0a9948e92b33a122e",
+  "fail_to_pass": [
+   "test_boolean_expression_combined (expressions.tests.BasicExpressionsTests)",
+   "test_boolean_expression_combined_with_empty_Q (expressions.tests.BasicExpressionsTests)"
+  ],
+  "pass_to_pass_count": 147,
+  "repo": "django/django"
+ },
+ "django__django-14034": {
+  "base_commit": "db1fc5cd3c5d36cdb5d0fe4404efd6623dd3e8fb",
+  "fail_to_pass": [
+   "test_render_required_attributes (forms_tests.field_tests.test_multivaluefield.MultiValueFieldTest)"
+  ],
+  "pass_to_pass_count": 12,
+  "repo": "django/django"
+ },
+ "django__django-14053": {
+  "base_commit": "179ee13eb37348cd87169a198aec18fedccc8668",
+  "fail_to_pass": [
+   "post_processing behaves correctly."
+  ],
+  "pass_to_pass_count": 31,
+  "repo": "django/django"
+ },
+ "django__django-14089": {
+  "base_commit": "d01709aae21de9cd2565b9c52f32732ea28a2d98",
+  "fail_to_pass": [
+   "test_reversed (utils_tests.test_datastructures.OrderedSetTests)"
+  ],
+  "pass_to_pass_count": 43,
+  "repo": "django/django"
+ },
+ "django__django-14122": {
+  "base_commit": "bc04941bf811d1ea2c79fb7fc20457ed2c7e3410",
+  "fail_to_pass": [
+   "test_default_ordering_does_not_affect_group_by (ordering.tests.OrderingTests)"
+  ],
+  "pass_to_pass_count": 26,
+  "repo": "django/django"
+ },
+ "django__django-14140": {
+  "base_commit": "45814af6197cfd8f4dc72ee43b90ecde305a1d5a",
+  "fail_to_pass": [
+   "test_boolean_expression_combined_with_empty_Q (expressions.tests.BasicExpressionsTests)",
+   "test_deconstruct (queries.test_q.QTests)",
+   "test_deconstruct_boolean_expression (queries.test_q.QTests)",
+   "test_deconstruct_negated (queries.test_q.QTests)"
+  ],
+  "pass_to_pass_count": 199,
+  "repo": "django/django"
+ },
+ "django__django-14155": {
+  "base_commit": "2f13c476abe4ba787b6cb71131818341911f43cc",
+  "fail_to_pass": [
+   "test_repr (urlpatterns_reverse.tests.ResolverMatchTests)",
+   "test_repr_functools_partial (urlpatterns_reverse.tests.ResolverMatchTests)",
+   "test_resolver_match_on_request (urlpatterns_reverse.tests.ResolverMatchTests)"
+  ],
+  "pass_to_pass_count": 89,
+  "repo": "django/django"
+ },
+ "django__django-14170": {
+  "base_commit": "6efc35b4fe3009666e56a60af0675d7d532bf4ff",
+  "fail_to_pass": [
+   "test_extract_iso_year_func_boundaries (db_functions.datetime.test_extract_trunc.DateFunctionTests)",
+   "test_extract_iso_year_func_boundaries (db_functions.datetime.test_extract_trunc.DateFunctionWithTimeZoneTests)"
+  ],
+  "pass_to_pass_count": 76,
+  "repo": "django/django"
+ },
+ "django__django-14238": {
+  "base_commit": "30e123ed351317b7527f632b3b7dc4e81e850449",
+  "fail_to_pass": [
+   "test_default_auto_field_setting_bigautofield_subclass (model_options.test_default_pk.TestDefaultPK)",
+   "test_issubclass_of_autofield (model_fields.test_autofield.AutoFieldInheritanceTests)"
+  ],
+  "pass_to_pass_count": 39,
+  "repo": "django/django"
+ },
+ "django__django-14311": {
+  "base_commit": "5a8e8f80bb82a867eab7e4d9d099f21d0a976d22",
+  "fail_to_pass": [
+   "test_run_as_non_django_module_non_package (utils_tests.test_autoreload.TestChildArguments)"
+  ],
+  "pass_to_pass_count": 59,
+  "repo": "django/django"
+ },
+ "django__django-14315": {
+  "base_commit": "187118203197801c6cb72dc8b06b714b23b6dd3d",
+  "fail_to_pass": [
+   "test_accent (dbshell.test_postgresql.PostgreSqlDbshellCommandTestCase)",
+   "test_basic (dbshell.test_postgresql.PostgreSqlDbshellCommandTestCase)",
+   "test_column (dbshell.test_postgresql.PostgreSqlDbshellCommandTestCase)",
+   "test_crash_password_does_not_leak (dbshell.test_postgresql.PostgreSqlDbshellCommandTestCase)",
+   "test_nopass (dbshell.test_postgresql.PostgreSqlDbshellCommandTestCase)",
+   "test_parameters (dbshell.test_postgresql.PostgreSqlDbshellCommandTestCase)",
+   "test_passfile (dbshell.test_postgresql.PostgreSqlDbshellCommandTestCase)",
+   "test_runshell_use_environ (backends.base.test_client.SimpleDatabaseClientTests)",
+   "test_service (dbshell.test_postgresql.PostgreSqlDbshellCommandTestCase)",
+   "test_settings_to_cmd_args_env (backends.base.test_client.SimpleDatabaseClientTests)",
+   "test_ssl_certificate (dbshell.test_postgresql.PostgreSqlDbshellCommandTestCase)"
+  ],
+  "pass_to_pass_count": 0,
+  "repo": "django/django"
+ },
+ "django__django-14349": {
+  "base_commit": "a708f39ce67af174df90c5b5e50ad1976cec7cb8",
+  "fail_to_pass": [
+   "test_validators (validators.tests.TestValidators)"
+  ],
+  "pass_to_pass_count": 18,
+  "repo": "django/django"
+ },
+ "django__django-14351": {
+  "base_commit": "06fd4df41afb5aa1d681b853c3c08d8c688ca3a5",
+  "fail_to_pass": [
+   "test_having_subquery_select (aggregation_regress.tests.AggregationTests)"
+  ],
+  "pass_to_pass_count": 58,
+  "repo": "django/django"
+ },
+ "django__django-14373": {
+  "base_commit": "b1a4b1f0bdf05adbd3dc4dde14228e68da54c1a3",
+  "fail_to_pass": [
+   "test_Y_format_year_before_1000 (utils_tests.test_dateformat.DateFormatTests)"
+  ],
+  "pass_to_pass_count": 19,
+  "repo": "django/django"
+ },
+ "django__django-14376": {
+  "base_commit": "d06c5b358149c02a62da8a5469264d05f29ac659",
+  "fail_to_pass": [
+   "test_options_non_deprecated_keys_preferred (dbshell.test_mysql.MySqlDbshellCommandTestCase)",
+   "test_options_override_settings_proper_values (dbshell.test_mysql.MySqlDbshellCommandTestCase)",
+   "test_parameters (dbshell.test_mysql.MySqlDbshellCommandTestCase)"
+  ],
+  "pass_to_pass_count": 6,
+  "repo": "django/django"
+ },
+ "django__django-14404": {
+  "base_commit": "de32fe83a2e4a20887972c69a0693b94eb25a88b",
+  "fail_to_pass": [
+   "test_missing_slash_append_slash_true_force_script_name (admin_views.tests.AdminSiteFinalCatchAllPatternTests)",
+   "test_missing_slash_append_slash_true_script_name (admin_views.tests.AdminSiteFinalCatchAllPatternTests)"
+  ],
+  "pass_to_pass_count": 323,
+  "repo": "django/django"
+ },
+ "django__django-14434": {
+  "base_commit": "5e04e84d67da8163f365e9f5fcd169e2630e2873",
+  "fail_to_pass": [
+   "test_unique_constraint (schema.tests.SchemaTests)"
+  ],
+  "pass_to_pass_count": 133,
+  "repo": "django/django"
+ },
+ "django__django-14493": {
+  "base_commit": "7272e1963ffdf39c1d4fe225d5425a45dd095d11",
+  "fail_to_pass": [
+   "test_collectstatistic_no_post_process_replaced_paths (staticfiles_tests.test_storage.TestCollectionNoPostProcessReplacedPaths)"
+  ],
+  "pass_to_pass_count": 36,
+  "repo": "django/django"
+ },
+ "django__django-14500": {
+  "base_commit": "8c3bd0b708b488a1f6e8bd8cc6b96569904605be",
+  "fail_to_pass": [
+   "test_migrate_marks_replacement_unapplied (migrations.test_executor.ExecutorTests)"
+  ],
+  "pass_to_pass_count": 21,
+  "repo": "django/django"
+ },
+ "django__django-14534": {
+  "base_commit": "910ecd1b8df7678f45c3d507dde6bcb1faafa243",
+  "fail_to_pass": [
+   "If auto_id is provided when initializing the form, the generated ID in",
+   "test_iterable_boundfield_select (forms_tests.tests.test_forms.FormsTestCase)"
+  ],
+  "pass_to_pass_count": 118,
+  "repo": "django/django"
+ },
+ "django__django-14539": {
+  "base_commit": "6a5ef557f80a8eb6a758ebe99c8bb477ca47459e",
+  "fail_to_pass": [
+   "test_urlize (utils_tests.test_html.TestUtilsHtml)",
+   "test_urlize_unchanged_inputs (utils_tests.test_html.TestUtilsHtml)"
+  ],
+  "pass_to_pass_count": 14,
+  "repo": "django/django"
+ },
+ "django__django-14559": {
+  "base_commit": "d79be3ed39b76d3e34431873eec16f6dd354ab17",
+  "fail_to_pass": [
+   "test_empty_objects (queries.test_bulk_update.BulkUpdateTests)",
+   "test_large_batch (queries.test_bulk_update.BulkUpdateTests)",
+   "test_updated_rows_when_passing_duplicates (queries.test_bulk_update.BulkUpdateTests)"
+  ],
+  "pass_to_pass_count": 23,
+  "repo": "django/django"
+ },
+ "django__django-14580": {
+  "base_commit": "36fa071d6ebd18a61c4d7f1b5c9d17106134bd44",
+  "fail_to_pass": [
+   "test_serialize_type_model (migrations.test_writer.WriterTests)"
+  ],
+  "pass_to_pass_count": 49,
+  "repo": "django/django"
+ },
+ "django__django-14608": {
+  "base_commit": "7f33c1e22dbc34a7afae7967783725b10f1f13b1",
+  "fail_to_pass": [
+   "If validate_max is set and max_num is less than TOTAL_FORMS in the",
+   "If validate_min is set and min_num is more than TOTAL_FORMS in the",
+   "test_non_form_errors (forms_tests.tests.test_formsets.FormsFormsetTestCase)",
+   "test_non_form_errors_is_errorlist (admin_views.tests.AdminViewListEditable)"
+  ],
+  "pass_to_pass_count": 394,
+  "repo": "django/django"
+ },
+ "django__django-14631": {
+  "base_commit": "84400d2e9db7c51fee4e9bb04c028f665b8e7624",
+  "fail_to_pass": [
+   "Cleaning a form with a disabled DateTimeField and callable initial",
+   "The cleaned value for a form with a disabled DateTimeField and callable"
+  ],
+  "pass_to_pass_count": 117,
+  "repo": "django/django"
+ },
+ "django__django-14672": {
+  "base_commit": "00ea883ef56fb5e092cbe4a6f7ff2e7470886ac4",
+  "fail_to_pass": [
+   "Relations with intermediary tables with multiple FKs",
+   "test_add_on_m2m_with_intermediate_model (m2m_through.tests.M2mThroughTests)",
+   "test_add_on_m2m_with_intermediate_model_callable_through_default (m2m_through.tests.M2mThroughTests)",
+   "test_add_on_m2m_with_intermediate_model_value_required (m2m_through.tests.M2mThroughTests)",
+   "test_add_on_m2m_with_intermediate_model_value_required_fails (m2m_through.tests.M2mThroughTests)",
+   "test_add_on_reverse_m2m_with_intermediate_model (m2m_through.tests.M2mThroughTests)",
+   "test_add_on_symmetrical_m2m_with_intermediate_model (m2m_through.tests.M2mThroughReferentialTests)",
+   "test_check_constraint_pointing_to_fk (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_check_constraint_pointing_to_joined_fields (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_check_constraint_pointing_to_joined_fields_complex_check (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_check_constraint_pointing_to_m2m_field (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_check_constraint_pointing_to_missing_field (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_check_constraint_pointing_to_non_local_field (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_check_constraint_pointing_to_pk (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_check_constraint_pointing_to_reverse_fk (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_check_constraint_pointing_to_reverse_o2o (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_check_constraints (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_check_constraints_required_db_features (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_check_jsonfield (invalid_models_tests.test_models.JSONFieldTests)",
+   "test_check_jsonfield_required_db_features (invalid_models_tests.test_models.JSONFieldTests)",
+   "test_choices (m2m_through.tests.M2mThroughToFieldsTests)",
+   "test_clear_on_reverse_removes_all_the_m2m_relationships (m2m_through.tests.M2mThroughTests)",
+   "test_clear_removes_all_the_m2m_relationships (m2m_through.tests.M2mThroughTests)",
+   "test_create_on_m2m_with_intermediate_model (m2m_through.tests.M2mThroughTests)",
+   "test_create_on_m2m_with_intermediate_model_callable_through_default (m2m_through.tests.M2mThroughTests)",
+   "test_create_on_m2m_with_intermediate_model_value_required (m2m_through.tests.M2mThroughTests)",
+   "test_create_on_m2m_with_intermediate_model_value_required_fails (m2m_through.tests.M2mThroughTests)",
+   "test_create_on_reverse_m2m_with_intermediate_model (m2m_through.tests.M2mThroughTests)",
+   "test_custom_related_name_doesnt_conflict_with_fky_related_name (m2m_through.tests.M2mThroughTests)",
+   "test_custom_related_name_forward_empty_qs (m2m_through.tests.M2mThroughTests)",
+   "test_custom_related_name_forward_non_empty_qs (m2m_through.tests.M2mThroughTests)",
+   "test_custom_related_name_reverse_empty_qs (m2m_through.tests.M2mThroughTests)",
+   "test_custom_related_name_reverse_non_empty_qs (m2m_through.tests.M2mThroughTests)",
+   "test_db_column_clash (invalid_models_tests.test_models.FieldNamesTests)",
+   "test_deferrable_unique_constraint (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_deferrable_unique_constraint_required_db_features (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_ending_with_underscore (invalid_models_tests.test_models.FieldNamesTests)",
+   "test_field_name_clash_with_child_accessor (invalid_models_tests.test_models.ShadowingFieldsTests)",
+   "test_field_name_clash_with_m2m_through (invalid_models_tests.test_models.ShadowingFieldsTests)",
+   "test_filter_on_intermediate_model (m2m_through.tests.M2mThroughTests)",
+   "test_func_index (invalid_models_tests.test_models.IndexesTests)",
+   "test_func_index_complex_expression_custom_lookup (invalid_models_tests.test_models.IndexesTests)",
+   "test_func_index_pointing_to_fk (invalid_models_tests.test_models.IndexesTests)",
+   "test_func_index_pointing_to_m2m_field (invalid_models_tests.test_models.IndexesTests)",
+   "test_func_index_pointing_to_missing_field (invalid_models_tests.test_models.IndexesTests)",
+   "test_func_index_pointing_to_missing_field_nested (invalid_models_tests.test_models.IndexesTests)",
+   "test_func_index_pointing_to_non_local_field (invalid_models_tests.test_models.IndexesTests)",
+   "test_func_index_required_db_features (invalid_models_tests.test_models.IndexesTests)",
+   "test_func_unique_constraint (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_func_unique_constraint_expression_custom_lookup (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_func_unique_constraint_pointing_to_fk (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_func_unique_constraint_pointing_to_m2m_field (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_func_unique_constraint_pointing_to_missing_field (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_func_unique_constraint_pointing_to_missing_field_nested (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_func_unique_constraint_pointing_to_non_local_field (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_func_unique_constraint_required_db_features (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_get_on_intermediate_model (m2m_through.tests.M2mThroughTests)",
+   "test_get_or_create_on_m2m_with_intermediate_model_value_required (m2m_through.tests.M2mThroughTests)",
+   "test_get_or_create_on_m2m_with_intermediate_model_value_required_fails (m2m_through.tests.M2mThroughTests)",
+   "test_id_clash (invalid_models_tests.test_models.ShadowingFieldsTests)",
+   "test_including_separator (invalid_models_tests.test_models.FieldNamesTests)",
+   "test_index_with_condition (invalid_models_tests.test_models.IndexesTests)",
+   "test_index_with_condition_required_db_features (invalid_models_tests.test_models.IndexesTests)",
+   "test_index_with_include (invalid_models_tests.test_models.IndexesTests)",
+   "test_index_with_include_required_db_features (invalid_models_tests.test_models.IndexesTests)",
+   "test_inheritance_clash (invalid_models_tests.test_models.ShadowingFieldsTests)",
+   "test_just_order_with_respect_to_no_errors (invalid_models_tests.test_models.OtherModelTests)",
+   "test_just_ordering_no_errors (invalid_models_tests.test_models.OtherModelTests)",
+   "test_lazy_reference_checks (invalid_models_tests.test_models.OtherModelTests)",
+   "test_list_containing_non_iterable (invalid_models_tests.test_models.IndexTogetherTests)",
+   "test_list_containing_non_iterable (invalid_models_tests.test_models.UniqueTogetherTests)",
+   "test_m2m_autogenerated_table_name_clash (invalid_models_tests.test_models.OtherModelTests)",
+   "test_m2m_autogenerated_table_name_clash_database_routers_installed (invalid_models_tests.test_models.OtherModelTests)",
+   "test_m2m_field_table_name_clash (invalid_models_tests.test_models.OtherModelTests)",
+   "test_m2m_field_table_name_clash_database_routers_installed (invalid_models_tests.test_models.OtherModelTests)",
+   "test_m2m_table_name_clash (invalid_models_tests.test_models.OtherModelTests)",
+   "test_m2m_table_name_clash_database_routers_installed (invalid_models_tests.test_models.OtherModelTests)",
+   "test_m2m_to_concrete_and_proxy_allowed (invalid_models_tests.test_models.OtherModelTests)",
+   "test_m2m_unmanaged_shadow_models_not_checked (invalid_models_tests.test_models.OtherModelTests)",
+   "test_max_name_length (invalid_models_tests.test_models.IndexesTests)",
+   "test_multigeneration_inheritance (invalid_models_tests.test_models.ShadowingFieldsTests)",
+   "test_multiinheritance_clash (invalid_models_tests.test_models.ShadowingFieldsTests)",
+   "test_multiple_autofields (invalid_models_tests.test_models.MultipleAutoFieldsTests)",
+   "test_name_beginning_with_underscore (invalid_models_tests.test_models.OtherModelTests)",
+   "test_name_constraints (invalid_models_tests.test_models.IndexesTests)",
+   "test_name_contains_double_underscores (invalid_models_tests.test_models.OtherModelTests)",
+   "test_name_ending_with_underscore (invalid_models_tests.test_models.OtherModelTests)",
+   "test_non_iterable (invalid_models_tests.test_models.IndexTogetherTests)",
+   "test_non_iterable (invalid_models_tests.test_models.UniqueTogetherTests)",
+   "test_non_list (invalid_models_tests.test_models.IndexTogetherTests)",
+   "test_non_list (invalid_models_tests.test_models.UniqueTogetherTests)",
+   "test_non_valid (invalid_models_tests.test_models.OtherModelTests)",
+   "test_onetoone_with_explicit_parent_link_parent_model (invalid_models_tests.test_models.OtherModelTests)",
+   "test_onetoone_with_parent_model (invalid_models_tests.test_models.OtherModelTests)",
+   "test_order_by_relational_field_through_model (m2m_through.tests.M2mThroughTests)",
+   "test_ordering_allows_registered_lookups (invalid_models_tests.test_models.OtherModelTests)",
+   "test_ordering_non_iterable (invalid_models_tests.test_models.OtherModelTests)",
+   "test_ordering_pointing_multiple_times_to_model_fields (invalid_models_tests.test_models.OtherModelTests)",
+   "test_ordering_pointing_to_foreignkey_field (invalid_models_tests.test_models.OtherModelTests)",
+   "test_ordering_pointing_to_json_field_value (invalid_models_tests.test_models.JSONFieldTests)",
+   "test_ordering_pointing_to_lookup_not_transform (invalid_models_tests.test_models.OtherModelTests)",
+   "test_ordering_pointing_to_missing_field (invalid_models_tests.test_models.OtherModelTests)",
+   "test_ordering_pointing_to_missing_foreignkey_field (invalid_models_tests.test_models.OtherModelTests)",
+   "test_ordering_pointing_to_missing_related_field (invalid_models_tests.test_models.OtherModelTests)",
+   "test_ordering_pointing_to_missing_related_model_field (invalid_models_tests.test_models.OtherModelTests)",
+   "test_ordering_pointing_to_non_related_field (invalid_models_tests.test_models.OtherModelTests)",
+   "test_ordering_pointing_to_related_model_pk (invalid_models_tests.test_models.OtherModelTests)",
+   "test_ordering_pointing_to_two_related_model_field (invalid_models_tests.test_models.OtherModelTests)",
+   "test_ordering_with_order_with_respect_to (invalid_models_tests.test_models.OtherModelTests)",
+   "test_pk (invalid_models_tests.test_models.FieldNamesTests)",
+   "test_pointing_to_fk (invalid_models_tests.test_models.IndexTogetherTests)",
+   "test_pointing_to_fk (invalid_models_tests.test_models.IndexesTests)",
+   "test_pointing_to_fk (invalid_models_tests.test_models.UniqueTogetherTests)",
+   "test_pointing_to_m2m (invalid_models_tests.test_models.UniqueTogetherTests)",
+   "test_pointing_to_m2m_field (invalid_models_tests.test_models.IndexTogetherTests)",
+   "test_pointing_to_m2m_field (invalid_models_tests.test_models.IndexesTests)",
+   "test_pointing_to_missing_field (invalid_models_tests.test_models.IndexTogetherTests)",
+   "test_pointing_to_missing_field (invalid_models_tests.test_models.IndexesTests)",
+   "test_pointing_to_missing_field (invalid_models_tests.test_models.UniqueTogetherTests)",
+   "test_pointing_to_non_local_field (invalid_models_tests.test_models.IndexTogetherTests)",
+   "test_pointing_to_non_local_field (invalid_models_tests.test_models.IndexesTests)",
+   "test_property_and_related_field_accessor_clash (invalid_models_tests.test_models.OtherModelTests)",
+   "test_query_first_model_by_intermediate_model_attribute (m2m_through.tests.M2mThroughTests)",
+   "test_query_model_by_attribute_name_of_related_model (m2m_through.tests.M2mThroughTests)",
+   "test_query_model_by_custom_related_name (m2m_through.tests.M2mThroughTests)",
+   "test_query_model_by_intermediate_can_return_non_unique_queryset (m2m_through.tests.M2mThroughTests)",
+   "test_query_model_by_related_model_name (m2m_through.tests.M2mThroughTests)",
+   "test_query_second_model_by_intermediate_model_attribute (m2m_through.tests.M2mThroughTests)",
+   "test_remove_on_m2m_with_intermediate_model (m2m_through.tests.M2mThroughTests)",
+   "test_remove_on_m2m_with_intermediate_model_multiple (m2m_through.tests.M2mThroughTests)",
+   "test_remove_on_reverse_m2m_with_intermediate_model (m2m_through.tests.M2mThroughTests)",
+   "test_retrieval (m2m_through.tests.M2mThroughToFieldsTests)",
+   "test_retrieve_intermediate_items (m2m_through.tests.M2mThroughTests)",
+   "test_retrieve_reverse_intermediate_items (m2m_through.tests.M2mThroughTests)",
+   "test_reverse_inherited_m2m_with_through_fields_list_hashable (m2m_through.tests.M2mThroughTests)",
+   "test_self_referential_empty_qs (m2m_through.tests.M2mThroughReferentialTests)",
+   "test_self_referential_non_symmetrical_both (m2m_through.tests.M2mThroughReferentialTests)",
+   "test_self_referential_non_symmetrical_clear_first_side (m2m_through.tests.M2mThroughReferentialTests)",
+   "test_self_referential_non_symmetrical_first_side (m2m_through.tests.M2mThroughReferentialTests)",
+   "test_self_referential_non_symmetrical_second_side (m2m_through.tests.M2mThroughReferentialTests)",
+   "test_self_referential_symmetrical (m2m_through.tests.M2mThroughReferentialTests)",
+   "test_set_on_m2m_with_intermediate_model (m2m_through.tests.M2mThroughTests)",
+   "test_set_on_m2m_with_intermediate_model_callable_through_default (m2m_through.tests.M2mThroughTests)",
+   "test_set_on_m2m_with_intermediate_model_value_required (m2m_through.tests.M2mThroughTests)",
+   "test_set_on_m2m_with_intermediate_model_value_required_fails (m2m_through.tests.M2mThroughTests)",
+   "test_set_on_reverse_m2m_with_intermediate_model (m2m_through.tests.M2mThroughTests)",
+   "test_set_on_symmetrical_m2m_with_intermediate_model (m2m_through.tests.M2mThroughReferentialTests)",
+   "test_single_primary_key (invalid_models_tests.test_models.OtherModelTests)",
+   "test_swappable_missing_app (invalid_models_tests.test_models.OtherModelTests)",
+   "test_swappable_missing_app_name (invalid_models_tests.test_models.OtherModelTests)",
+   "test_through_fields_self_referential (m2m_through.tests.M2mThroughReferentialTests)",
+   "test_two_m2m_through_same_model_with_different_through_fields (invalid_models_tests.test_models.OtherModelTests)",
+   "test_two_m2m_through_same_relationship (invalid_models_tests.test_models.OtherModelTests)",
+   "test_unique_constraint_condition_pointing_to_joined_fields (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_unique_constraint_condition_pointing_to_missing_field (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_unique_constraint_pointing_to_fk (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_unique_constraint_pointing_to_m2m_field (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_unique_constraint_pointing_to_missing_field (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_unique_constraint_pointing_to_non_local_field (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_unique_constraint_pointing_to_reverse_o2o (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_unique_constraint_with_condition (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_unique_constraint_with_condition_required_db_features (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_unique_constraint_with_include (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_unique_constraint_with_include_required_db_features (invalid_models_tests.test_models.ConstraintsTests)",
+   "test_unique_primary_key (invalid_models_tests.test_models.OtherModelTests)",
+   "test_update_or_create_on_m2m_with_intermediate_model_value_required (m2m_through.tests.M2mThroughTests)",
+   "test_update_or_create_on_m2m_with_intermediate_model_value_required_fails (m2m_through.tests.M2mThroughTests)",
+   "test_valid_model (invalid_models_tests.test_models.UniqueTogetherTests)"
+  ],
+  "pass_to_pass_count": 0,
+  "repo": "django/django"
+ },
+ "django__django-14725": {
+  "base_commit": "0af9a5fc7d765aa05ea784e2c3237675f3bb4b49",
+  "fail_to_pass": [
+   "test_edit_only (model_formsets.tests.ModelFormsetTest)",
+   "test_edit_only_inlineformset_factory (model_formsets.tests.ModelFormsetTest)",
+   "test_edit_only_object_outside_of_queryset (model_formsets.tests.ModelFormsetTest)"
+  ],
+  "pass_to_pass_count": 64,
+  "repo": "django/django"
+ },
+ "django__django-14752": {
+  "base_commit": "b64db05b9cedd96905d637a2d824cbbf428e40e7",
+  "fail_to_pass": [
+   "test_serialize_result (admin_views.test_autocomplete_view.AutocompleteJsonViewTests)"
+  ],
+  "pass_to_pass_count": 15,
+  "repo": "django/django"
+ },
+ "django__django-14765": {
+  "base_commit": "4e8121e8e42a24acc3565851c9ef50ca8322b15c",
+  "fail_to_pass": [
+   "test_real_apps_non_set (migrations.test_state.StateTests)"
+  ],
+  "pass_to_pass_count": 64,
+  "repo": "django/django"
+ },
+ "django__django-14771": {
+  "base_commit": "4884a87e022056eda10534c13d74e49b8cdda632",
+  "fail_to_pass": [
+   "test_xoptions (utils_tests.test_autoreload.TestChildArguments)"
+  ],
+  "pass_to_pass_count": 60,
+  "repo": "django/django"
+ },
+ "django__django-14787": {
+  "base_commit": "004b4620f6f4ad87261e149898940f2dcd5757ef",
+  "fail_to_pass": [
+   "@method_decorator preserves wrapper assignments."
+  ],
+  "pass_to_pass_count": 20,
+  "repo": "django/django"
+ },
+ "django__django-14792": {
+  "base_commit": "d89f976bddb49fb168334960acc8979c3de991fa",
+  "fail_to_pass": [
+   "The _get_timezone_name() helper must return the offset for fixed offset",
+   "test_is_aware (utils_tests.test_timezone.TimezoneTests)"
+  ],
+  "pass_to_pass_count": 23,
+  "repo": "django/django"
+ },
+ "django__django-14855": {
+  "base_commit": "475cffd1d64c690cdad16ede4d5e81985738ceb4",
+  "fail_to_pass": [
+   "test_readonly_foreignkey_links_custom_admin_site (admin_views.tests.ReadonlyTest)"
+  ],
+  "pass_to_pass_count": 325,
+  "repo": "django/django"
+ },
+ "django__django-14915": {
+  "base_commit": "903aaa35e5ceaa33bfc9b19b7f6da65ce5a91dd4",
+  "fail_to_pass": [
+   "test_choice_value_hash (model_forms.test_modelchoicefield.ModelChoiceFieldTests)"
+  ],
+  "pass_to_pass_count": 23,
+  "repo": "django/django"
+ },
+ "django__django-14999": {
+  "base_commit": "a754b82dac511475b6276039471ccd17cc64aeb8",
+  "fail_to_pass": [
+   "test_rename_model_with_db_table_noop (migrations.test_operations.OperationTests)"
+  ],
+  "pass_to_pass_count": 113,
+  "repo": "django/django"
+ },
+ "django__django-15022": {
+  "base_commit": "e1d673c373a7d032060872b690a92fc95496612e",
+  "fail_to_pass": [
+   "All rows containing each of the searched words are returned, where each",
+   "Searches over multi-valued relationships return rows from related",
+   "test_many_search_terms (admin_changelist.tests.ChangeListTests)"
+  ],
+  "pass_to_pass_count": 56,
+  "repo": "django/django"
+ },
+ "django__django-15037": {
+  "base_commit": "dab48b7482295956973879d15bfd4d3bb0718772",
+  "fail_to_pass": [
+   "test_foreign_key_to_field (inspectdb.tests.InspectDBTestCase)"
+  ],
+  "pass_to_pass_count": 14,
+  "repo": "django/django"
+ },
+ "django__django-15098": {
+  "base_commit": "2c7846d992ca512d36a73f518205015c88ed088c",
+  "fail_to_pass": [
+   "test_get_language_from_path_real (i18n.tests.MiscTests)",
+   "test_get_supported_language_variant_null (i18n.tests.MiscTests)"
+  ],
+  "pass_to_pass_count": 88,
+  "repo": "django/django"
+ },
+ "django__django-15103": {
+  "base_commit": "dd528cb2cefc0db8b91a7ff0a2bc87305b976597",
+  "fail_to_pass": [
+   "test_json_script_without_id (utils_tests.test_html.TestUtilsHtml)",
+   "test_without_id (template_tests.filter_tests.test_json_script.JsonScriptTests)"
+  ],
+  "pass_to_pass_count": 17,
+  "repo": "django/django"
+ },
+ "django__django-15104": {
+  "base_commit": "a7e7043c8746933dafce652507d3b821801cdc7d",
+  "fail_to_pass": [
+   "test_add_custom_fk_with_hardcoded_to (migrations.test_autodetector.AutodetectorTests)"
+  ],
+  "pass_to_pass_count": 131,
+  "repo": "django/django"
+ },
+ "django__django-15127": {
+  "base_commit": "9a6e2df3a8f01ea761529bec48e5a8dc0ea9575b",
+  "fail_to_pass": [
+   "test_override_settings_level_tags (messages_tests.tests.TestLevelTags)"
+  ],
+  "pass_to_pass_count": 1,
+  "repo": "django/django"
+ },
+ "django__django-15128": {
+  "base_commit": "cb383753c0e0eb52306e1024d32a782549c27e61",
+  "fail_to_pass": [
+   "test_conflicting_aliases_during_combine (queries.tests.QuerySetBitwiseOperationTests)"
+  ],
+  "pass_to_pass_count": 282,
+  "repo": "django/django"
+ },
+ "django__django-15161": {
+  "base_commit": "96e7ff5e9ff6362d9a886545869ce4496ca4b0fb",
+  "fail_to_pass": [
+   "test_deconstruct (expressions.tests.ValueTests)",
+   "test_deconstruct_output_field (expressions.tests.ValueTests)",
+   "test_serialize_complex_func_index (migrations.test_writer.WriterTests)"
+  ],
+  "pass_to_pass_count": 208,
+  "repo": "django/django"
+ },
+ "django__django-15252": {
+  "base_commit": "361bb8f786f112ee275be136795c0b1ecefff928",
+  "fail_to_pass": [
+   "The django_migrations table is not created if there are no migrations",
+   "test_migrate_test_setting_false_ensure_schema (backends.base.test_creation.TestDbCreationTests)"
+  ],
+  "pass_to_pass_count": 34,
+  "repo": "django/django"
+ },
+ "django__django-15268": {
+  "base_commit": "0ab58c120939093fea90822f376e1866fc714d1f",
+  "fail_to_pass": [
+   "Fields are renamed before updating index/unique_together.",
+   "Removed fields will be removed after updating index/unique_together.",
+   "index/unique_together also triggers on ordering changes."
+  ],
+  "pass_to_pass_count": 130,
+  "repo": "django/django"
+ },
+ "django__django-15277": {
+  "base_commit": "30613d6a748fce18919ff8b0da166d9fda2ed9bc",
+  "fail_to_pass": [
+   "The output field for a given Value doesn't get cleaned & validated,",
+   "test_raise_empty_expressionlist (expressions.tests.ValueTests)"
+  ],
+  "pass_to_pass_count": 158,
+  "repo": "django/django"
+ },
+ "django__django-15278": {
+  "base_commit": "0ab58c120939093fea90822f376e1866fc714d1f",
+  "fail_to_pass": [
+   "test_add_field_o2o_nullable (schema.tests.SchemaTests)"
+  ],
+  "pass_to_pass_count": 138,
+  "repo": "django/django"
+ },
+ "django__django-15280": {
+  "base_commit": "973fa566521037ac140dcece73fceae50ee522f1",
+  "fail_to_pass": [
+   "The prefetched relationship is used rather than populating the reverse"
+  ],
+  "pass_to_pass_count": 85,
+  "repo": "django/django"
+ },
+ "django__django-15315": {
+  "base_commit": "652c68ffeebd510a6f59e1b56b3e007d07683ad8",
+  "fail_to_pass": [
+   "test_hash_immutability (model_fields.tests.BasicFieldTests)"
+  ],
+  "pass_to_pass_count": 33,
+  "repo": "django/django"
+ },
+ "django__django-15368": {
+  "base_commit": "e972620ada4f9ed7bc57f28e133e85c85b0a7b20",
+  "fail_to_pass": [
+   "test_f_expression (queries.test_bulk_update.BulkUpdateTests)"
+  ],
+  "pass_to_pass_count": 29,
+  "repo": "django/django"
+ },
+ "django__django-15375": {
+  "base_commit": "beb7ddbcee03270e833b2f74927ccfc8027aa693",
+  "fail_to_pass": [
+   "test_aggregation_default_after_annotation (aggregation.tests.AggregateTestCase)"
+  ],
+  "pass_to_pass_count": 95,
+  "repo": "django/django"
+ },
+ "django__django-15380": {
+  "base_commit": "71e7c8e73712419626f1c2b6ec036e8559a2d667",
+  "fail_to_pass": [
+   "test_rename_field_with_renamed_model (migrations.test_autodetector.AutodetectorTests)"
+  ],
+  "pass_to_pass_count": 133,
+  "repo": "django/django"
+ },
+ "django__django-15382": {
+  "base_commit": "770d3e6a4ce8e0a91a9e27156036c1985e74d4a3",
+  "fail_to_pass": [
+   "test_negated_empty_exists (expressions.tests.ExistsTests)"
+  ],
+  "pass_to_pass_count": 161,
+  "repo": "django/django"
+ },
+ "django__django-15467": {
+  "base_commit": "e0442a628eb480eac6a7888aed5a86f83499e299",
+  "fail_to_pass": [
+   "test_radio_fields_foreignkey_formfield_overrides_empty_label (admin_widgets.tests.AdminFormfieldForDBFieldTests)"
+  ],
+  "pass_to_pass_count": 62,
+  "repo": "django/django"
+ },
+ "django__django-15499": {
+  "base_commit": "d90e34c61b27fba2527834806639eebbcfab9631",
+  "fail_to_pass": [
+   "test_create_alter_model_managers (migrations.test_optimizer.OptimizerTests)"
+  ],
+  "pass_to_pass_count": 35,
+  "repo": "django/django"
+ },
+ "django__django-15503": {
+  "base_commit": "859a87d873ce7152af73ab851653b4e1c3ffea4c",
+  "fail_to_pass": [
+   "test_has_key_number (model_fields.test_jsonfield.TestQuerying)",
+   "test_has_keys (model_fields.test_jsonfield.TestQuerying)"
+  ],
+  "pass_to_pass_count": 78,
+  "repo": "django/django"
+ },
+ "django__django-15525": {
+  "base_commit": "fbacaa58ffc5a62456ee68b90efa13957f761ce4",
+  "fail_to_pass": [
+   "Natural keys with foreing keys in dependencies works in a multiple"
+  ],
+  "pass_to_pass_count": 53,
+  "repo": "django/django"
+ },
+ "django__django-15554": {
+  "base_commit": "59ab3fd0e9e606d7f0f7ca26609c06ee679ece97",
+  "fail_to_pass": [
+   "test_multiple (filtered_relation.tests.FilteredRelationTests)"
+  ],
+  "pass_to_pass_count": 41,
+  "repo": "django/django"
+ },
+ "django__django-15561": {
+  "base_commit": "6991880109e35c879b71b7d9d9c154baeec12b89",
+  "fail_to_pass": [
+   "test_alter_field_choices_noop (schema.tests.SchemaTests)"
+  ],
+  "pass_to_pass_count": 141,
+  "repo": "django/django"
+ },
+ "django__django-15563": {
+  "base_commit": "9ffd4eae2ce7a7100c98f681e2b6ab818df384a4",
+  "fail_to_pass": [
+   "test_mti_update_grand_parent_through_child (model_inheritance_regress.tests.ModelInheritanceTest)",
+   "test_mti_update_parent_through_child (model_inheritance_regress.tests.ModelInheritanceTest)"
+  ],
+  "pass_to_pass_count": 29,
+  "repo": "django/django"
+ },
+ "django__django-15569": {
+  "base_commit": "884b4c27f506b3c29d58509fc83a35c30ea10d94",
+  "fail_to_pass": [
+   "test_get_transforms (model_fields.test_jsonfield.TestMethods)",
+   "test_lookups_caching (custom_lookups.tests.LookupTests)"
+  ],
+  "pass_to_pass_count": 242,
+  "repo": "django/django"
+ },
+ "django__django-15572": {
+  "base_commit": "0b31e024873681e187b574fe1c4afe5e48aeeecf",
+  "fail_to_pass": [
+   "test_template_dirs_ignore_empty_path (template_tests.test_autoreloader.TemplateReloadTests)"
+  ],
+  "pass_to_pass_count": 10,
+  "repo": "django/django"
+ },
+ "django__django-15629": {
+  "base_commit": "694cf458f16b8d340a3195244196980b2dec34fd",
+  "fail_to_pass": [
+   "AlterField operation of db_collation on primary keys changes any FKs",
+   "Creation of models with a FK to a PK with db_collation."
+  ],
+  "pass_to_pass_count": 115,
+  "repo": "django/django"
+ },
+ "django__django-15695": {
+  "base_commit": "647480166bfe7532e8c471fef0146e3a17e6c0c9",
+  "fail_to_pass": [
+   "test_rename_index_unnamed_index (migrations.test_operations.OperationTests)"
+  ],
+  "pass_to_pass_count": 123,
+  "repo": "django/django"
+ },
+ "django__django-15731": {
+  "base_commit": "93cedc82f29076c824d476354527af1150888e4f",
+  "fail_to_pass": [
+   "test_manager_method_signature (basic.tests.ManagerTest)"
+  ],
+  "pass_to_pass_count": 58,
+  "repo": "django/django"
+ },
+ "django__django-15732": {
+  "base_commit": "ce69e34bd646558bb44ea92cecfd98b345a0b3e0",
+  "fail_to_pass": [
+   "test_remove_unique_together_on_unique_field (migrations.test_operations.OperationTests)"
+  ],
+  "pass_to_pass_count": 125,
+  "repo": "django/django"
+ },
+ "django__django-15741": {
+  "base_commit": "8c0886b068ba4e224dd78104b93c9638b860b398",
+  "fail_to_pass": [
+   "test_date_lazy (template_tests.filter_tests.test_date.DateTests)",
+   "test_get_format_lazy_format (i18n.tests.FormattingTests)"
+  ],
+  "pass_to_pass_count": 104,
+  "repo": "django/django"
+ },
+ "django__django-15814": {
+  "base_commit": "5eb6a2b33d70b9889e1cafa12594ad6f80773d3a",
+  "fail_to_pass": [
+   "test_select_related_only (proxy_models.tests.ProxyModelTests)"
+  ],
+  "pass_to_pass_count": 29,
+  "repo": "django/django"
+ },
+ "django__django-15851": {
+  "base_commit": "b4817d20b9e55df30be0b1b2ca8c8bb6d61aab07",
+  "fail_to_pass": [
+   "test_parameters (dbshell.test_postgresql.PostgreSqlDbshellCommandTestCase)"
+  ],
+  "pass_to_pass_count": 8,
+  "repo": "django/django"
+ },
+ "django__django-15863": {
+  "base_commit": "37c5b8c07be104fd5288cd87f101e48cb7a40298",
+  "fail_to_pass": [
+   "test_inputs (template_tests.filter_tests.test_floatformat.FunctionTests)"
+  ],
+  "pass_to_pass_count": 9,
+  "repo": "django/django"
+ },
+ "django__django-15916": {
+  "base_commit": "88e67a54b7ed0210c11523a337b498aadb2f5187",
+  "fail_to_pass": [
+   "test_custom_callback_from_base_form_meta (model_forms.tests.FormFieldCallbackTests)",
+   "test_custom_callback_in_meta (model_forms.tests.FormFieldCallbackTests)"
+  ],
+  "pass_to_pass_count": 149,
+  "repo": "django/django"
+ },
+ "django__django-15930": {
+  "base_commit": "63884829acd207404f2a5c3cc1d6b4cd0a822b70",
+  "fail_to_pass": [
+   "test_annotate_with_full_when (expressions_case.tests.CaseExpressionTests)"
+  ],
+  "pass_to_pass_count": 88,
+  "repo": "django/django"
+ },
+ "django__django-15957": {
+  "base_commit": "f387d024fc75569d2a4a338bfda76cc2f328f627",
+  "fail_to_pass": [
+   "test_foreignkey_reverse (prefetch_related.tests.PrefetchLimitTests)",
+   "test_m2m_forward (prefetch_related.tests.PrefetchLimitTests)",
+   "test_m2m_reverse (prefetch_related.tests.PrefetchLimitTests)",
+   "test_reverse_ordering (prefetch_related.tests.PrefetchLimitTests)"
+  ],
+  "pass_to_pass_count": 89,
+  "repo": "django/django"
+ },
+ "django__django-15973": {
+  "base_commit": "2480554dc4ada4ecf3f6a08e318735a2e50783f3",
+  "fail_to_pass": [
+   "test_create_with_through_model_separate_apps (migrations.test_autodetector.AutodetectorTests)"
+  ],
+  "pass_to_pass_count": 157,
+  "repo": "django/django"
+ },
+ "django__django-15987": {
+  "base_commit": "7e6b537f5b92be152779fc492bb908d27fe7c52a",
+  "fail_to_pass": [
+   "settings.FIXTURE_DIRS cannot contain a default fixtures directory"
+  ],
+  "pass_to_pass_count": 52,
+  "repo": "django/django"
+ },
+ "django__django-16032": {
+  "base_commit": "0c3981eb5094419fe200eb46c71b5376a2266166",
+  "fail_to_pass": [
+   "test_annotation_and_alias_filter_in_subquery (annotations.tests.NonAggregateAnnotationTestCase)",
+   "test_annotation_and_alias_filter_related_in_subquery (annotations.tests.NonAggregateAnnotationTestCase)"
+  ],
+  "pass_to_pass_count": 77,
+  "repo": "django/django"
+ },
+ "django__django-16082": {
+  "base_commit": "bf47c719719d0e190a99fa2e7f959d5bbb7caf8a",
+  "fail_to_pass": [
+   "test_resolve_output_field_number (expressions.tests.CombinedExpressionTests)",
+   "test_resolve_output_field_with_null (expressions.tests.CombinedExpressionTests)"
+  ],
+  "pass_to_pass_count": 170,
+  "repo": "django/django"
+ },
+ "django__django-16100": {
+  "base_commit": "c6350d594c359151ee17b0c4f354bb44f28ff69e",
+  "fail_to_pass": [
+   "test_list_editable_atomicity (admin_changelist.tests.ChangeListTests)"
+  ],
+  "pass_to_pass_count": 59,
+  "repo": "django/django"
+ },
+ "django__django-16116": {
+  "base_commit": "5d36a8266c7d5d1994d7a7eeb4016f80d9cb0401",
+  "fail_to_pass": [
+   "makemigrations --check should exit with a non-zero status when"
+  ],
+  "pass_to_pass_count": 137,
+  "repo": "django/django"
+ },
+ "django__django-16136": {
+  "base_commit": "19e6efa50b603af325e7f62058364f278596758f",
+  "fail_to_pass": [
+   "test_http_method_not_allowed_responds_correctly (async.tests.ViewTests)",
+   "test_mixed_views_raise_error (async.tests.ViewTests)"
+  ],
+  "pass_to_pass_count": 7,
+  "repo": "django/django"
+ },
+ "django__django-16139": {
+  "base_commit": "d559cb02da30f74debbb1fc3a46de0df134d2d80",
+  "fail_to_pass": [
+   "test_link_to_password_reset_in_helptext_via_to_field (auth_tests.test_forms.UserChangeFormTest)"
+  ],
+  "pass_to_pass_count": 86,
+  "repo": "django/django"
+ },
+ "django__django-16145": {
+  "base_commit": "93d4c9ea1de24eb391cb2b3561b6703fd46374df",
+  "fail_to_pass": [
+   "test_zero_ip_addr (admin_scripts.tests.ManageRunserver)"
+  ],
+  "pass_to_pass_count": 174,
+  "repo": "django/django"
+ },
+ "django__django-16255": {
+  "base_commit": "444b6da7cc229a58a2c476a52e45233001dc7073",
+  "fail_to_pass": [
+   "test_callable_sitemod_no_items (sitemaps_tests.test_http.HTTPSitemapTests)"
+  ],
+  "pass_to_pass_count": 36,
+  "repo": "django/django"
+ },
+ "django__django-16256": {
+  "base_commit": "76e37513e22f4d9a01c7f15eee36fe44388e6670",
+  "fail_to_pass": [
+   "test_acreate (async.test_async_related_managers.AsyncRelatedManagersOperationTest)",
+   "test_acreate_reverse (async.test_async_related_managers.AsyncRelatedManagersOperationTest)",
+   "test_aget_or_create (async.test_async_related_managers.AsyncRelatedManagersOperationTest)",
+   "test_aget_or_create_reverse (async.test_async_related_managers.AsyncRelatedManagersOperationTest)",
+   "test_aupdate_or_create (async.test_async_related_managers.AsyncRelatedManagersOperationTest)",
+   "test_aupdate_or_create_reverse (async.test_async_related_managers.AsyncRelatedManagersOperationTest)",
+   "test_generic_async_acreate (generic_relations.tests.GenericRelationsTests)",
+   "test_generic_async_aget_or_create (generic_relations.tests.GenericRelationsTests)",
+   "test_generic_async_aupdate_or_create (generic_relations.tests.GenericRelationsTests)"
+  ],
+  "pass_to_pass_count": 53,
+  "repo": "django/django"
+ },
+ "django__django-16263": {
+  "base_commit": "321ecb40f4da842926e1bc07e11df4aabe53ca4b",
+  "fail_to_pass": [
+   "test_non_aggregate_annotation_pruned (aggregation.tests.AggregateAnnotationPruningTests)",
+   "test_unreferenced_aggregate_annotation_pruned (aggregation.tests.AggregateAnnotationPruningTests)",
+   "test_unused_aliased_aggregate_pruned (aggregation.tests.AggregateAnnotationPruningTests)"
+  ],
+  "pass_to_pass_count": 100,
+  "repo": "django/django"
+ },
+ "django__django-16315": {
+  "base_commit": "7d5329852f19c6ae78c6f6f3d3e41835377bf295",
+  "fail_to_pass": [
+   "test_update_conflicts_unique_fields_update_fields_db_column (bulk_create.tests.BulkCreateTests)"
+  ],
+  "pass_to_pass_count": 42,
+  "repo": "django/django"
+ },
+ "django__django-16333": {
+  "base_commit": "60a7bd89860e504c0c33b02c78edcac87f6d1b5a",
+  "fail_to_pass": [
+   "test_custom_form_saves_many_to_many_field (auth_tests.test_forms.UserCreationFormTest)"
+  ],
+  "pass_to_pass_count": 87,
+  "repo": "django/django"
+ },
+ "django__django-16429": {
+  "base_commit": "6c86495bcee22eac19d7fb040b2988b830707cbd",
+  "fail_to_pass": [
+   "Test other units.",
+   "test_depth (utils_tests.test_timesince.TZAwareTimesinceTests)",
+   "test_depth_invalid (utils_tests.test_timesince.TZAwareTimesinceTests)",
+   "test_thousand_years_ago (utils_tests.test_timesince.TZAwareTimesinceTests)"
+  ],
+  "pass_to_pass_count": 21,
+  "repo": "django/django"
+ },
+ "django__django-16454": {
+  "base_commit": "1250483ebf73f7a82ff820b94092c63ce4238264",
+  "fail_to_pass": [
+   "test_subparser_error_formatting (user_commands.tests.CommandRunTests.test_subparser_error_formatting)"
+  ],
+  "pass_to_pass_count": 45,
+  "repo": "django/django"
+ },
+ "django__django-16485": {
+  "base_commit": "39f83765e12b0e5d260b7939fc3fe281d879b279",
+  "fail_to_pass": [
+   "test_zero_values (template_tests.filter_tests.test_floatformat.FunctionTests.test_zero_values)"
+  ],
+  "pass_to_pass_count": 9,
+  "repo": "django/django"
+ },
+ "django__django-16493": {
+  "base_commit": "e3a4cee081cf60650b8824f0646383b79cb110e7",
+  "fail_to_pass": [
+   "A callable that returns default_storage is not omitted when"
+  ],
+  "pass_to_pass_count": 91,
+  "repo": "django/django"
+ },
+ "django__django-16502": {
+  "base_commit": "246eb4836a6fb967880f838aa0d22ecfdca8b6f1",
+  "fail_to_pass": [
+   "test_no_body_returned_for_head_requests (servers.test_basehttp.WSGIRequestHandlerTestCase.test_no_body_returned_for_head_requests)"
+  ],
+  "pass_to_pass_count": 4,
+  "repo": "django/django"
+ },
+ "django__django-16527": {
+  "base_commit": "bd366ca2aeffa869b7dbc0b0aa01caea75e6dc31",
+  "fail_to_pass": [
+   "test_submit_row_save_as_new_add_permission_required (admin_views.test_templatetags.AdminTemplateTagsTest.test_submit_row_save_as_new_add_permission_required)"
+  ],
+  "pass_to_pass_count": 6,
+  "repo": "django/django"
+ },
+ "django__django-16560": {
+  "base_commit": "51c9bb7cd16081133af4f0ab6d06572660309730",
+  "fail_to_pass": [
+   "test_custom_violation_code_message (constraints.tests.BaseConstraintTests.test_custom_violation_code_message)",
+   "test_deconstruction (constraints.tests.BaseConstraintTests.test_deconstruction)",
+   "test_eq (constraints.tests.CheckConstraintTests.test_eq)",
+   "test_eq (constraints.tests.UniqueConstraintTests.test_eq)",
+   "test_repr_with_violation_error_code (constraints.tests.CheckConstraintTests.test_repr_with_violation_error_code)",
+   "test_repr_with_violation_error_code (constraints.tests.UniqueConstraintTests.test_repr_with_violation_error_code)",
+   "test_validate_conditon_custom_error (constraints.tests.UniqueConstraintTests.test_validate_conditon_custom_error)",
+   "test_validate_custom_error (constraints.tests.CheckConstraintTests.test_validate_custom_error)"
+  ],
+  "pass_to_pass_count": 66,
+  "repo": "django/django"
+ },
+ "django__django-16569": {
+  "base_commit": "278881e37619278789942513916acafaa88d26f3",
+  "fail_to_pass": [
+   "test_disable_delete_extra_formset_forms (forms_tests.tests.test_formsets.FormsFormsetTestCase.test_disable_delete_extra_formset_forms)",
+   "test_disable_delete_extra_formset_forms (forms_tests.tests.test_formsets.Jinja2FormsFormsetTestCase.test_disable_delete_extra_formset_forms)"
+  ],
+  "pass_to_pass_count": 111,
+  "repo": "django/django"
+ },
+ "django__django-16595": {
+  "base_commit": "f9fe062de5fc0896d6bbbf3f260b5c44473b3c77",
+  "fail_to_pass": [
+   "test_alter_alter_field (migrations.test_optimizer.OptimizerTests.test_alter_alter_field)"
+  ],
+  "pass_to_pass_count": 37,
+  "repo": "django/django"
+ },
+ "django__django-16612": {
+  "base_commit": "55bcbd8d172b689811fae17cde2f09218dd74e9c",
+  "fail_to_pass": [
+   "test_missing_slash_append_slash_true_query_string (admin_views.tests.AdminSiteFinalCatchAllPatternTests.test_missing_slash_append_slash_true_query_string)",
+   "test_missing_slash_append_slash_true_script_name_query_string (admin_views.tests.AdminSiteFinalCatchAllPatternTests.test_missing_slash_append_slash_true_script_name_query_string)"
+  ],
+  "pass_to_pass_count": 335,
+  "repo": "django/django"
+ },
+ "django__django-16631": {
+  "base_commit": "9b224579875e30203d079cc2fee83b116d98eb78",
+  "fail_to_pass": [
+   "test_get_user_fallback_secret (auth_tests.test_basic.TestGetUser.test_get_user_fallback_secret)"
+  ],
+  "pass_to_pass_count": 12,
+  "repo": "django/django"
+ },
+ "django__django-16642": {
+  "base_commit": "fbe850106b2e4b85f838219cb9e1df95fba6c164",
+  "fail_to_pass": [
+   "If compressed responses are served with the uncompressed Content-Type"
+  ],
+  "pass_to_pass_count": 21,
+  "repo": "django/django"
+ },
+ "django__django-16661": {
+  "base_commit": "d687febce5868545f99974d2499a91f81a32fef5",
+  "fail_to_pass": [
+   "test_lookup_allowed_foreign_primary (modeladmin.tests.ModelAdminTests.test_lookup_allowed_foreign_primary)"
+  ],
+  "pass_to_pass_count": 36,
+  "repo": "django/django"
+ },
+ "django__django-16662": {
+  "base_commit": "0eb3e9bd754e4c9fac8b616b705178727fc8031e",
+  "fail_to_pass": [
+   "#24155 - Tests ordering of imports."
+  ],
+  "pass_to_pass_count": 51,
+  "repo": "django/django"
+ },
+ "django__django-16667": {
+  "base_commit": "02c356f2f3945b8075735d485c3cf48cad991011",
+  "fail_to_pass": [
+   "test_form_field (forms_tests.field_tests.test_datefield.DateFieldTest.test_form_field)",
+   "test_value_from_datadict (forms_tests.widget_tests.test_selectdatewidget.SelectDateWidgetTest.test_value_from_datadict)"
+  ],
+  "pass_to_pass_count": 24,
+  "repo": "django/django"
+ },
+ "django__django-16801": {
+  "base_commit": "3b62d8c83e3e48d2ed61cfa32a61c56d9e030293",
+  "fail_to_pass": [
+   "test_post_init_not_connected (model_fields.test_imagefield.ImageFieldNoDimensionsTests.test_post_init_not_connected)"
+  ],
+  "pass_to_pass_count": 17,
+  "repo": "django/django"
+ },
+ "django__django-16819": {
+  "base_commit": "0b0998dc151feb77068e2387c34cc50ef6b356ae",
+  "fail_to_pass": [
+   "test_add_remove_index (migrations.test_optimizer.OptimizerTests.test_add_remove_index)"
+  ],
+  "pass_to_pass_count": 38,
+  "repo": "django/django"
+ },
+ "django__django-16877": {
+  "base_commit": "98f6ada0e2058d67d91fb6c16482411ec2ca0967",
+  "fail_to_pass": [
+   "test_autoescape_off (template_tests.filter_tests.test_escapeseq.EscapeseqTests.test_autoescape_off)",
+   "test_basic (template_tests.filter_tests.test_escapeseq.EscapeseqTests.test_basic)",
+   "test_chain_join (template_tests.filter_tests.test_escapeseq.EscapeseqTests.test_chain_join)",
+   "test_chain_join_autoescape_off (template_tests.filter_tests.test_escapeseq.EscapeseqTests.test_chain_join_autoescape_off)"
+  ],
+  "pass_to_pass_count": 0,
+  "repo": "django/django"
+ },
+ "django__django-16899": {
+  "base_commit": "d3d173425fc0a1107836da5b4567f1c88253191b",
+  "fail_to_pass": [
+   "test_nonexistent_field (admin_checks.tests.SystemChecksTestCase.test_nonexistent_field)",
+   "test_nonexistent_field_on_inline (admin_checks.tests.SystemChecksTestCase.test_nonexistent_field_on_inline)"
+  ],
+  "pass_to_pass_count": 54,
+  "repo": "django/django"
+ },
+ "django__django-16901": {
+  "base_commit": "ee36e101e8f8c0acde4bb148b738ab7034e902a0",
+  "fail_to_pass": [
+   "test_filter_multiple (xor_lookups.tests.XorLookupsTests.test_filter_multiple)"
+  ],
+  "pass_to_pass_count": 6,
+  "repo": "django/django"
+ },
+ "django__django-16938": {
+  "base_commit": "1136aa5005f0ae70fea12796b7e37d6f027b9263",
+  "fail_to_pass": [
+   "Basic serialization works.",
+   "Deserialized content can be saved with force_insert as a parameter.",
+   "Mapping such as fields should be deterministically ordered. (#24558)",
+   "Serialized content can be deserialized.",
+   "Serializing control characters with XML should fail as those characters",
+   "The ability to create new objects by modifying serialized content.",
+   "Year values before 1000AD are properly formatted",
+   "test_serialize_no_only_pk_with_natural_keys (serializers.test_json.JsonSerializerTestCase.test_serialize_no_only_pk_with_natural_keys)",
+   "test_serialize_no_only_pk_with_natural_keys (serializers.test_jsonl.JsonlSerializerTestCase.test_serialize_no_only_pk_with_natural_keys)",
+   "test_serialize_no_only_pk_with_natural_keys (serializers.test_xml.XmlSerializerTestCase.test_serialize_no_only_pk_with_natural_keys)",
+   "test_serialize_no_only_pk_with_natural_keys (serializers.test_yaml.YamlSerializerTestCase.test_serialize_no_only_pk_with_natural_keys)",
+   "test_serialize_only_pk (serializers.test_json.JsonSerializerTestCase.test_serialize_only_pk)",
+   "test_serialize_only_pk (serializers.test_jsonl.JsonlSerializerTestCase.test_serialize_only_pk)",
+   "test_serialize_only_pk (serializers.test_xml.XmlSerializerTestCase.test_serialize_only_pk)",
+   "test_serialize_only_pk (serializers.test_yaml.YamlSerializerTestCase.test_serialize_only_pk)",
+   "test_serialize_prefetch_related_m2m (serializers.test_json.JsonSerializerTestCase.test_serialize_prefetch_related_m2m)",
+   "test_serialize_prefetch_related_m2m (serializers.test_jsonl.JsonlSerializerTestCase.test_serialize_prefetch_related_m2m)",
+   "test_serialize_prefetch_related_m2m (serializers.test_xml.XmlSerializerTestCase.test_serialize_prefetch_related_m2m)",
+   "test_serialize_prefetch_related_m2m (serializers.test_yaml.YamlSerializerTestCase.test_serialize_prefetch_related_m2m)",
+   "test_serialize_progressbar (serializers.test_json.JsonSerializerTestCase.test_serialize_progressbar)",
+   "test_serialize_progressbar (serializers.test_jsonl.JsonlSerializerTestCase.test_serialize_progressbar)",
+   "test_serialize_progressbar (serializers.test_xml.XmlSerializerTestCase.test_serialize_progressbar)",
+   "test_serialize_progressbar (serializers.test_yaml.YamlSerializerTestCase.test_serialize_progressbar)"
+  ],
+  "pass_to_pass_count": 65,
+  "repo": "django/django"
+ },
+ "django__django-16950": {
+  "base_commit": "f64fd47a7627ed6ffe2df2a32ded6ee528a784eb",
+  "fail_to_pass": [
+   "If form data is provided, a parent's auto-generated alternate key is"
+  ],
+  "pass_to_pass_count": 3,
+  "repo": "django/django"
+ },
+ "django__django-17029": {
+  "base_commit": "953f29f700a60fc09b08b2c2270c12c447490c6a",
+  "fail_to_pass": [
+   "test_clear_cache (apps.tests.AppsTests.test_clear_cache)"
+  ],
+  "pass_to_pass_count": 43,
+  "repo": "django/django"
+ },
+ "django__django-17084": {
+  "base_commit": "f8c43aca467b7b0c4bb0a7fa41362f90b610b8df",
+  "fail_to_pass": [
+   "test_referenced_window_requires_wrapping (aggregation.tests.AggregateAnnotationPruningTests.test_referenced_window_requires_wrapping)"
+  ],
+  "pass_to_pass_count": 107,
+  "repo": "django/django"
+ },
+ "django__django-17087": {
+  "base_commit": "4a72da71001f154ea60906a2f74898d32b7322a7",
+  "fail_to_pass": [
+   "test_serialize_nested_class_method (migrations.test_writer.WriterTests.test_serialize_nested_class_method)"
+  ],
+  "pass_to_pass_count": 53,
+  "repo": "django/django"
+ },
+ "django__django-7530": {
+  "base_commit": "f8fab6f90233c7114d642dfe01a4e6d4cb14ee7d",
+  "fail_to_pass": [
+   "test_squashmigrations_initial_attribute (migrations.test_commands.SquashMigrationsTests)"
+  ],
+  "pass_to_pass_count": 59,
+  "repo": "django/django"
+ },
+ "django__django-9296": {
+  "base_commit": "84322a29ce9b0940335f8ab3d60e55192bef1e50",
+  "fail_to_pass": [
+   "test_paginator_iteration (pagination.tests.PaginationTests)"
+  ],
+  "pass_to_pass_count": 20,
+  "repo": "django/django"
+ },
+ "matplotlib__matplotlib-13989": {
+  "base_commit": "a3e2897bfaf9eaac1d6649da535c4e721c89fa69",
+  "fail_to_pass": [
+   "lib/matplotlib/tests/test_axes.py::test_hist_range_and_density"
+  ],
+  "pass_to_pass_count": 411,
+  "repo": "matplotlib/matplotlib"
+ },
+ "matplotlib__matplotlib-14623": {
+  "base_commit": "d65c9ca20ddf81ef91199e6d819f9d3506ef477c",
+  "fail_to_pass": [
+   "lib/matplotlib/tests/test_axes.py::test_inverted_limits"
+  ],
+  "pass_to_pass_count": 400,
+  "repo": "matplotlib/matplotlib"
+ }
+}

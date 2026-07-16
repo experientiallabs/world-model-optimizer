@@ -44,7 +44,9 @@ from wmh.ingest import get_adapter  # noqa: E402
 from wmh.scenarios import ChecklistJudge, ScenarioSet  # noqa: E402
 
 DISTILL = REPO / ".agents" / "docs" / "research" / "distill"
-JUDGE_MODEL = "gemini-2.5-flash"  # default; --judge-model overrides (bedrock: prefix for Converse models)
+JUDGE_MODEL = (
+    "gemini-2.5-flash"  # default; --judge-model overrides (bedrock: prefix for Converse models)
+)
 MAX_STEPS = 10
 WORKERS = 4
 
@@ -85,7 +87,10 @@ class QwenStudentAgent:
             )
             messages.append({"role": "assistant", "content": f"<tool_call>{call}</tool_call>"})
             messages.append(
-                {"role": "user", "content": f"<tool_response>{step.observation.content}</tool_response>"}
+                {
+                    "role": "user",
+                    "content": f"<tool_response>{step.observation.content}</tool_response>",
+                }
             )
         response = self._client.chat.completions.create(
             model=self._model,
@@ -135,8 +140,9 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--eval-pool", default="eval_pool.json", help="pool file under distill/")
     parser.add_argument("--wm-model", default=NOVA_LITE, help="Bedrock model backing the WM")
-    parser.add_argument("--judge-model", default=JUDGE_MODEL,
-                        help="judge: gemini model name, or bedrock:<model-id>")
+    parser.add_argument(
+        "--judge-model", default=JUDGE_MODEL, help="judge: gemini model name, or bedrock:<model-id>"
+    )
     args = parser.parse_args()
 
     _load_gemini_key()

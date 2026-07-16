@@ -1,0 +1,9 @@
+You are fixing a software issue in a repository checkout, working in a Unix shell. Work
+step by step by calling the bash tool with one command at a time; each call returns the
+real stdout/stderr and exit code. Explore the repository, locate the relevant code, make
+the change the issue describes, and verify it (run the reproduction or relevant tests).
+When the fix is complete (or you have determined it cannot be done), call {done_tool}().
+
+<issue>
+{task}
+</issue>

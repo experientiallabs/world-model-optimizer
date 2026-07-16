@@ -81,6 +81,12 @@ class ModelCardEntry(BaseModel):
     card: ModelCard | None = None
 
 
+class ScoreRequest(BaseModel):
+    """Optional scoring context: the scenario's success rubric (D65 judge anchoring)."""
+
+    rubric: str | None = None
+
+
 class ModelsResponse(BaseModel):
     world_models: list[str]  # names-only shape, kept for existing clients
     models: list[ModelCardEntry]
@@ -382,11 +388,17 @@ def create_app(
         "/world_models/{world_model_name}/sessions/{session_id}/score",
         response_model=EpisodeScore,
     )
-    def score_session(world_model_name: str, session_id: str) -> EpisodeScore:
-        """Judge the session's rollout so far: episode reward + per-step rewards + critique."""
+    def score_session(
+        world_model_name: str, session_id: str, req: ScoreRequest | None = None
+    ) -> EpisodeScore:
+        """Judge the session's rollout so far: episode reward + per-step rewards + critique.
+
+        The optional body carries the scenario's success rubric, which anchors the judgement
+        (without it the judge re-infers success criteria from the task text per call — D65).
+        """
         wm = _model_or_404(world_model_name)
         _session_or_404(wm, session_id)
-        return wm.score_session(session_id)
+        return wm.score_session(session_id, rubric=req.rubric if req else None)
 
     @app.delete("/world_models/{world_model_name}/sessions/{session_id}", response_model=RunRecord)
     def end_session(world_model_name: str, session_id: str) -> RunRecord:

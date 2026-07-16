@@ -103,12 +103,21 @@ def embed_batch(embedder: Provider, texts: list[str]) -> np.ndarray:
 
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    results: dict[str, object] = {"config": {
-        "region": REGION, "per_domain": PER_DOMAIN, "pool_budget": POOL_BUDGET, "ours_k": OURS_K,
-        "passes": PASSES, "max_steps": MAX_STEPS, "models": {
-            "pipeline": NOVA_LITE, "agents": [NOVA_MICRO, NOVA_LITE],
-            "embed": "amazon.titan-embed-text-v2:0 (512d)"},
-    }}
+    results: dict[str, object] = {
+        "config": {
+            "region": REGION,
+            "per_domain": PER_DOMAIN,
+            "pool_budget": POOL_BUDGET,
+            "ours_k": OURS_K,
+            "passes": PASSES,
+            "max_steps": MAX_STEPS,
+            "models": {
+                "pipeline": NOVA_LITE,
+                "agents": [NOVA_MICRO, NOVA_LITE],
+                "embed": "amazon.titan-embed-text-v2:0 (512d)",
+            },
+        }
+    }
     t0 = time.time()
 
     lite = bedrock(NOVA_LITE)
@@ -146,9 +155,11 @@ def main() -> None:
         "facet_embedding": rec_facet.model_dump(),
         "raw_digest_embedding_baseline": rec_digest.model_dump(),
     }
-    print(f"facet: purity={rec_facet.purity:.3f} ARI={rec_facet.adjusted_rand_index:.3f} | "
-          f"digest: purity={rec_digest.purity:.3f} ARI={rec_digest.adjusted_rand_index:.3f}",
-          flush=True)
+    print(
+        f"facet: purity={rec_facet.purity:.3f} ARI={rec_facet.adjusted_rand_index:.3f} | "
+        f"digest: purity={rec_digest.purity:.3f} ARI={rec_digest.adjusted_rand_index:.3f}",
+        flush=True,
+    )
 
     print("== build pool (budget 30) + ours-K8 ==", flush=True)
     pool_set = build_scenario_set(
@@ -181,8 +192,11 @@ def main() -> None:
         "solvable_rate": verification.solvable_rate,
         "verdicts": [v.model_dump() for v in verification.verdicts],
     }
-    print(f"back-agreement {verification.back_agreement_rate:.0%}, "
-          f"solvable {verification.solvable_rate:.0%}", flush=True)
+    print(
+        f"back-agreement {verification.back_agreement_rate:.0%}, "
+        f"solvable {verification.solvable_rate:.0%}",
+        flush=True,
+    )
 
     print("== Test 2: score matrix (4 agents x pool x 3 passes) ==", flush=True)
     micro = bedrock(NOVA_MICRO)
@@ -193,16 +207,24 @@ def main() -> None:
         "nova-lite-t0.9": LLMAgent(lite, temperature=0.9),
     }
     matrix = score_matrix(
-        world_model, agents, pool_set.scenarios, ChecklistJudge(lite),
-        passes=PASSES, max_steps=MAX_STEPS, workers=WORKERS,
+        world_model,
+        agents,
+        pool_set.scenarios,
+        ChecklistJudge(lite),
+        passes=PASSES,
+        max_steps=MAX_STEPS,
+        workers=WORKERS,
     )
     subsets = {"ours-k8": ours_weights, **random_subsets(pool_ids, OURS_K, seeds=(0, 1, 2))}
     fidelity = fidelity_report(matrix, pool_ids, subsets)
     results["test2_fidelity"] = fidelity.model_dump()
     results["score_matrix"] = matrix.model_dump()
     for method in fidelity.methods:
-        print(f"{method.method:20} mae={method.mae:.3f} spearman={method.spearman:+.2f} "
-              f"kendall={method.kendall:+.2f}", flush=True)
+        print(
+            f"{method.method:20} mae={method.mae:.3f} spearman={method.spearman:+.2f} "
+            f"kendall={method.kendall:+.2f}",
+            flush=True,
+        )
 
     results["wall_clock_seconds"] = round(time.time() - t0, 1)
     out = OUT_DIR / "scenario_e2e_results_tau_bench.json"

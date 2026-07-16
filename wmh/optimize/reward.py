@@ -65,26 +65,37 @@ class EpisodeRewardJudge:
     def __init__(self, provider: Provider) -> None:
         self._provider = provider
 
-    def score(self, task: str | None, steps: list[Step]) -> EpisodeScore:
+    def score(
+        self, task: str | None, steps: list[Step], rubric: str | None = None
+    ) -> EpisodeScore:
         """Judge one rollout; robust to malformed judge replies (flagged zero score, never raises).
 
         `steps` is the episode in order (e.g. `EpisodeResult.steps` from `run_episode`, or a served
         session's history). An empty rollout scores 0 without calling the LLM.
+
+        `rubric`: the scenario's success criteria (e.g. real tau2's gold `evaluation_criteria`),
+        anchors the verdict: without it the judge infers success conditions from the task text
+        alone, and that interpretation varies run to run (D65 source 2: the same pinned-world
+        rollout judged 0.75 and 0.0 across sessions on a date-semantics reading). The rubric names
+        WHAT must be true; the judge still never sees a gold trajectory of HOW.
         """
         if not steps:
             return EpisodeScore(
                 reward=0.0, success=False, critique="Empty rollout: no steps to judge."
             )
-        user = _build_reward_prompt(task, steps)
+        user = _build_reward_prompt(task, steps, rubric)
         completion = self._provider.complete(
             REWARD_JUDGE_SYSTEM, [Message(role="user", content=user)], temperature=0.0
         )
         return _parse_episode_score(completion.text, n_steps=len(steps))
 
 
-def _build_reward_prompt(task: str | None, steps: list[Step]) -> str:
-    """Render the rollout for the judge: task, then each action -> observation in order."""
-    lines = [f"TASK: {task or '(none given)'}", "", f"ROLLOUT ({len(steps)} steps):"]
+def _build_reward_prompt(task: str | None, steps: list[Step], rubric: str | None = None) -> str:
+    """Render the rollout for the judge: task, rubric (when given), then each step in order."""
+    lines = [f"TASK: {task or '(none given)'}"]
+    if rubric:
+        lines += ["", "SUCCESS RUBRIC (authoritative — judge against THESE criteria):", rubric]
+    lines += ["", f"ROLLOUT ({len(steps)} steps):"]
     for i, step in enumerate(steps, start=1):
         observation = step.observation
         flag = " [ERROR]" if observation.is_error else ""

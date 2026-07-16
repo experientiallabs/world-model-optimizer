@@ -180,3 +180,29 @@ def test_live_titan_embed() -> None:  # pragma: no cover - network
     assert all(len(v) == 256 for v in vectors)
     # Distinct inputs should not produce identical embeddings.
     assert vectors[0] != vectors[1]
+
+
+def test_client_config_keeps_connections_alive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stale keep-alive connections make sparse Bedrock calls hang until read_timeout
+    (observed live: turn-1 WM steps and judge calls hanging ~10 min); TCP keepalive
+    lets the OS detect the dead peer instead."""
+    import boto3
+    from botocore.config import Config
+
+    captured: dict[str, object] = {}
+
+    def fake_client(service: str, region_name: str | None = None, config: object = None) -> object:
+        captured["service"] = service
+        captured["config"] = config
+        return object()
+
+    monkeypatch.setattr(boto3, "client", fake_client)
+    provider = BedrockProvider(_config())
+    provider._get_client()
+    config = cast(Config, captured["config"])
+    # botocore Config materializes options dynamically; assert via the recorded options.
+    options = cast("dict[str, object]", config._user_provided_options)
+    assert options["tcp_keepalive"] is True
+    assert options["connect_timeout"] == 15
+    assert options["read_timeout"] == 600
+    assert options["retries"] == {"max_attempts": 1, "mode": "standard"}

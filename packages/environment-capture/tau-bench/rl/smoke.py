@@ -18,7 +18,7 @@ Finally we hit the FastAPI serving layer in-process with `TestClient` and drive
 session -> step -> score -> delete, since claas-verl and other training scaffolds will
 talk to that HTTP surface, not the Python objects.
 
-Budget: <~30 Bedrock haiku calls, max_steps=3, 2 scenarios. Under `examples/` so it's
+Budget: <~30 Bedrock haiku calls, max_steps=3, 2 scenarios. Under the benchmark dir so it's
 excluded from the ruff/ty gate but we keep it clean. Run with:
 
     uv run python packages/environment-capture/tau-bench/rl/smoke.py
@@ -31,9 +31,9 @@ from __future__ import annotations
 import json
 import time
 import traceback
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
 
 from fastapi.testclient import TestClient
 
@@ -52,9 +52,10 @@ from wmh.serving.server import create_app
 
 # --- config ---------------------------------------------------------------
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_MODEL_DIR = _REPO_ROOT / "examples" / "tau-bench" / "models" / "tau-bench"
-_TRACES_PATH = _REPO_ROOT / "examples" / "tau-bench" / "traces.otel.jsonl"
+# __file__ = .../packages/environment-capture/tau-bench/rl/smoke.py -> parents[4] = repo root.
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_MODEL_DIR = _REPO_ROOT / "packages" / "environment-capture" / "tau-bench" / "models" / "tau-bench"
+_TRACES_PATH = _REPO_ROOT / "packages" / "environment-capture" / "tau-bench" / "traces.otel.jsonl"
 
 # Haiku is cheap and honours all Bedrock knobs; we override the model's built-in Opus so a
 # ~30-call smoke doesn't cost Opus money. WorldModel.load reads the artifact index + prompt

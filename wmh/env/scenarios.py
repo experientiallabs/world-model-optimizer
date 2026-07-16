@@ -33,7 +33,7 @@ def scenarios_from_traces(traces: list[Trace]) -> list[Scenario]:
     """
     by_task: dict[str, Scenario] = {}
     for trace in traces:
-        task = _trace_task(trace)
+        task = trace_task(trace)
         if task is None:
             continue
         scenario = by_task.get(task)
@@ -44,8 +44,13 @@ def scenarios_from_traces(traces: list[Trace]) -> list[Scenario]:
     return list(by_task.values())
 
 
-def _trace_task(trace: Trace) -> str | None:
-    """The trace's task prompt: first non-empty per-step task (steps carry it in this corpus)."""
+def trace_task(trace: Trace) -> str | None:
+    """The trace's task prompt: first non-empty per-step task (steps carry it in this corpus).
+
+    Public because it DEFINES task identity for scenario pinning and leakage filtering:
+    the SFT episode exporter must extract tasks identically to `scenarios_from_traces`
+    (which uses this) or the train/eval disjointness guarantee silently breaks.
+    """
     for step in trace.steps:
         if step.task and step.task.strip():
             return step.task.strip()

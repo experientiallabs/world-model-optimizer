@@ -38,7 +38,9 @@ def to_steps(record: dict) -> list[Step]:
     steps = [
         Step(
             action=Action(
-                kind=ActionKind.TOOL_CALL, name=s["tool"], arguments=as_dict(s.get("arguments") or {})
+                kind=ActionKind.TOOL_CALL,
+                name=s["tool"],
+                arguments=as_dict(s.get("arguments") or {}),
             ),
             observation=Observation(content=s["observation"], is_error=s.get("is_error", False)),
         )

@@ -70,6 +70,7 @@ from wmh.config import (
     validate_name,
 )
 from wmh.config.card import make_build_card, save_card
+from wmh.config.manifest import MANIFEST_FILE, ManifestMismatch, VerifyResult, verify_manifest
 from wmh.core.types import JsonObject
 from wmh.engine.build import build as run_build
 from wmh.engine.build import ingest, split_traces
@@ -640,6 +641,67 @@ def list_models(root: str = typer.Option(ARTIFACT_DIR, help="Project dir to list
         _console.print("[yellow]no world models built yet[/yellow]; run `wmh build --name <name>`")
         return
     _console.print(models_table(infos))
+
+
+@app.command("verify")
+def verify(
+    name: str = typer.Option(
+        None, "--name", help="World model to verify (default: all built ones)."
+    ),
+    root: str = typer.Option(ARTIFACT_DIR, help="Project dir."),
+) -> None:
+    """Check artifact integrity: re-hash every file and compare against the stored manifest.
+
+    Detects corruption, partial writes, and files modified after the build. Models built
+    before this feature have no manifest and are reported as unverified (not an error).
+    Exits with code 1 if any file fails verification.
+    """
+    store = WorldModelStore(root)
+    names = [name] if name is not None else store.list_names()
+    if not names:
+        _console.print("[yellow]no world models built yet[/yellow]; run `wmh build --name <name>`")
+        return
+
+    all_ok = True
+    for model_name in names:
+        try:
+            model_dir = store.resolve(model_name)
+        except (FileNotFoundError, ValueError) as exc:
+            raise typer.BadParameter(str(exc)) from exc
+
+        _console.print(f"[bold]{model_name}[/bold]")
+        if not (model_dir / MANIFEST_FILE).exists():
+            _console.print(
+                "  [yellow]⚠ no manifest — rebuild with `wmh build` to enable integrity checks"
+                "[/yellow]"
+            )
+            continue
+
+        try:
+            result: VerifyResult = verify_manifest(model_dir)
+        except ManifestMismatch as exc:
+            _console.print(f"  [red]✗ manifest unreadable: {exc}[/red]")
+            all_ok = False
+            continue
+
+        for f in result.files:
+            if f.ok:
+                _console.print(f"  {_CHECK} {f.name}")
+            else:
+                all_ok = False
+                _console.print(f"  [red]✗ {f.name}[/red]  ({f.detail})")
+
+        if result.ok:
+            _console.print("  [green]artifact integrity verified[/green]")
+        else:
+            _console.print(
+                f"  [red]artifact appears corrupted "
+                f"({result.failed}/{result.total} files failed) — "
+                f"rebuild with `wmh build --name {model_name}`[/red]"
+            )
+
+    if not all_ok:
+        raise typer.Exit(1)
 
 
 @app.command("download")

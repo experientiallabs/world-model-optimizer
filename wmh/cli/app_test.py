@@ -6,6 +6,7 @@ import importlib
 import json
 import os
 import subprocess
+from email.message import Message as EmailMessage
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -167,7 +168,7 @@ def test_build_survives_card_write_failure(patched_provider, monkeypatch, tmp_pa
 
 def test_cli_exposes_the_small_command_set() -> None:
     names = {cmd.name for cmd in app.registered_commands}
-    core = {"build", "list", "serve", "demo", "eval", "play", "download", "knowledge"}
+    core = {"build", "list", "verify", "serve", "demo", "eval", "play", "download", "knowledge"}
     platform = {"login", "logout", "status", "push", "pull", "run"}
     assert names == core | platform
 
@@ -507,6 +508,40 @@ def test_list_empty_project_is_friendly(tmp_path) -> None:  # noqa: ANN001
     assert "no world models" in result.output
 
 
+def test_verify_reports_clean_and_corrupted_artifacts(tmp_path: Path) -> None:
+    """The integrity command prints every failure and returns a nonzero status."""
+    from wmh.config import HarnessConfig, save_config, write_manifest
+
+    root = tmp_path / ".wmh"
+    clean = root / "models" / "clean"
+    corrupted = root / "models" / "corrupted"
+    for model_dir in (clean, corrupted):
+        save_config(HarnessConfig(), root=model_dir)
+        write_manifest(model_dir, [model_dir / "config.toml"])
+    (corrupted / "config.toml").write_text("corrupted", encoding="utf-8")
+
+    result = runner.invoke(app, ["verify", "--root", str(root)])
+
+    assert result.exit_code == 1, result.output
+    assert "clean" in result.output
+    assert "artifact integrity verified" in result.output
+    assert "corrupted" in result.output
+    assert "checksum mismatch" in result.output
+
+
+def test_verify_accepts_legacy_artifacts_without_a_manifest(tmp_path: Path) -> None:
+    """Models built before manifests remain usable and are explicitly identified."""
+    from wmh.config import HarnessConfig, save_config
+
+    root = tmp_path / ".wmh"
+    save_config(HarnessConfig(), root=root / "models" / "legacy")
+
+    result = runner.invoke(app, ["verify", "--name", "legacy", "--root", str(root)])
+
+    assert result.exit_code == 0, result.output
+    assert "no manifest" in result.output
+
+
 def test_play_repl_steps_and_quits(patched_provider, tmp_path) -> None:  # noqa: ANN001
     root = tmp_path / ".wmh"
     _build(root, "default", tmp_path)
@@ -781,7 +816,7 @@ def test_download_multi_skips_a_404_and_fetches_the_rest(monkeypatch, tmp_path: 
 
     def fetch(name, force=False, on_progress=None):  # noqa: ANN001, ANN202
         if name == "broken":
-            raise urllib.error.HTTPError("https://hub/x", 404, "nf", None, None)  # type: ignore[arg-type]
+            raise urllib.error.HTTPError("https://hub/x", 404, "nf", EmailMessage(), None)
         fetched.append(name)
         return tmp_path
 

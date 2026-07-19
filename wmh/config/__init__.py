@@ -12,6 +12,14 @@ from wmh.config.config import (
     save_config,
 )
 from wmh.config.dotenv import load_env_file, upsert_env_var
+from wmh.config.manifest import (
+    MANIFEST_FILE,
+    FileResult,
+    ManifestMismatch,
+    VerifyResult,
+    verify_manifest,
+    write_manifest,
+)
 from wmh.config.settings import (
     ProjectSettings,
     TelemetrySettings,
@@ -33,7 +41,10 @@ __all__ = [
     "ARTIFACT_DIR",
     "DEFAULT_MODEL_NAME",
     "FIDELITY_TIERS",
+    "MANIFEST_FILE",
+    "FileResult",
     "FidelityTier",
+    "ManifestMismatch",
     "TierSpec",
     "PROVIDER_ENV_VARS",
     "ArtifactPaths",
@@ -41,6 +52,7 @@ __all__ = [
     "ModelInfo",
     "ProjectSettings",
     "TelemetrySettings",
+    "VerifyResult",
     "WorldModelStore",
     "ensure_telemetry_anonymous_id",
     "load_config",
@@ -53,4 +65,6 @@ __all__ = [
     "settings_path",
     "upsert_env_var",
     "validate_name",
+    "verify_manifest",
+    "write_manifest",
 ]

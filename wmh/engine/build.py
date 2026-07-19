@@ -11,6 +11,7 @@ import json
 import shutil
 
 from wmh.config import ArtifactPaths, HarnessConfig, save_config
+from wmh.config.manifest import write_manifest
 from wmh.core.types import Trace
 from wmh.engine.autoconfig import (
     DEFAULT_VAL_CAP,
@@ -336,7 +337,7 @@ def _persist(
     retriever: EmbeddingRetriever,
     result: OptimizeResult,
 ) -> None:
-    """Write config, prompts, frontier, metrics, and the retrieval index under `.wmh/`."""
+    """Write config, prompts, frontier, metrics, retrieval index, and manifest under `.wmh/`."""
     save_config(config, paths.root)
     paths.base_prompt.parent.mkdir(parents=True, exist_ok=True)
     paths.base_prompt.write_text(BASE_ENV_PROMPT, encoding="utf-8")
@@ -344,3 +345,17 @@ def _persist(
     paths.frontier.write_text(json.dumps(result.frontier, indent=2), encoding="utf-8")
     paths.metrics.write_text(result.metrics.model_dump_json(indent=2), encoding="utf-8")
     retriever.save(paths.index)
+    # Hash every artifact file and record the digests so `wmh verify` and
+    # `WorldModel.load` can detect corruption or partial writes before serving.
+    write_manifest(
+        paths.root,
+        [
+            paths.config,
+            paths.optimized_prompt,
+            paths.base_prompt,
+            paths.frontier,
+            paths.metrics,
+            paths.index / "embeddings.npy",
+            paths.index / "steps.jsonl",
+        ],
+    )

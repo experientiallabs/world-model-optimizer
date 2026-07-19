@@ -300,6 +300,11 @@ class ArtifactPaths:
         """The auto-config search report (present on high/max-tier builds)."""
         return self.root / "auto_fidelity.json"
 
+    @property
+    def manifest(self) -> Path:
+        """SHA-256 checksums of every artifact file, written by `wmh build`."""
+        return self.root / "manifest.json"
+
 
 def _strip_none(value: JsonValue) -> JsonValue:
     """Drop `None`-valued keys recursively so TOML (which has no null) can represent the config.

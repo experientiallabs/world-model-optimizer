@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from wmh.config import ArtifactPaths, HarnessConfig
+from wmh.config import ArtifactPaths, HarnessConfig, verify_manifest
 from wmh.core.types import Action, ActionKind, Observation, Step, Trace
 from wmh.engine.build import build, split_traces, split_traces_3way
 from wmh.providers.base import Completion, Message, ProviderConfig, ProviderKind
@@ -248,6 +248,7 @@ def test_build_writes_a_loadable_artifact(tmp_path) -> None:  # noqa: ANN001 - p
     assert paths.optimized_prompt.read_text(encoding="utf-8")  # a non-empty winning prompt
     assert json.loads(paths.frontier.read_text(encoding="utf-8"))  # frontier persisted
     assert result.prompt
+    assert verify_manifest(root).ok
     # The index round-trips: a freshly loaded WorldModel can retrieve the indexed step.
     from wmh.engine.world_model import WorldModel
 

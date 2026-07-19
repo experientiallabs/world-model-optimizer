@@ -11,6 +11,7 @@ optional extra (`uv sync --extra e2b`).
 
 from __future__ import annotations
 
+import importlib
 import os
 import time
 from collections.abc import Callable, Iterator, Sequence
@@ -177,7 +178,7 @@ def default_sandbox_factory(
 
     def make() -> SandboxHandle:
         try:
-            from e2b import Sandbox
+            e2b = importlib.import_module("e2b")
         except ImportError as exc:  # pragma: no cover - exercised only without the extra
             raise ImportError(
                 "the e2b SDK is not installed; run `uv sync --extra e2b` to use the "
@@ -188,11 +189,11 @@ def default_sandbox_factory(
             raise RuntimeError(f"set ${E2B_API_KEY_ENV} to run the harness in E2B sandboxes")
         chosen = template or os.environ.get(E2B_TEMPLATE_ENV) or None
         if metadata:
-            sandbox = Sandbox.create(
+            sandbox = e2b.Sandbox.create(
                 template=chosen, timeout=int(timeout), api_key=key, metadata=metadata
             )
         else:
-            sandbox = Sandbox.create(template=chosen, timeout=int(timeout), api_key=key)
+            sandbox = e2b.Sandbox.create(template=chosen, timeout=int(timeout), api_key=key)
         # The SDK object satisfies the protocol slice structurally; cast rather than pin the
         # SDK's full (much wider) signatures into the protocol.
         return cast("SandboxHandle", sandbox)

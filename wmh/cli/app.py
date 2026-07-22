@@ -124,6 +124,12 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+_PROJECT_SETUP_PANEL = "Project Setup"
+_AGENTS_PANEL = "Agents"
+_WORLD_MODELS_PANEL = "World Models"
+_PLATFORM_PANEL = "Platform"
+_RESEARCH_PANEL = "Research"
+
 
 providers_app = typer.Typer(help="Manage and verify LLM providers.", no_args_is_help=True)
 examples_app = typer.Typer(
@@ -137,15 +143,12 @@ scenarios_app = typer.Typer(
     help="Construct and verify representative eval scenario sets from traces.",
     no_args_is_help=True,
 )
-app.add_typer(providers_app, name="providers")
-app.add_typer(examples_app, name="examples")
-app.add_typer(config_app, name="config")
-app.add_typer(research_app, name="research")
-app.add_typer(scenarios_app, name="scenarios")
-app.add_typer(harness_app, name="harness")
-app.command("optimize")(optimize)
-register_platform_commands(app)
-register_agent_session_commands(app)
+app.add_typer(providers_app, name="providers", rich_help_panel=_PROJECT_SETUP_PANEL)
+app.add_typer(config_app, name="config", rich_help_panel=_PROJECT_SETUP_PANEL)
+app.add_typer(examples_app, name="examples", rich_help_panel=_PROJECT_SETUP_PANEL)
+register_agent_session_commands(app, rich_help_panel=_AGENTS_PANEL)
+app.command("optimize", rich_help_panel=_AGENTS_PANEL)(optimize)
+app.add_typer(harness_app, name="harness", rich_help_panel=_AGENTS_PANEL)
 _console = Console()
 _CHECK = "[green]✓[/green]"
 
@@ -388,7 +391,7 @@ def examples_run(
     raise typer.Exit(result.returncode)
 
 
-@app.command("build")
+@app.command("build", rich_help_panel=_WORLD_MODELS_PANEL)
 def build(
     name: str = typer.Option(None, "--name", help="Name for this world model."),
     source: str = typer.Option(
@@ -757,7 +760,7 @@ def _verify_or_abort(config: HarnessConfig, chain: str | None = None) -> None:
         raise typer.Exit(1)
 
 
-@app.command("list")
+@app.command("list", rich_help_panel=_WORLD_MODELS_PANEL)
 def list_models(root: str = typer.Option(ARTIFACT_DIR, help="Project dir to list.")) -> None:
     """List every world model built under the project dir."""
     infos = WorldModelStore(root).list_info()
@@ -767,7 +770,7 @@ def list_models(root: str = typer.Option(ARTIFACT_DIR, help="Project dir to list
     _console.print(models_table(infos))
 
 
-@app.command("download")
+@app.command("download", rich_help_panel=_WORLD_MODELS_PANEL)
 def download(
     benchmarks: list[str] = _DOWNLOAD_BENCHMARKS,
     force: bool = typer.Option(False, "--force", help="Overwrite existing local files."),
@@ -854,7 +857,7 @@ def _fetch_with_progress(name: str, *, force: bool) -> Path:
         return fetch_corpus(name, force=force, on_progress=on_progress)
 
 
-@app.command("serve")
+@app.command("serve", rich_help_panel=_WORLD_MODELS_PANEL)
 def serve(
     name: list[str] = typer.Option(  # noqa: B008 - typer reads option defaults at definition time
         None, "--name", help="World model(s) to serve. Repeatable; default: all built ones."
@@ -888,7 +891,7 @@ def serve(
     uvicorn.run(server_app, host="127.0.0.1", port=port)
 
 
-@app.command("eval")
+@app.command("eval", rich_help_panel=_WORLD_MODELS_PANEL)
 def eval_(  # noqa: A001 - `eval` is the user-facing command name; the builtin isn't used here
     tokens: list[str] | None = _EVAL_TOKENS,
     mode: str = typer.Option(
@@ -1567,7 +1570,10 @@ def _eval_report_payload(report: EvalReport) -> JsonObject:
     }
 
 
-@app.command("knowledge")
+app.add_typer(scenarios_app, name="scenarios", rich_help_panel=_WORLD_MODELS_PANEL)
+
+
+@app.command("knowledge", rich_help_panel=_WORLD_MODELS_PANEL)
 def knowledge_(
     name: str = typer.Option(None, "--name", help="World model (default: the only one)."),
     root: str = typer.Option(ARTIFACT_DIR, help="Project dir."),
@@ -1825,7 +1831,7 @@ def _resolve_scenario_embedder(
     )
 
 
-@app.command("demo")
+@app.command("demo", rich_help_panel=_WORLD_MODELS_PANEL)
 def demo(
     name: str = typer.Option(None, "--name", help="World model to demo (default: pick one)."),
     root: str = typer.Option(ARTIFACT_DIR, help="Project dir (example models are found too)."),
@@ -1958,7 +1964,7 @@ def _first_prompt(wm: WorldModel, trace) -> str:  # noqa: ANN001 - core Trace
         wm.end_session(probe.id)
 
 
-@app.command("play")
+@app.command("play", rich_help_panel=_WORLD_MODELS_PANEL)
 def play(
     name: str = typer.Option(None, "--name", help="World model to play (default: pick one)."),
     task: str = typer.Option(None, "--task", help="Task to seed the session with."),
@@ -1973,6 +1979,10 @@ def play(
     )
     suggestions = _action_suggestions(wm)
     run_play_repl(_console, wm, resolved_name, task, suggestions=suggestions)
+
+
+register_platform_commands(app, rich_help_panel=_PLATFORM_PANEL)
+app.add_typer(research_app, name="research", rich_help_panel=_RESEARCH_PANEL)
 
 
 def _traces_for_root(model_root: Path) -> Path | None:

@@ -363,10 +363,10 @@ def _print_orgs(identity: WhoAmI, default_org: str | None) -> None:
     _console.print(table)
 
 
-def register(app: typer.Typer) -> None:
+def register(app: typer.Typer, *, rich_help_panel: str | None = None) -> None:
     """Attach the platform commands to the root CLI."""
-    app.command("login")(login)
-    app.command("logout")(logout)
-    app.command("status")(status)
-    app.command("push")(push)
-    app.command("pull")(pull)
+    app.command("login", rich_help_panel=rich_help_panel)(login)
+    app.command("logout", rich_help_panel=rich_help_panel)(logout)
+    app.command("status", rich_help_panel=rich_help_panel)(status)
+    app.command("push", rich_help_panel=rich_help_panel)(push)
+    app.command("pull", rich_help_panel=rich_help_panel)(pull)

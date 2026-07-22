@@ -337,6 +337,27 @@ def test_bare_invocation_shows_help(args: list[str]) -> None:
     assert result.exit_code == 2
 
 
+def test_root_help_groups_commands_by_feature() -> None:
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0, result.output
+
+    headings = ["Project Setup", "Agents", "World Models", "Platform", "Research"]
+    positions = [result.output.index(heading) for heading in headings]
+    assert positions == sorted(positions)
+
+    expected_commands = {
+        "Project Setup": ("providers", "config", "examples"),
+        "Agents": ("run", "optimize", "harness"),
+        "World Models": ("build", "list", "download", "serve", "eval", "scenarios"),
+        "Platform": ("login", "logout", "status", "push", "pull"),
+        "Research": ("research",),
+    }
+    for heading, commands in expected_commands.items():
+        heading_index = result.output.index(heading)
+        for command in commands:
+            assert result.output.index(command) > heading_index
+
+
 def test_build_rejects_invalid_name_flag_with_friendly_error(tmp_path) -> None:  # noqa: ANN001
     result = runner.invoke(
         app,

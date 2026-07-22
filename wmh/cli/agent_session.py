@@ -849,10 +849,10 @@ _SESSION_OPT = typer.Option(
 )
 
 
-def register(app: typer.Typer) -> None:
+def register(app: typer.Typer, *, rich_help_panel: str | None = None) -> None:
     """Register the unified ``wmh run`` command on the root app."""
 
-    @app.command("run")
+    @app.command("run", rich_help_panel=rich_help_panel)
     def run(
         target: Annotated[str | None, _TARGET_ARG] = None,
         directory: Annotated[str | None, _DIR_OPT] = None,

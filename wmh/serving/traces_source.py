@@ -9,6 +9,7 @@ Hub. Recorded traces are grouped by task into replayable scenarios for the Explo
 
 from __future__ import annotations
 
+import json
 import threading
 from collections.abc import Callable
 from enum import StrEnum
@@ -103,8 +104,6 @@ def scenarios_from_traces(
 def _scenario_label(task: str | None, index: int) -> str:
     if not task:
         return f"Scenario {index + 1}"
-    import json
-
     try:
         parsed = json.loads(task)
         text = parsed.get("reason_for_call") or parsed.get("task_instructions") or task

@@ -95,6 +95,41 @@ class SpanRecord(BaseModel):
     status_error: bool = False
 
 
+class SyntheticSpanEmitter:
+    """Builds an ordered synthetic `gen_ai.*` span sequence for one reconstructed trace.
+
+    Adapters whose export is not itself a span stream (message lists, provider event rows) rebuild
+    the agent's step sequence by calling `emit` per action/observation in order. The emitter owns
+    the shared bookkeeping every such adapter repeated: a monotonic ordinal that drives both the
+    synthetic span id and `start_nano`, and the `chat`/`execute_tool` operation-name stamp. Any
+    `first_attrs` (e.g. the trace-level `gen_ai.prompt` task and `wmh.trace.metadata`) are merged
+    into the first span only, without clobbering keys the caller already set.
+    """
+
+    def __init__(self, trace_id: str, *, first_attrs: JsonObject | None = None) -> None:
+        self.trace_id = trace_id
+        self.spans: list[SpanRecord] = []
+        self._first_attrs = first_attrs or {}
+
+    def emit(self, attrs: JsonObject, *, tool: bool, error: bool = False) -> None:
+        """Append one span; `tool` picks the operation (tool execution vs LLM chat)."""
+        ordinal = len(self.spans)
+        if ordinal == 0:
+            for key, value in self._first_attrs.items():
+                attrs.setdefault(key, value)
+        op = "execute_tool" if tool else "chat"
+        self.spans.append(
+            SpanRecord(
+                trace_id=self.trace_id,
+                span_id=f"{self.trace_id[:12]}{ordinal:06x}{'t' if tool else 'a'}",
+                name=op,
+                start_nano=ordinal,
+                attributes={"gen_ai.operation.name": op, **attrs},
+                status_error=error,
+            )
+        )
+
+
 # --- value coercion ---------------------------------------------------------------------------
 
 

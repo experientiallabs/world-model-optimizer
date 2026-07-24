@@ -41,6 +41,7 @@ sides, so eval episodes are unaffected):
 from __future__ import annotations
 
 import queue
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -530,13 +531,9 @@ class _Deadline:
     _remaining: float = field(init=False)
 
     def __post_init__(self) -> None:
-        import time
-
         self._end = time.monotonic() + self.seconds
 
     def remaining(self) -> float:
-        import time
-
         return max(0.0, self._end - time.monotonic())
 
     def expired(self) -> bool:

@@ -43,6 +43,7 @@ from pydantic import BaseModel, Field, JsonValue
 
 from wmh.core.types import Action, ActionKind, EnvState, JsonObject, Observation, Step, Trace
 from wmh.ingest.adapter import VendorPull, register_adapter
+from wmh.ingest.normalize import as_text, to_int
 
 # `gen_ai.operation.name` values, per the OTel GenAI semantic conventions.
 _LLM_OPS = frozenset({"chat", "text_completion", "invoke_agent", "generate_content"})
@@ -106,7 +107,7 @@ def _any_value(value: JsonValue) -> JsonValue:
     if "stringValue" in value:
         return value["stringValue"]
     if "intValue" in value:
-        return _to_int(value["intValue"])
+        return to_int(value["intValue"])
     if "doubleValue" in value:
         return value["doubleValue"]
     if "boolValue" in value:
@@ -135,29 +136,6 @@ def _attrs_to_dict(attrs: JsonValue) -> JsonObject:
     return out
 
 
-def _to_int(value: JsonValue) -> int:
-    if isinstance(value, bool):  # bool is an int subclass; treat as non-numeric here.
-        return 0
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return 0
-    return 0
-
-
-def _as_text(value: JsonValue) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value
-    return json.dumps(value, ensure_ascii=False, sort_keys=True)
-
-
 def _as_str(value: JsonValue) -> str:
     return value if isinstance(value, str) else ""
 
@@ -181,8 +159,8 @@ def _parse_span(raw: JsonValue) -> _ParsedSpan | None:
         span_id=_as_str(raw.get("spanId")),
         parent_span_id=_as_str(raw.get("parentSpanId")),
         name=_as_str(raw.get("name")),
-        start_nano=_to_int(raw.get("startTimeUnixNano")),
-        end_nano=_to_int(raw.get("endTimeUnixNano")),
+        start_nano=to_int(raw.get("startTimeUnixNano")),
+        end_nano=to_int(raw.get("endTimeUnixNano")),
         attributes=_attrs_to_dict(raw.get("attributes")),
         status_error=status_error,
     )
@@ -283,7 +261,7 @@ def _action_from_llm_span(span: _ParsedSpan) -> Action:
         return Action(kind=ActionKind.TOOL_CALL, name=tool_name, arguments=_tool_args(attrs))
     completion = attrs.get("gen_ai.completion")
     content = attrs.get("gen_ai.prompt") if completion is None else completion
-    return Action(kind=ActionKind.MESSAGE, content=_as_text(content))
+    return Action(kind=ActionKind.MESSAGE, content=as_text(content))
 
 
 def _tool_call_action_from_tool_span(span: _ParsedSpan) -> Action:
@@ -300,7 +278,7 @@ def _observation_from_tool_span(span: _ParsedSpan) -> Observation:
     for key in _TOOL_OUTPUT_KEYS:
         value = span.attributes.get(key)
         if value is not None:
-            content = _as_text(value)
+            content = as_text(value)
             break
     return Observation(content=content, is_error=span.status_error)
 
@@ -309,7 +287,7 @@ def _trace_task(spans: list[_ParsedSpan]) -> str | None:
     for span in spans:
         prompt = span.attributes.get("gen_ai.prompt")
         if prompt is not None:
-            return _as_text(prompt)
+            return as_text(prompt)
     return None
 
 

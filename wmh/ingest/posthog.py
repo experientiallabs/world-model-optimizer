@@ -36,6 +36,7 @@ export to a file and use `from_file` if you prefer.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 
@@ -45,7 +46,13 @@ from pydantic import JsonValue
 from wmh.core.types import JsonObject
 from wmh.ingest.adapter import VendorPull, register_adapter
 from wmh.ingest.base import BaseTraceAdapter
-from wmh.ingest.normalize import SpanRecord, as_text, iso_to_ordinal, openai_call_name_args
+from wmh.ingest.normalize import (
+    SpanRecord,
+    SyntheticSpanEmitter,
+    as_text,
+    iso_to_ordinal,
+    openai_call_name_args,
+)
 
 # PostHog API. `$AI_*` events are queried via HogQL over the `events` table. Host is region-specific
 # (US: us.posthog.com, EU: eu.posthog.com), so it is configurable.
@@ -197,8 +204,6 @@ class PostHogAdapter(BaseTraceAdapter):
         eid = event.get("id") or event.get("uuid")
         if isinstance(eid, str) and eid:
             return eid
-        import hashlib
-
         return hashlib.sha256(as_text(event).encode()).hexdigest()[:32]
 
     def _spans_for_trace(self, trace_id: str, events: list[JsonObject]) -> list[SpanRecord]:
@@ -211,28 +216,9 @@ class PostHogAdapter(BaseTraceAdapter):
             if task is not None:
                 break
 
-        spans: list[SpanRecord] = []
-        ordinal = 0
-
-        def emit(attrs: JsonObject, *, tool: bool, error: bool = False) -> None:
-            nonlocal ordinal
-            if ordinal == 0 and task is not None:
-                attrs.setdefault("gen_ai.prompt", task)
-            spans.append(
-                SpanRecord(
-                    trace_id=trace_id,
-                    span_id=f"{trace_id[:12]}{ordinal:06x}{'t' if tool else 'a'}",
-                    name="execute_tool" if tool else "chat",
-                    start_nano=ordinal,
-                    attributes={
-                        "gen_ai.operation.name": "execute_tool" if tool else "chat",
-                        **attrs,
-                    },
-                    status_error=error,
-                )
-            )
-            ordinal += 1
-
+        emitter = SyntheticSpanEmitter(
+            trace_id, first_attrs={"gen_ai.prompt": task} if task is not None else None
+        )
         for _, event in indexed:
             name = _event_name(event)
             props = _props(event)
@@ -242,19 +228,19 @@ class PostHogAdapter(BaseTraceAdapter):
                 if calls:
                     for tool_call in calls:
                         tool_name, args = openai_call_name_args(tool_call)
-                        emit(
+                        emitter.emit(
                             {"gen_ai.tool.name": tool_name, "gen_ai.tool.call.arguments": args},
                             tool=False,
                             error=error,
                         )
                 else:
-                    emit(
+                    emitter.emit(
                         {"gen_ai.completion": _choices_text(props.get("$ai_output_choices"))},
                         tool=False,
                         error=error,
                     )
             elif name == "$ai_span" and self._span_is_tool(props):
-                emit(
+                emitter.emit(
                     {
                         "gen_ai.tool.name": _as_str(props.get("$ai_span_name")),
                         "gen_ai.tool.call.arguments": as_text(props.get("$ai_input_state")),
@@ -264,7 +250,7 @@ class PostHogAdapter(BaseTraceAdapter):
                     error=error,
                 )
             # $ai_trace (root summary) and other events carry no standalone step.
-        return spans
+        return emitter.spans
 
     def _span_is_tool(self, props: JsonObject) -> bool:
         """An `$ai_span` is a tool execution when it has an output/input state or a span name."""

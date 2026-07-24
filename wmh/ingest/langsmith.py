@@ -57,12 +57,14 @@ config gate stays SDK-free.
 
 from __future__ import annotations
 
+import hashlib
+
 from pydantic import JsonValue
 
 from wmh.core.types import JsonObject
 from wmh.ingest.adapter import register_adapter
 from wmh.ingest.base import BaseTraceAdapter
-from wmh.ingest.normalize import SpanRecord, as_text, iso_to_ordinal
+from wmh.ingest.normalize import SpanRecord, SyntheticSpanEmitter, as_text, iso_to_ordinal
 
 
 def _as_str(value: JsonValue) -> str:
@@ -304,28 +306,9 @@ class LangSmithAdapter(BaseTraceAdapter):
 
         task = self._trace_task([run for _, run in indexed])
 
-        spans: list[SpanRecord] = []
-        ordinal = 0
-
-        def emit(attrs: JsonObject, *, tool: bool, error: bool = False) -> None:
-            nonlocal ordinal
-            if ordinal == 0 and task is not None:
-                attrs.setdefault("gen_ai.prompt", task)
-            spans.append(
-                SpanRecord(
-                    trace_id=trace_id,
-                    span_id=f"{trace_id[:12]}{ordinal:06x}{'t' if tool else 'a'}",
-                    name="execute_tool" if tool else "chat",
-                    start_nano=ordinal,
-                    attributes={
-                        "gen_ai.operation.name": "execute_tool" if tool else "chat",
-                        **attrs,
-                    },
-                    status_error=error,
-                )
-            )
-            ordinal += 1
-
+        emitter = SyntheticSpanEmitter(
+            trace_id, first_attrs={"gen_ai.prompt": task} if task is not None else None
+        )
         for _, run in indexed:
             run_type = _as_str(run.get("run_type")).lower()
             error = _is_error(run)
@@ -337,15 +320,17 @@ class LangSmithAdapter(BaseTraceAdapter):
                 if calls:
                     for tool_call in calls:
                         name, args = _call_name_args(tool_call)
-                        emit(
+                        emitter.emit(
                             {"gen_ai.tool.name": name, "gen_ai.tool.call.arguments": args},
                             tool=False,
                             error=error,
                         )
                 else:
-                    emit({"gen_ai.completion": _llm_completion(out_obj)}, tool=False, error=error)
+                    emitter.emit(
+                        {"gen_ai.completion": _llm_completion(out_obj)}, tool=False, error=error
+                    )
             elif run_type == "tool":
-                emit(
+                emitter.emit(
                     {
                         "gen_ai.tool.name": _tool_run_name(run),
                         "gen_ai.tool.message": _tool_output_text(outputs),
@@ -354,7 +339,7 @@ class LangSmithAdapter(BaseTraceAdapter):
                     error=error,
                 )
             # chain / retriever / unknown run types are not directly actionable -> skipped.
-        return spans
+        return emitter.spans
 
     def _trace_task(self, runs: list[JsonObject]) -> str | None:
         """First human/user input across a trace's runs (ordered) -> the task text."""
@@ -370,8 +355,6 @@ class LangSmithAdapter(BaseTraceAdapter):
             value = run.get(key)
             if isinstance(value, str) and value:
                 return value
-        import hashlib
-
         return hashlib.sha256(as_text(run).encode()).hexdigest()[:32]
 
 

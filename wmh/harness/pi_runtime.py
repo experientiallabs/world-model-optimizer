@@ -34,8 +34,8 @@ from llm_waterfall import ChatRequest
 from pydantic import JsonValue
 
 from wmh.core.types import Action, ActionKind, EnvState, JsonObject, Observation, Step
-from wmh.harness.environment import AgentEnvironment, is_env_action
-from wmh.harness.runner_link import params_schema
+from wmh.harness.environment import AgentEnvironment
+from wmh.harness.runner_link import params_schema, resolve_env_tool_call
 from wmh.harness.runtime import DEFAULT_MAX_OUTPUT_TOKENS, DEFAULT_MAX_TURNS, RunResult, StopReason
 from wmh.harness.skills import SkillLibrary
 from wmh.harness.tools import READ_SKILL, ToolSpec
@@ -103,23 +103,16 @@ class _Episode:
 
     def run_tool(self, name: str, arguments: JsonObject) -> JsonObject:
         action = Action(kind=ActionKind.TOOL_CALL, name=name, arguments=arguments)
-        if name not in {t.name for t in self.tools}:
-            obs = Observation(content=f"tool {name!r} not available", is_error=True)
-        elif name == READ_SKILL.name:
-            raw_name = arguments.get("name")
-            skill_name = raw_name if isinstance(raw_name, str) else ""
-            skill = self.skills.get(skill_name)
-            if skill is None:
-                obs = Observation(content=f"no skill named {skill_name!r}", is_error=True)
-            else:
-                obs = Observation(content=skill.body)
-        elif self._env_calls >= self.max_env_actions:
-            obs = Observation(content="environment action budget exhausted", is_error=True)
-        elif not is_env_action(action):
-            obs = Observation(content=f"tool {name!r} not available", is_error=True)
-        else:
+        obs, consumed = resolve_env_tool_call(
+            action,
+            tools=self.tools,
+            skills=self.skills,
+            environment=self.environment,
+            env_calls=self._env_calls,
+            max_env_actions=self.max_env_actions,
+        )
+        if consumed:
             self._env_calls += 1
-            obs = self.environment.execute(action)
         self.steps.append(
             Step(action=action, observation=obs, state_before=EnvState(), task=self.instruction)
         )

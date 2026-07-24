@@ -152,6 +152,40 @@ def params_schema(tool: ToolSpec) -> JsonObject:
     return {"type": "object", "properties": props, "required": list(tool.arguments)}
 
 
+def resolve_env_tool_call(
+    action: Action,
+    *,
+    tools: list[ToolSpec],
+    skills: SkillLibrary,
+    environment: AgentEnvironment,
+    env_calls: int,
+    max_env_actions: int,
+) -> tuple[Observation, bool]:
+    """Resolve one tool call to its Observation under the shared runtime tool-routing rules.
+
+    Applies the same precedence every pi episode uses: an unknown tool, the skill reader, an
+    exhausted environment-action budget, and a non-environment tool each short-circuit to an
+    observation before the environment is touched; anything else executes against `environment`.
+    Returns the observation plus whether it consumed an environment-action slot, so the caller can
+    advance its own `env_calls` counter (kept caller-side because episodes own their mutable state).
+    """
+    name = action.name
+    if name not in {t.name for t in tools}:
+        return Observation(content=f"tool {name!r} not available", is_error=True), False
+    if name == READ_SKILL.name:
+        raw_name = action.arguments.get("name")
+        skill_name = raw_name if isinstance(raw_name, str) else ""
+        skill = skills.get(skill_name)
+        if skill is None:
+            return Observation(content=f"no skill named {skill_name!r}", is_error=True), False
+        return Observation(content=skill.body), False
+    if env_calls >= max_env_actions:
+        return Observation(content="environment action budget exhausted", is_error=True), False
+    if not is_env_action(action):
+        return Observation(content=f"tool {name!r} not available", is_error=True), False
+    return environment.execute(action), True
+
+
 # --------------------------------------------------------------------------------------------------
 # Host-side episode: environment tool routing, budget, and transcript recording.
 # --------------------------------------------------------------------------------------------------
@@ -180,23 +214,16 @@ class HostEpisode:
     def run_tool(self, name: str, arguments: JsonObject) -> JsonObject:
         """Answer one runtime/environment tool call under AgentRuntime-compatible semantics."""
         action = Action(kind=ActionKind.TOOL_CALL, name=name, arguments=arguments)
-        if name not in {t.name for t in self.tools}:
-            obs = Observation(content=f"tool {name!r} not available", is_error=True)
-        elif name == READ_SKILL.name:
-            raw_name = arguments.get("name")
-            skill_name = raw_name if isinstance(raw_name, str) else ""
-            skill = self.skills.get(skill_name)
-            if skill is None:
-                obs = Observation(content=f"no skill named {skill_name!r}", is_error=True)
-            else:
-                obs = Observation(content=skill.body)
-        elif self._env_calls >= self.max_env_actions:
-            obs = Observation(content="environment action budget exhausted", is_error=True)
-        elif not is_env_action(action):
-            obs = Observation(content=f"tool {name!r} not available", is_error=True)
-        else:
+        obs, consumed = resolve_env_tool_call(
+            action,
+            tools=self.tools,
+            skills=self.skills,
+            environment=self.environment,
+            env_calls=self._env_calls,
+            max_env_actions=self.max_env_actions,
+        )
+        if consumed:
             self._env_calls += 1
-            obs = self.environment.execute(action)
         self.steps.append(
             Step(action=action, observation=obs, state_before=EnvState(), task=self.instruction)
         )

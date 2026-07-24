@@ -30,6 +30,7 @@ Accepted file shapes (`from_file`):
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -46,8 +47,6 @@ from wmh.ingest.normalize import (
 
 
 def _hash_id(*parts: str) -> str:
-    import hashlib
-
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:32]
 
 

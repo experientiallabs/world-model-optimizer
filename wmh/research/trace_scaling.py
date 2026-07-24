@@ -335,14 +335,3 @@ class TraceScalingAblation:
             path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
 
         return write
-
-
-def _dedupe(values: list[int]) -> list[int]:
-    """Drop duplicates while preserving first-seen order."""
-    seen: set[int] = set()
-    out: list[int] = []
-    for v in values:
-        if v not in seen:
-            seen.add(v)
-            out.append(v)
-    return out

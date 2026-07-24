@@ -40,8 +40,10 @@ Pull: live pull via the Braintrust SDK is not implemented; export to a file and 
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import uuid
 
 import httpx
 from pydantic import JsonValue
@@ -76,8 +78,6 @@ def _as_str(value: JsonValue) -> str:
 
 def _looks_like_uuid(value: str) -> bool:
     """True if `value` is a canonical UUID (Braintrust project ids), so we skip the name lookup."""
-    import uuid
-
     try:
         uuid.UUID(value)
     except ValueError:
@@ -246,8 +246,6 @@ class BraintrustAdapter(BaseTraceAdapter):
             value = row.get(key)
             if isinstance(value, str) and value:
                 return value
-        import hashlib
-
         return hashlib.sha256(as_text(row).encode()).hexdigest()[:32]
 
     def _spans_for_trace(self, trace_id: str, rows: list[JsonObject]) -> list[SpanRecord]:

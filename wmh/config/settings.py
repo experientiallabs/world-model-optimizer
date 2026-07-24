@@ -82,10 +82,16 @@ class ProjectSettings(BaseModel):
 
 
 def settings_path(root: str | Path = ARTIFACT_DIR) -> Path:
+    """The settings.toml path under a project artifact root."""
     return Path(root) / SETTINGS_FILENAME
 
 
 def load_settings(root: str | Path = ARTIFACT_DIR) -> ProjectSettings:
+    """Load a project's settings, returning defaults when no file exists.
+
+    Raises:
+        ValueError: the file is not valid TOML, or does not match the settings schema.
+    """
     path = settings_path(root)
     if not path.exists():
         return ProjectSettings()
@@ -101,6 +107,7 @@ def load_settings(root: str | Path = ARTIFACT_DIR) -> ProjectSettings:
 
 
 def save_settings(settings: ProjectSettings, root: str | Path = ARTIFACT_DIR) -> None:
+    """Persist settings to settings.toml, writing to a temp file and renaming for atomicity."""
     path = settings_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     data = settings.model_dump(mode="json", exclude_none=True)
@@ -111,6 +118,7 @@ def save_settings(settings: ProjectSettings, root: str | Path = ARTIFACT_DIR) ->
 
 
 def set_telemetry_enabled(enabled: bool, root: str | Path = ARTIFACT_DIR) -> ProjectSettings:
+    """Toggle telemetry opt-in and persist it, returning the updated settings."""
     settings = load_settings(root)
     settings.telemetry.enabled = enabled
     save_settings(settings, root)
@@ -118,6 +126,7 @@ def set_telemetry_enabled(enabled: bool, root: str | Path = ARTIFACT_DIR) -> Pro
 
 
 def ensure_telemetry_anonymous_id(root: str | Path = ARTIFACT_DIR) -> str:
+    """Return the stable anonymous telemetry id, generating and persisting one on first use."""
     settings = load_settings(root)
     if settings.telemetry.anonymous_id is None:
         settings.telemetry.anonymous_id = uuid.uuid4().hex

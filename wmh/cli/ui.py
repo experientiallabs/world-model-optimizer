@@ -789,17 +789,6 @@ def _prompt_text(
     return value or (default or "")
 
 
-def _prompt_int(console: Console, ask: PromptReader, label: str, default: int) -> int:
-    while True:
-        raw = ask(f"[bold]{label}[/bold] [dim]\\[{default}][/dim]: ").strip()
-        if not raw:
-            return default
-        value = _parse_int(raw)
-        if value is not None and value >= 0:
-            return value
-        console.print("[red]enter a non-negative whole number[/red]")
-
-
 def _parse_int(raw: str) -> int | None:
     """Parse a base-10 integer, or None. Unlike `str.isdigit`, this rejects unicode digit
     characters (e.g. superscripts) that `isdigit()` accepts but `int()` rejects with ValueError."""

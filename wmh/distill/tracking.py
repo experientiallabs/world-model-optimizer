@@ -28,6 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from wmh.core.types import JsonObject, JsonValue
 from wmh.distill.config import DistillConfig
+from wmh.distill.offpolicy import OffPolicyMetrics
 from wmh.distill.samples import SampleRollout
 from wmh.distill.store import write_text_atomic
 
@@ -58,6 +59,10 @@ class DistillTracker(Protocol):
 
     def log_step(self, step: int, metrics: StepMetrics) -> None:
         """Record one training step's metrics row."""
+        ...
+
+    def log_offpolicy_step(self, offpolicy_step: int, metrics: OffPolicyMetrics) -> None:
+        """Record one off-policy step's metrics row (keys under `offpolicy/`)."""
         ...
 
     def log_warmup_step(self, warmup_step: int, metrics: WarmupMetrics) -> None:
@@ -107,6 +112,9 @@ class NullTracker:
     """The disabled tracker: every call is a no-op."""
 
     def log_step(self, step: int, metrics: StepMetrics) -> None:
+        """No-op."""
+
+    def log_offpolicy_step(self, offpolicy_step: int, metrics: OffPolicyMetrics) -> None:
         """No-op."""
 
     def log_warmup_step(self, warmup_step: int, metrics: WarmupMetrics) -> None:
@@ -440,6 +448,16 @@ class WandbTracker:
         payload = _flatten_step_metrics(metrics)
         self._guarded(lambda: self._wandb.log(cast("Mapping[str, JsonValue]", payload), step=step))
 
+    def log_offpolicy_step(self, offpolicy_step: int, metrics: OffPolicyMetrics) -> None:
+        """Log one off-policy step's numeric fields under `offpolicy/` keys.
+
+        Same wandb-step rule as the warmup rows below: the phase precedes
+        training step 0 and wandb steps must never decrease, so every row logs
+        at wandb step 0 with the phase-global index carried as
+        `offpolicy/step`. The run dir's metrics.jsonl keeps every row.
+        """
+        self._log_phase_row("offpolicy", offpolicy_step, metrics)
+
     def log_warmup_step(self, warmup_step: int, metrics: WarmupMetrics) -> None:
         """Log one warmup step's numeric fields under `warmup/` keys.
 
@@ -448,11 +466,15 @@ class WandbTracker:
         as `warmup/step` (later warmup rows overwrite same-step keys on the
         dashboard; the run dir's metrics.jsonl keeps every row).
         """
-        payload: dict[str, float | int] = {"warmup/step": warmup_step}
+        self._log_phase_row("warmup", warmup_step, metrics)
+
+    def _log_phase_row(self, prefix: str, index: int, metrics: BaseModel) -> None:
+        """Log one pre-training phase row's numeric fields under `<prefix>/` keys."""
+        payload: dict[str, float | int] = {f"{prefix}/step": index}
         for key, value in metrics.model_dump(mode="json").items():
             if not isinstance(value, int | float) or isinstance(value, bool):
                 continue
-            payload[f"warmup/{key}"] = value
+            payload[f"{prefix}/{key}"] = value
         self._guarded(lambda: self._wandb.log(cast("Mapping[str, JsonValue]", payload), step=0))
 
     def log_eval(

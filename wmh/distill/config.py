@@ -1,8 +1,9 @@
 """Per-run TOML configuration for an on-policy distillation run.
 
 A distillation run is described by one TOML file with sections mirroring the
-sub-models below (student, teacher, harbor, rollout, train, sampling, warmup,
-eval, gate, pricing, budget, tripwire, wandb). `load_distill_config` reads and
+sub-models below (student, teacher, harbor, rollout, train, sampling,
+offpolicy, warmup, eval, gate, pricing, budget, tripwire, wandb).
+`load_distill_config` reads and
 validates the file; `snapshot_toml` renders a validated config back to TOML so a
 run dir can carry an exact snapshot of the configuration it ran with.
 """
@@ -397,8 +398,75 @@ class SamplingConfig(BaseModel):
     """Per-completion output cap for every rollout request."""
 
 
+class OffPolicyConfig(BaseModel):
+    """Off-policy distillation: hard-target CE on the teacher's own trajectories.
+
+    A primary training objective, not a bootstrap. The teacher runs the same
+    terminus-2 rollouts on the TRAIN tasks (or another run's recorded
+    collection is loaded through `trajectories_from`), the kept trials merge
+    into cross_entropy datums through the same prefix merge on-policy
+    distillation uses, and the student trains `epochs` passes over that datum
+    set at `minibatch_datums` datums per optimizer step. `epochs = 0` (the
+    default) disables the mode.
+
+    The phase is resumable at datum granularity: every `checkpoint_every`
+    optimizer steps it saves training state and persists a cursor
+    (`offpolicy-cursor.json`), so an interrupted run continues from the next
+    minibatch instead of paying for the whole schedule again.
+
+    This supersedes the legacy `[warmup]` section, which is the same machinery
+    pinned to one full-batch pass per step and no cursor. Setting both is
+    rejected (`DistillConfig._check_offpolicy_supersedes_warmup`).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    epochs: int = Field(default=0, ge=0)
+    """Passes over the kept teacher-trajectory datum set; 0 disables the mode."""
+
+    minibatch_datums: int = Field(default=0, ge=0)
+    """Datums per optimizer step. 0 (the default) trains each epoch as ONE
+    full-batch forward_backward plus one optim_step, which is exactly what the
+    legacy warmup phase did. A positive value splits each epoch into
+    ceil(datums / minibatch_datums) optimizer steps in plan order; the last
+    minibatch of an epoch may be short, and no datum is ever dropped or
+    truncated to make the split even."""
+
+    learning_rate: Annotated[float, Field(gt=0)] | None = None
+    """Off-policy optimizer LR; None uses `train.learning_rate`."""
+
+    rollouts_per_task: int = Field(default=1, ge=1)
+    """Teacher attempts per train task when collecting the trajectory corpus."""
+
+    keep: Literal["passed", "all"] = "passed"
+    """Which teacher trials feed the datum set: reward-passing only, or all."""
+
+    shuffle_seed: int | None = None
+    """Seed for the per-epoch datum shuffle; None (the default) trains every
+    epoch in build order. The order is a pure function of (seed, epoch), so a
+    resumed session replays exactly the order the interrupted one planned."""
+
+    checkpoint_every: int = Field(default=1, ge=1)
+    """Save training state and rewrite the resume cursor every N optimizer
+    steps. 1 (the default) makes a resume exact; a larger value trades at most
+    N-1 repeated minibatches for fewer save_state round trips."""
+
+    trajectories_from: str | None = None
+    """Path to another run dir whose teacher COLLECTION completed: this run
+    loads that run's `warmup-trials.json` manifest (the corpus file both CE
+    phases share) instead of collecting teacher rollouts here. The manifest's
+    teacher must match this run's teacher, the `keep` filter applies at load
+    time, and loading charges no meter because the source run paid for it."""
+
+
 class WarmupConfig(BaseModel):
     """Supervised warmup on the teacher's own pi trajectories before OPD steps.
+
+    Superseded by `[offpolicy]`, which is the same cross_entropy machinery as a
+    first-class mode (epochs, minibatches, a resumable datum cursor); this
+    section stays for the runs already configured against it and is pinned to
+    its historical behavior: one full-batch pass per step, no cursor, re-run
+    whole on resume.
 
     The remedy for a student that samples only failing trajectories (on-policy
     distillation then matches the teacher on failures): before the OPD step
@@ -707,6 +775,7 @@ class DistillConfig(BaseModel):
     rollout: RolloutConfig = Field(default_factory=RolloutConfig)
     train: TrainConfig = Field(default_factory=TrainConfig)
     sampling: SamplingConfig = Field(default_factory=SamplingConfig)
+    offpolicy: OffPolicyConfig = Field(default_factory=OffPolicyConfig)
     warmup: WarmupConfig = Field(default_factory=WarmupConfig)
     eval: EvalConfig = Field(default_factory=EvalConfig)
     gate: GateConfig = Field(default_factory=GateConfig)
@@ -734,6 +803,33 @@ class DistillConfig(BaseModel):
                 "alignment (they name different text); use loss = "
                 '"importance_sampling" or "ppo", which only need the teacher\'s '
                 "total logprob over each chunk of the student's own tokens"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_offpolicy_supersedes_warmup(self) -> DistillConfig:
+        """Reject running both cross_entropy phases in the same run.
+
+        `[offpolicy]` and `[warmup]` train the identical objective on the
+        identical corpus (the teacher's own trajectories, hard-target CE); the
+        only differences are the batch shape and the resume story. Running both
+        would collect the teacher twice and train the same data twice under two
+        different schedules, which no run wants and no metrics row explains.
+
+        Returns:
+            This config, unchanged, when at most one CE phase is enabled.
+
+        Raises:
+            ValueError: If both phases are enabled.
+        """
+        if self.offpolicy.epochs > 0 and self.warmup.steps > 0:
+            raise ValueError(
+                f"both cross_entropy phases are enabled (offpolicy.epochs = "
+                f"{self.offpolicy.epochs}, warmup.steps = {self.warmup.steps}), and they "
+                "train the same objective on the same teacher trajectories: [offpolicy] "
+                "supersedes [warmup] (same CE loss, plus epochs, minibatches, and a "
+                "resumable datum cursor). Keep [offpolicy] and set warmup.steps = 0, or "
+                "drop the [offpolicy] section"
             )
         return self
 

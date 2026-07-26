@@ -1,0 +1,120 @@
+# Off-policy distillation, as the run's PRIMARY objective.
+#
+# The student never samples during training here. The teacher runs terminus-2 on
+# the train split, its kept trajectories merge into cross_entropy datums through
+# the same prefix merge the on-policy loop uses, and the student trains
+# offpolicy.epochs passes over that corpus at offpolicy.minibatch_datums datums
+# per optimizer step. This is not a warmup: the CE phase is what the run is for,
+# and the on-policy steps after it are the small on-policy finish that lets the
+# gate compare like for like against the same holdout baselines.
+#
+# Why this shape:
+#   - Off-policy is the cheap arm. The teacher corpus is collected once and every
+#     epoch after that is free of rollout spend, so the money goes into gradient
+#     steps rather than into re-sampling the same tasks.
+#   - It is exposure-biased by construction (the student trains on states the
+#     TEACHER visited), which is exactly what the on-policy lane exists to fix.
+#     Read this run as the offline control for that comparison.
+#   - Same-family teacher is mandatory: tokenizer_fingerprint_check hard-raises
+#     on a mismatch, because the corpus is the teacher's own token ids trained
+#     verbatim as the student's targets. Both models here are Qwen3.5 and share
+#     a tokenizer and a renderer.
+#
+# Re-verify model names against the live Tinker lineup before running (it churns).
+[student]
+base_model = "Qwen/Qwen3.5-4B"
+lora_rank = 16
+
+[teacher]
+backend = "tinker"
+model = "Qwen/Qwen3.5-9B"
+
+[harbor]
+job_template = ".agents/distill/tb2-harbor-job-template.yaml"
+backend = "local"
+reward_key = "reward"
+
+[rollout]
+max_turns = 20
+context_budget_tokens = 65536
+compaction = false
+
+# Terminus-2 cannot use the stock reasoning renderers: they hand harbor's response
+# parser a LIST and kill the trial, and they strip thinking from history, which
+# fragments the episode into one datum per turn. The wmh verbatim wrappers keep the
+# reasoning in the token stream and the episode a single datum (wmh/distill/renderers.py).
+# Keyed per sampled base model: the teacher collects its own rollouts here.
+[rollout.renderers]
+"Qwen/Qwen3.5-4B" = "wmh/qwen3_5_verbatim"
+"Qwen/Qwen3.5-9B" = "wmh/qwen3_5_verbatim"
+
+[offpolicy]
+epochs = 4
+# 8 datums per optimizer step. 0 would train each epoch as one full-batch pass,
+# which is the legacy warmup shape and puts the whole corpus in one gradient
+# step; minibatches give the epoch several steps and keep the batch inside the
+# training client's comfortable size.
+minibatch_datums = 8
+# 2 teacher attempts per train task. keep = "passed" trains only the trials the
+# verifier scored as solved, which is the point of an off-policy corpus: the
+# targets are known-good trajectories.
+rollouts_per_task = 2
+keep = "passed"
+learning_rate = 5e-5
+# A seed shuffles each epoch's datum order (reproducibly, so a resume replays
+# the identical order); omit it to train every epoch in build order.
+shuffle_seed = 17
+# Save training state and rewrite offpolicy-cursor.json after every optimizer
+# step, so an interrupted run resumes at the next minibatch instead of paying
+# for the whole schedule again. Raise it to trade exactness for fewer saves.
+checkpoint_every = 1
+# trajectories_from = "runs/prior-offpolicy-run"  # reuse another run's corpus, free
+
+[train]
+# The on-policy finish after the off-policy phase. Keep it small: this config's
+# objective is the CE phase, and these steps exist so the promotion gate reads a
+# student that has seen its own states at least once.
+steps = 4
+tasks_per_batch = 4
+group_size = 2
+learning_rate = 1e-4
+advantage_clip = 4.0
+center_advantages = true
+max_datum_tokens = 65536
+sampler_refresh_every = 1
+save_state_every = 2
+trial_concurrency = 4
+
+# temperature 1.0 keeps issued sampler logprobs comparable to the untempered
+# teacher logprobs (unbiased reverse-KL advantages on the on-policy steps).
+[sampling]
+temperature = 1.0
+max_tokens = 4096
+
+# Superseded by [offpolicy] and pinned off: setting both is rejected at config
+# load, because they train the same objective on the same teacher corpus.
+[warmup]
+steps = 0
+
+[eval]
+every = 0
+tasks = 4
+k = 1
+
+[gate]
+k = 2
+min_teacher_fraction = 0.7
+require_no_regression = true
+
+[pricing]
+# Fill from the live Tinker models page at run time; unset forces interactive confirm.
+
+[budget]
+max_usd = 25.0
+
+# Optional Weights & Biases tracking; needs `uv sync --extra distill` plus
+# WANDB_API_KEY (or a prior `wandb login`). Off-policy rows chart under offpolicy/*.
+[wandb]
+enabled = true
+project = "wmh-distill"
+run_name = "distill-offpolicy-example"

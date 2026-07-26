@@ -11,6 +11,16 @@ student-after solve rates, and only an adapter that closes enough of the gap to 
 promoted. The result is a small model that behaves like the big one inside your agent, plus a
 ready-to-paste serving snippet.
 
+The same run can also train **off-policy**: with `[offpolicy] epochs > 0`, the teacher rolls
+out on the train split, its kept trajectories merge into datums through the identical prefix
+merge, and the student trains hard-target cross entropy over them for `epochs` passes at
+`minibatch_datums` datums per optimizer step, before any on-policy step runs. Off-policy is the
+cheaper objective (the corpus is collected once, and every epoch after that costs no rollout
+spend) and the exposure-biased one (the student learns states the teacher visited, not its
+own), so the two modes are read against each other. The phase is resumable at datum
+granularity, so an interrupted run continues at the next minibatch instead of paying for the
+whole schedule again.
+
 ## Prerequisites
 
 - **The distill extra**: `uv sync --extra distill` (installs the `tinker` SDK and `wandb`).
@@ -90,9 +100,19 @@ group_size = 4       # attempts per task (the on-policy group)
 temperature = 1.0    # keep 1.0: issued logprobs stay comparable to the teacher
 max_tokens = 8192
 
+[offpolicy]              # optional off-policy distillation phase; epochs = 0 disables it
+epochs = 4               # passes over the kept teacher trajectories
+minibatch_datums = 8     # datums per optimizer step; 0 trains one full-batch pass an epoch
+rollouts_per_task = 2    # teacher attempts per train task when collecting the corpus
+keep = "passed"          # or "all" to train on the teacher's failures too
+learning_rate = 5e-5     # unset uses train.learning_rate
+shuffle_seed = 17        # optional per-epoch datum shuffle (reproducible; unset keeps order)
+checkpoint_every = 1     # save state + rewrite the resume cursor every N optimizer steps
+# trajectories_from = "runs/prior"  # reuse another run's collected corpus, charged nothing
+
 [warmup]
-steps = 2              # optional SFT bootstrap on the teacher's own passing
-rollouts_per_task = 2  # trajectories before OPD; steps = 0 disables it
+steps = 0              # SUPERSEDED by [offpolicy] (same objective, full-batch only, no
+rollouts_per_task = 2  # cursor). Setting both sections nonzero is rejected at load.
 
 [eval]
 every = 0  # interim evals off (the default); N > 0 evals a train subsample every N steps
@@ -199,7 +219,10 @@ Everything durable lands under `--run-dir`:
 <run-dir>/
   config.toml         # exact snapshot of the run config
   distill-run.json    # pinned CLI inputs (splits, backend, seed harness hash)
-  metrics.jsonl       # one row per warmup/training step: solve rate (over the
+  offpolicy.json      # the off-policy phase's terminal record (its existence means done)
+  offpolicy-cursor.json  # only while that phase is INTERRUPTED: the last checkpointed
+                      # optimizer step and the tinker:// state saved with it
+  metrics.jsonl       # one row per off-policy/warmup/training step: solve rate (over the
                       # trials that actually executed) and graded_solve_rate
                       # (the same trials at test resolution) plus
                       # scaffold_loss_rate,
@@ -218,7 +241,9 @@ Everything durable lands under `--run-dir`:
   handoff.toml        # the [models.agent] serving snippet
   harbor/             # per-step harbor jobs dirs; each trial dir's result.json carries
                       # that trial's exact sampled token spans (rollout_details)
-  eval-rollouts/  warmup-rollouts/  # isolated rollout roots for eval/warmup batches
+  eval-rollouts/      # isolated rollout root per eval batch
+  warmup-rollouts/    # the teacher collection's rollout root, with its assembled trials in
+  warmup-trials.json  # the corpus manifest both cross_entropy phases read and write
 ```
 
 Read `scaffold_loss_rate` before reading any solve rate. It is the share of episodes that never
@@ -293,9 +318,15 @@ wmh optimize harness pi harbor --mode distill --run-dir runs/distill-01 --resume
 A resume needs only `--run-dir`: the CLI reloads the pinned splits, backend, and seed harness
 from `distill-run.json`, the config from the `config.toml` snapshot (an explicit
 `--distill-config` wins, which is how you raise the cap), and prior spend from `spend.json`,
-so a resumed run can never spend the budget twice. Recorded baselines and a finished warmup
-are reused, the step count continues from the latest checkpoint, and conflicting explicit
-flags are rejected rather than silently changing the run. The tripwire baseline in
+so a resumed run can never spend the budget twice. Recorded baselines and a finished
+cross_entropy phase (`offpolicy.json`, or the legacy `warmup.json`) are reused, the step count
+continues from the latest checkpoint, and conflicting explicit
+flags are rejected rather than silently changing the run. An off-policy phase that was
+interrupted mid-schedule resumes at datum granularity: `offpolicy-cursor.json` names the state
+saved at the last checkpointed optimizer step and how many steps are already applied, so the
+resumed session restores those weights, reuses the teacher corpus in `warmup-trials.json`
+rather than collecting it again, and trains only the minibatches that are left. The tripwire
+baseline in
 `checkpoints.json` is reused verbatim as well: a resumed session that re-measured it would
 anchor on the policy it just restored, so a collapse would become the new normal and the
 tripwire would never fire again.

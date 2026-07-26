@@ -28,6 +28,7 @@ from wmh.distill.config import (
     WandbConfig,
 )
 from wmh.distill.loop import StepMetrics, WarmupMetrics
+from wmh.distill.offpolicy import OffPolicyMetrics
 from wmh.distill.samples import SampleRollout
 from wmh.distill.tracking import (
     WANDB_API_KEY_ENV,
@@ -217,6 +218,34 @@ def _warmup_metrics() -> WarmupMetrics:
     )
 
 
+def _offpolicy_metrics(step: int = 0) -> OffPolicyMetrics:
+    return OffPolicyMetrics(
+        epoch=step,
+        epochs=2,
+        minibatch=0,
+        planned_steps=2,
+        tasks=4,
+        trials=8,
+        kept_trials=3,
+        solve_rate=0.375,
+        corpus_datums=3,
+        datums=3,
+        loss_tokens=30,
+        context_tokens=90,
+        learning_rate=1e-4,
+        loss=1.25,
+        grad_norm=None,
+        student_prefill_tokens=0,
+        student_cached_prefill_tokens=0,
+        student_sample_tokens=0,
+        student_train_tokens=120,
+        teacher_prefill_tokens=400,
+        teacher_cached_prefill_tokens=90,
+        teacher_sample_tokens=80,
+        usd=0.5,
+    )
+
+
 @pytest.fixture
 def fake_wandb(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _FakeWandb:
     """A recording wandb module with credentials present, in a clean HOME."""
@@ -240,6 +269,7 @@ def test_build_tracker_disabled_is_a_null_tracker(tmp_path: Path) -> None:
     assert isinstance(tracker, NullTracker)
     # Every NullTracker call is a harmless no-op.
     tracker.log_step(0, _metrics())
+    tracker.log_offpolicy_step(0, _offpolicy_metrics())
     tracker.log_warmup_step(0, _warmup_metrics())
     tracker.log_eval("baseline-teacher", 0.5, None)
     tracker.log_samples("train", 0, [_sample()])
@@ -605,6 +635,46 @@ def test_log_warmup_step_uses_warmup_keys_at_wandb_step_zero(
         "warmup/usd": 0.5,
     }
     # The constant phase discriminator (a string) never lands in the payload.
+    assert not any("phase" in key for key in payload)
+
+
+def test_log_offpolicy_step_uses_offpolicy_keys_at_wandb_step_zero(
+    fake_wandb: _FakeWandb, tmp_path: Path
+) -> None:
+    """Off-policy rows follow the same pre-training rule as the warmup rows."""
+    tracker = _tracker(fake_wandb, tmp_path / "run")
+    tracker.log_offpolicy_step(0, _offpolicy_metrics(0))
+    tracker.log_offpolicy_step(1, _offpolicy_metrics(1))
+    assert [step for _, step in fake_wandb.log_calls] == [0, 0]
+    (payload, _) = fake_wandb.log_calls[-1]
+    assert payload == {
+        "offpolicy/step": 1,
+        "offpolicy/epoch": 1,
+        "offpolicy/epochs": 2,
+        "offpolicy/minibatch": 0,
+        "offpolicy/planned_steps": 2,
+        "offpolicy/tasks": 4,
+        "offpolicy/trials": 8,
+        "offpolicy/kept_trials": 3,
+        "offpolicy/solve_rate": 0.375,
+        "offpolicy/corpus_datums": 3,
+        "offpolicy/datums": 3,
+        "offpolicy/loss_tokens": 30,
+        "offpolicy/context_tokens": 90,
+        "offpolicy/learning_rate": 1e-4,
+        "offpolicy/loss": 1.25,
+        "offpolicy/student_prefill_tokens": 0,
+        "offpolicy/student_cached_prefill_tokens": 0,
+        "offpolicy/student_sample_tokens": 0,
+        "offpolicy/student_train_tokens": 120,
+        "offpolicy/teacher_prefill_tokens": 400,
+        "offpolicy/teacher_cached_prefill_tokens": 90,
+        "offpolicy/teacher_sample_tokens": 80,
+        "offpolicy/usd": 0.5,
+    }
+    # A metric the backend never reported (grad_norm here) is charted as a gap,
+    # not as a fabricated 0.0, and the constant phase string never lands either.
+    assert "offpolicy/grad_norm" not in payload
     assert not any("phase" in key for key in payload)
 
 

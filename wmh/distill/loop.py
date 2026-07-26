@@ -2,11 +2,14 @@
 
 One run couples every distill layer end to end: preflight checks before any
 spend, teacher-in-harness and student-before baselines on the holdout split,
-the optional supervised warmup (teacher rollouts on the train split filtered
-to `warmup.keep`, then `warmup.steps` cross_entropy passes so a student that
-would sample only failures starts OPD from the teacher's successful
-trajectories; `warmup.trajectories_from` loads another run's recorded
-collection instead of collecting, charging nothing), then the training loop
+the optional off-policy phase (`[offpolicy]`: teacher rollouts on the train
+split filtered to `offpolicy.keep`, merged into cross_entropy datums, and
+trained for `offpolicy.epochs` passes at `offpolicy.minibatch_datums` datums
+per optimizer step, resumable at datum granularity through
+`offpolicy-cursor.json`; `offpolicy.trajectories_from` loads another run's
+recorded collection instead of collecting, charging nothing, and the legacy
+`[warmup]` section is the same machinery pinned to full-batch passes with no
+cursor), then the training loop
 (harbor rollouts from the current student sampler, prefix-merge datums,
 teacher scoring, reverse-KL advantages, one optimizer step per training step
 under the loss `train.loss` selects: `importance_sampling` or `ppo` over the
@@ -22,8 +25,10 @@ for training batches (each trial's sampled token spans live inside its own
 harbor trial dir, in `result.json`); eval batches (baselines, interim
 evals, student-after) get their own isolated roots under
 `eval-rollouts/<eval-name>/` so their harbor job dirs never collide with a
-training step's, and the warmup phase's teacher trials likewise land under
-`warmup-rollouts/`. Every batch (training step, warmup collection, eval)
+training step's, and a cross_entropy phase's teacher trials likewise land
+under `warmup-rollouts/` (the name both phases share, with their assembled
+records in `warmup-trials.json`). Every batch (training step, teacher
+collection, eval)
 additionally renders its first `train.log_sample_rollouts` episodes to
 human-readable text under `samples/` and the tracker's samples table
 (`wmh.distill.samples`), chat-template framing included.
@@ -46,12 +51,17 @@ only on an uninitialized model, so preflight and the sampler refresh follow
 the restore and validate the RESTORED weights), continues the
 step count from the checkpoint, restores the prior sessions' USD spend from
 the run store's spend ledger (written on every charge, so eval spend between
-metrics rows survives), and reuses recorded baseline evals. A finished warmup
-phase is recorded as the run store's `warmup.json` marker and never re-runs
-(when no step checkpoint exists yet, its recorded post-warmup state is what
-`load_state` restores); an UNfinished warmup re-runs whole, with the teacher
-trials themselves resuming trial-level through harbor (the teacher's identity
-is stable across sessions). Steps and student evals whose harbor job dirs
+metrics rows survives), and reuses recorded baseline evals. A finished
+cross_entropy phase is recorded as `offpolicy.json` (or the legacy
+`warmup.json`) and never re-runs; when no step checkpoint exists yet, that
+record's state is what `load_state` restores. An INTERRUPTED off-policy phase
+resumes from its `offpolicy-cursor.json`: the cursor names the training state
+saved at the last checkpointed optimizer step and how many steps of the
+schedule are already applied, so the phase continues at the next minibatch and
+reuses the teacher collection recorded in `warmup-trials.json` rather than
+paying for it again. An unfinished WARMUP has no cursor and re-runs whole,
+with the teacher trials themselves resuming trial-level through harbor (the
+teacher's identity is stable across sessions). Steps and student evals whose harbor job dirs
 were left by a prior session re-run whole (the rollout collector wipes
 stale-policy job dirs). A budget abort (`DistillBudgetError`), an
 all-empty-batch abort (`DistillEmptyBatchError`, raised when consecutive
@@ -95,6 +105,7 @@ from wmh.distill.cost import (
     batch_billing,
 )
 from wmh.distill.data import (
+    DatumStats,
     TopkCandidates,
     TrainDatum,
     attach_advantages,
@@ -105,6 +116,15 @@ from wmh.distill.data import (
 )
 from wmh.distill.deadlines import TinkerDeadlineError, call_with_deadline, wait_with_deadline
 from wmh.distill.gate import DistillGateRecord, gate_distillation
+from wmh.distill.offpolicy import (
+    CROSS_ENTROPY_LOSS,
+    OffPolicyCursorPosition,
+    OffPolicyMetrics,
+    OffPolicySchedule,
+    OffPolicyStepResult,
+    plan_offpolicy_steps,
+    run_offpolicy,
+)
 from wmh.distill.rendering import ChatRendering, RendererTokenizer, build_renderer
 from wmh.distill.rollouts import RolloutStats, collect_rollouts, rollout_stats
 from wmh.distill.samples import sample_rollouts, samples_markdown
@@ -112,6 +132,8 @@ from wmh.distill.store import (
     AdapterStore,
     DistillModelCard,
     DistillRunStore,
+    OffPolicyCursor,
+    OffPolicyRecord,
     WarmupRecord,
     WarmupTrialsManifest,
     build_handoff_toml,
@@ -182,9 +204,6 @@ at ~1 and the clip rarely binds (see `TrainConfig.loss`); `advantage_std` and
 `grad_norm` in the metrics row are what actually show an outlier-driven step.
 """
 
-CROSS_ENTROPY_LOSS = "cross_entropy"
-"""The warmup phase's supervised loss (see `to_tinker_sft_datums` for the keyset)."""
-
 ADVANTAGE_LOSS_BY_MODE = {
     "importance_sampling": IMPORTANCE_SAMPLING_LOSS,
     "ppo": PPO_LOSS,
@@ -213,14 +232,27 @@ EVAL_ROLLOUTS_DIR = "eval-rollouts"
 """Run-dir subdirectory holding each eval batch's isolated rollout root."""
 
 WARMUP_ROLLOUTS_DIR = "warmup-rollouts"
-"""Run-dir subdirectory holding the warmup phase's teacher rollout root."""
+"""Run-dir subdirectory holding a cross_entropy phase's teacher rollout root.
+
+Shared by the off-policy mode and the legacy warmup phase, the same way both
+read and write the one `warmup-trials.json` corpus manifest, so either can
+resume or load the other's collection.
+"""
 
 TEACHER_BASELINE_EVAL = "baseline-teacher"
 STUDENT_BEFORE_EVAL = "baseline-student-before"
 STUDENT_AFTER_EVAL = "student-after"
 
 DistillPhase = Literal[
-    "preflight", "baseline", "warmup", "rollouts", "training", "eval", "finalize", "gate"
+    "preflight",
+    "baseline",
+    "offpolicy",
+    "warmup",
+    "rollouts",
+    "training",
+    "eval",
+    "finalize",
+    "gate",
 ]
 
 
@@ -2354,7 +2386,60 @@ class _DistillRun:
         )
         return stamped
 
-    # -- warmup ----------------------------------------------------------------------------------
+    # -- cross_entropy phases (off-policy distillation, legacy warmup) -----------------------------
+
+    def _append_offpolicy_row(self, offpolicy_step: int, row: OffPolicyMetrics) -> None:
+        """Persist and track one off-policy row, advancing the per-row delta cursors."""
+        self._store.append_metrics(offpolicy_step, row)
+        self._tracker.log_offpolicy_step(offpolicy_step, row)
+        self._prev_tokens = {meter: self._budget.tokens(meter) for meter in METER_NAMES}
+        self._prev_usd = self._budget.session_usd
+
+    def _offpolicy_row(
+        self,
+        *,
+        epoch: int,
+        epochs: int,
+        minibatch: int,
+        planned_steps: int,
+        trials: int,
+        kept_trials: int,
+        solve_rate: float,
+        corpus_datums: int,
+        datums: int,
+        loss_tokens: int,
+        context_tokens: int,
+        learning_rate: float,
+        loss: float | None,
+        grad_norm: float | None,
+    ) -> OffPolicyMetrics:
+        """One off-policy metrics row carrying the meter deltas since the last row."""
+        deltas = self._meter_deltas()
+        return OffPolicyMetrics(
+            epoch=epoch,
+            epochs=epochs,
+            minibatch=minibatch,
+            planned_steps=planned_steps,
+            tasks=len(self._train_ids),
+            trials=trials,
+            kept_trials=kept_trials,
+            solve_rate=solve_rate,
+            corpus_datums=corpus_datums,
+            datums=datums,
+            loss_tokens=loss_tokens,
+            context_tokens=context_tokens,
+            learning_rate=learning_rate,
+            loss=loss,
+            grad_norm=grad_norm,
+            student_prefill_tokens=deltas["student_prefill"],
+            student_cached_prefill_tokens=deltas["student_cached_prefill"],
+            student_sample_tokens=deltas["student_sample"],
+            student_train_tokens=deltas["student_train"],
+            teacher_prefill_tokens=deltas["teacher_prefill"],
+            teacher_cached_prefill_tokens=deltas["teacher_cached_prefill"],
+            teacher_sample_tokens=deltas["teacher_sample"],
+            usd=max(self._budget.session_usd - self._prev_usd, 0.0),
+        )
 
     def _append_warmup_row(self, warmup_step: int, row: WarmupMetrics) -> None:
         """Persist and track one warmup row, advancing the per-row delta cursors."""
@@ -2395,42 +2480,47 @@ class _DistillRun:
             usd=max(self._budget.session_usd - self._prev_usd, 0.0),
         )
 
-    def _load_warmup_trials(self, source_dir: Path) -> tuple[list[TrialRecord], RolloutStats]:
-        """Load another run's warmup collection instead of collecting rollouts.
+    def _load_teacher_trials(
+        self, source_dir: Path, *, setting: str
+    ) -> tuple[list[TrialRecord], RolloutStats]:
+        """Load another run's teacher collection instead of collecting rollouts.
 
-        The `warmup.trajectories_from` path: the source run's collection wrote
-        its assembled (unfiltered) trial records to `warmup-trials.json`, so
-        this run reuses them for its own CE passes. The source run paid for
-        the teacher rollouts, so loading charges no meter; the `keep` filter
-        still applies to the loaded records at the call site.
+        The `trajectories_from` path shared by both cross_entropy phases: the
+        source run's collection wrote its assembled (unfiltered) trial records
+        to `warmup-trials.json`, so this run reuses them for its own CE passes.
+        The source run paid for the teacher rollouts, so loading charges no
+        meter; the `keep` filter still applies to the loaded records at the
+        call site.
 
         Args:
             source_dir: The source run's directory.
+            setting: The config section that named `source_dir` ("offpolicy" or
+                "warmup"), so an error says which key to fix.
 
         Returns:
             The manifest's trial records plus their recomputed batch stats.
 
         Raises:
             RuntimeError: If the source run has no warmup trial manifest (its
-                warmup collection never completed).
+                teacher collection never completed).
             ValueError: If the manifest's teacher does not match this run's
                 teacher identity.
         """
         manifest = DistillRunStore(source_dir).read_warmup_trials()
         if manifest is None:
             raise RuntimeError(
-                f"warmup.trajectories_from points at {source_dir}, but no warmup trial "
+                f"{setting}.trajectories_from points at {source_dir}, but no warmup trial "
                 f"manifest exists at {DistillRunStore(source_dir).warmup_trials_path}; the "
-                "manifest is written when a run's warmup collection finishes, so point "
-                "trajectories_from at a run dir whose warmup collected teacher rollouts, "
+                "manifest is written when a run's teacher collection finishes, so point "
+                "trajectories_from at a run dir that collected teacher rollouts, "
                 "or unset it to collect here"
             )
         if manifest.teacher_model != self._teacher_identity:
             raise ValueError(
-                f"the warmup trials in {source_dir} were sampled by teacher "
+                f"the teacher trials in {source_dir} were sampled by teacher "
                 f"{manifest.teacher_model!r}, but this run's teacher is "
-                f"{self._teacher_identity!r}; warmup must train on THIS teacher's "
-                "trajectories, so point warmup.trajectories_from at a run with a "
+                f"{self._teacher_identity!r}; cross_entropy training must use THIS teacher's "
+                f"trajectories, so point {setting}.trajectories_from at a run with a "
                 "matching teacher, or unset it to collect fresh"
             )
         # THIS run's output cap, not the source run's: the truncation count is read
@@ -2439,31 +2529,37 @@ class _DistillRun:
             manifest.records, max_tokens=self._cfg.sampling.max_tokens
         )
 
-    def _collect_warmup_trials(self) -> tuple[list[TrialRecord], RolloutStats]:
-        """Collect the warmup phase's teacher rollouts and persist their manifest.
+    def _collect_teacher_trials(
+        self, *, rollouts_per_task: int, phase: DistillPhase
+    ) -> tuple[list[TrialRecord], RolloutStats]:
+        """Collect a cross_entropy phase's teacher rollouts and persist the manifest.
 
         Runs the teacher through the pi harness on every train task
-        (`warmup.rollouts_per_task` attempts each, isolated under
+        (`rollouts_per_task` attempts each, isolated under
         `warmup-rollouts/`), writes the assembled records to
         `warmup-trials.json` (so other runs can load this collection via
-        `warmup.trajectories_from`), and charges the teacher meters.
+        `trajectories_from`, and so a resumed off-policy phase never pays for
+        the corpus twice), and charges the teacher meters.
+
+        Args:
+            rollouts_per_task: Teacher attempts per train task.
+            phase: The progress phase to emit under.
         """
         cfg = self._cfg
-        warmup = cfg.warmup
         self._emit(
-            "warmup",
+            phase,
             f"collecting teacher trajectories: {len(self._train_ids)} train task(s) x "
-            f"{warmup.rollouts_per_task} attempt(s) of {self._teacher_identity}",
+            f"{rollouts_per_task} attempt(s) of {self._teacher_identity}",
         )
         # The collector reads attempts from train.group_size, the same override
         # trick _run_eval uses for its k.
-        warmup_cfg = cfg.model_copy(
-            update={"train": cfg.train.model_copy(update={"group_size": warmup.rollouts_per_task})}
+        collect_cfg = cfg.model_copy(
+            update={"train": cfg.train.model_copy(update={"group_size": rollouts_per_task})}
         )
         records, roll_stats = collect_rollouts(
             0,
             self._train_ids,
-            warmup_cfg,
+            collect_cfg,
             self._harness,
             self._teacher_provider(),
             self._run_dir / WARMUP_ROLLOUTS_DIR,
@@ -2484,62 +2580,367 @@ class _DistillRun:
             self._abort_for_budget(exc, completed_step=None)
         return records, roll_stats
 
-    def _warmup(self) -> None:
-        """The supervised warmup phase: teacher trials, keep-filter, SFT passes.
+    def _cross_entropy_corpus(
+        self,
+        *,
+        trajectories_from: str | None,
+        rollouts_per_task: int,
+        setting: str,
+        phase: DistillPhase,
+        reuse_recorded: bool = False,
+    ) -> tuple[list[TrialRecord], RolloutStats, str]:
+        """Source one cross_entropy phase's teacher trajectories.
 
-        The teacher trials come from `_collect_warmup_trials` (fresh rollouts,
-        charged to the teacher meters) or, when `warmup.trajectories_from` is
-        set, from `_load_warmup_trials` (another run's recorded collection,
-        charging nothing). Either way the kept trials merge into cross_entropy
-        datums through the same prefix merge OPD uses (the teacher SAMPLED
-        these tokens, so they are exact sampled ids and need no advantages),
-        and the student trains `warmup.steps` passes. Each pass is one
-        forward_backward over the FULL warmup datum list plus one optim_step:
-        the set is small (train tasks x rollouts_per_task, filtered), so
-        full-batch epochs keep the schedule deterministic and resumable
-        without a datum-level cursor. Zero kept datums degrade the run to
-        pure OPD (warning + one metrics row + the skip recorded), never an
-        abort. Afterwards the state is saved and the sampler force-refreshed
-        so OPD step 0 samples the warmed student, and `warmup.json` marks the
-        phase done for resumes.
+        Three sources, cheapest first: this run's own recorded collection (only
+        when `reuse_recorded`, i.e. a resumed off-policy phase, so a resume
+        never re-pays for the corpus its cursor indexes into), another run's
+        collection named by `trajectories_from`, or a fresh teacher collection.
+
+        Args:
+            trajectories_from: Another run dir to load from, or None.
+            rollouts_per_task: Teacher attempts per train task when collecting.
+            setting: The config section these keys came from, for error text.
+            phase: The progress phase to emit under.
+            reuse_recorded: Whether this run's own `warmup-trials.json` may be
+                reused when it exists and names this run's teacher.
+
+        Returns:
+            The trial records, their batch stats, and a past-tense word naming
+            the source ("collected", "loaded", or "reused") for the phase's
+            messages.
+        """
+        if reuse_recorded:
+            recorded = self._store.read_warmup_trials()
+            if recorded is not None and recorded.teacher_model == self._teacher_identity:
+                self._emit(
+                    phase,
+                    f"reusing this run's recorded teacher collection "
+                    f"({len(recorded.records)} trial(s)); nothing is charged",
+                )
+                return (
+                    list(recorded.records),
+                    rollout_stats(recorded.records, max_tokens=self._cfg.sampling.max_tokens),
+                    "reused",
+                )
+            if recorded is not None:
+                logger.warning(
+                    "the recorded teacher collection in %s was sampled by %r, not this "
+                    "run's teacher %r; collecting fresh trajectories instead",
+                    self._store.warmup_trials_path,
+                    recorded.teacher_model,
+                    self._teacher_identity,
+                )
+        if trajectories_from is not None:
+            source_dir = Path(trajectories_from)
+            self._emit(
+                phase,
+                f"loading teacher trajectories from {source_dir} "
+                "(the collection was paid by the source run; nothing is charged)",
+            )
+            records, roll_stats = self._load_teacher_trials(source_dir, setting=setting)
+            return records, roll_stats, "loaded"
+        records, roll_stats = self._collect_teacher_trials(
+            rollouts_per_task=rollouts_per_task, phase=phase
+        )
+        return records, roll_stats, "collected"
+
+    def _empty_corpus_reason(
+        self,
+        *,
+        label: str,
+        sourced: str,
+        keep: str,
+        roll_stats: RolloutStats,
+        kept: int,
+        datum_stats: DatumStats,
+    ) -> str:
+        """Warn that a cross_entropy phase has nothing to train on, and say why.
+
+        Zero kept datums degrade the run to pure on-policy distillation, never
+        an abort: the teacher's trajectories are an input, and a run that can
+        still sample its own is still a run.
+
+        Returns:
+            The one-line reason recorded in the phase's terminal marker.
+        """
+        reason = (
+            f"{label} {sourced} {roll_stats.trials} teacher trial(s) but kept "
+            f"{kept} under keep={keep!r} and built 0 datums"
+        )
+        logger.warning(
+            "%s (teacher solve rate %.2f, %d trial(s) without spans, %d overflow "
+            "drop(s), %d overlong drop(s)); skipping %s, the run degrades to "
+            "pure on-policy distillation",
+            reason,
+            roll_stats.solve_rate,
+            roll_stats.empty_span_trials,
+            datum_stats.overflow_drops,
+            datum_stats.overlong_drops,
+            label,
+        )
+        return reason
+
+    def _offpolicy(self, cursor: OffPolicyCursor | None) -> None:
+        """The off-policy distillation phase: teacher trials, keep-filter, CE epochs.
+
+        The teacher trajectories come from `_cross_entropy_corpus` (this run's
+        recorded collection on a resume, another run's via
+        `offpolicy.trajectories_from`, or a fresh collection charged to the
+        teacher meters). The kept trials merge into cross_entropy datums
+        through the same prefix merge on-policy distillation uses (the teacher
+        SAMPLED these tokens, so they are exact sampled ids and need no
+        advantages), and `wmh.distill.offpolicy` walks the epoch/minibatch
+        schedule over them.
+
+        Resume is at datum granularity: every `offpolicy.checkpoint_every`
+        optimizer steps the phase saves training state and rewrites
+        `offpolicy-cursor.json`, and a resumed session restores those weights
+        (in `execute`) and skips the steps the cursor already counted. Zero
+        kept datums degrade the run to pure on-policy distillation (warning,
+        one metrics row, the skip recorded), never an abort. Afterwards the
+        state is saved and the sampler force-refreshed so any following OPD
+        step samples the trained student, and `offpolicy.json` marks the phase
+        done (which also drops the cursor).
+
+        Args:
+            cursor: The recorded cursor of an interrupted phase, or None to
+                start the schedule from its first step.
+
+        Raises:
+            RuntimeError: If the cursor was written over a differently sized
+                corpus, so its step count no longer names the same minibatches.
+        """
+        cfg = self._cfg
+        offpolicy = cfg.offpolicy
+        learning_rate = (
+            offpolicy.learning_rate
+            if offpolicy.learning_rate is not None
+            else cfg.train.learning_rate
+        )
+        records, roll_stats, sourced = self._cross_entropy_corpus(
+            trajectories_from=offpolicy.trajectories_from,
+            rollouts_per_task=offpolicy.rollouts_per_task,
+            setting="offpolicy",
+            phase="offpolicy",
+            reuse_recorded=self._resumed,
+        )
+        kept = [record for record in records if offpolicy.keep == "all" or record.passed]
+        # Sampled from the KEPT trials: those are the episodes the phase trains on.
+        self._log_sample_rollouts(kind="offpolicy", name="offpolicy", step=None, records=kept)
+        datums, datum_stats = build_datums(kept, cfg)
+        if not datums:
+            reason = self._empty_corpus_reason(
+                label="off-policy distillation",
+                sourced=sourced,
+                keep=offpolicy.keep,
+                roll_stats=roll_stats,
+                kept=len(kept),
+                datum_stats=datum_stats,
+            )
+            self._append_offpolicy_row(
+                0,
+                self._offpolicy_row(
+                    epoch=0,
+                    epochs=0,
+                    minibatch=0,
+                    planned_steps=0,
+                    trials=roll_stats.trials,
+                    kept_trials=len(kept),
+                    solve_rate=roll_stats.solve_rate,
+                    corpus_datums=0,
+                    datums=0,
+                    loss_tokens=0,
+                    context_tokens=0,
+                    learning_rate=learning_rate,
+                    loss=None,
+                    grad_norm=None,
+                ),
+            )
+            self._store.write_offpolicy(
+                OffPolicyRecord(
+                    epochs=0,
+                    steps=0,
+                    trials=roll_stats.trials,
+                    kept_trials=len(kept),
+                    datums=0,
+                    skipped_reason=reason,
+                )
+            )
+            self._emit("offpolicy", f"off-policy distillation skipped: {reason}")
+            return
+
+        schedule = OffPolicySchedule(
+            epochs=offpolicy.epochs,
+            minibatch_datums=offpolicy.minibatch_datums,
+            learning_rate=learning_rate,
+            shuffle_seed=offpolicy.shuffle_seed,
+            checkpoint_every=offpolicy.checkpoint_every,
+        )
+        planned_steps = len(plan_offpolicy_steps(len(datums), schedule))
+        start_step = self._offpolicy_start_step(cursor, datum_count=len(datums))
+
+        def record_step(result: OffPolicyStepResult) -> None:
+            """Charge, persist, and budget-check one completed optimizer step."""
+            self._budget.charge("student_train", result.train_tokens)
+            self._append_offpolicy_row(
+                result.step,
+                self._offpolicy_row(
+                    epoch=result.epoch,
+                    epochs=schedule.epochs,
+                    minibatch=result.minibatch,
+                    planned_steps=planned_steps,
+                    trials=roll_stats.trials,
+                    kept_trials=len(kept),
+                    solve_rate=roll_stats.solve_rate,
+                    corpus_datums=len(datums),
+                    datums=result.datums,
+                    loss_tokens=result.loss_tokens,
+                    context_tokens=result.context_tokens,
+                    learning_rate=result.learning_rate,
+                    loss=result.loss,
+                    grad_norm=result.grad_norm,
+                ),
+            )
+            try:
+                self._budget.check()
+            except BudgetExhausted as exc:
+                # The cursor (not a step checkpoint) is what an off-policy
+                # resume reads, so nothing new is checkpointed here.
+                self._abort_for_budget(exc, completed_step=None)
+
+        def checkpoint(position: OffPolicyCursorPosition) -> None:
+            """Save training state, then record the cursor that names it."""
+            state_path = self._training.save_state()
+            self._store.write_offpolicy_cursor(
+                OffPolicyCursor(
+                    steps_completed=position.steps_completed,
+                    epoch=position.epoch,
+                    minibatch=position.minibatch,
+                    datums=position.datums,
+                    state_path=state_path,
+                )
+            )
+            self._emit(
+                "offpolicy",
+                f"checkpointed at step {position.steps_completed}/{planned_steps} "
+                f"(epoch {position.epoch + 1}/{schedule.epochs}); a resume continues here",
+            )
+
+        self._emit(
+            "offpolicy",
+            f"training {schedule.epochs} epoch(s) x {planned_steps // max(schedule.epochs, 1)} "
+            f"minibatch(es) over {len(datums)} datum(s) from {len(kept)}/{roll_stats.trials} "
+            f"kept teacher trial(s) (lr {learning_rate:g})"
+            + (f", resuming at step {start_step}" if start_step else ""),
+        )
+        run_offpolicy(
+            datums,
+            schedule,
+            trainer=self._training,
+            on_step=record_step,
+            on_checkpoint=checkpoint,
+            start_step=start_step,
+        )
+        state_path = self._training.save_state()
+        # The tag forces the save: step 0 was refreshed before preflight, and
+        # this phase CHANGED the weights, so OPD step 0 must sample fresh ones.
+        sampler_path = self._sampler.refresh(0, tag="offpolicy")
+        self._store.write_offpolicy(
+            OffPolicyRecord(
+                epochs=schedule.epochs,
+                steps=planned_steps,
+                trials=roll_stats.trials,
+                kept_trials=len(kept),
+                datums=len(datums),
+                state_path=state_path,
+                sampler_path=sampler_path,
+            )
+        )
+        self._emit(
+            "offpolicy",
+            f"off-policy distillation complete: {planned_steps} step(s) over "
+            f"{len(datums)} datum(s); the student now samples from {sampler_path}",
+        )
+
+    def _offpolicy_start_step(self, cursor: OffPolicyCursor | None, *, datum_count: int) -> int:
+        """How many scheduled steps a resumed off-policy phase skips.
+
+        Args:
+            cursor: The recorded cursor, or None for a fresh phase.
+            datum_count: The corpus this session built.
+
+        Returns:
+            The cursor's completed step count, or 0 when there is no cursor.
+
+        Raises:
+            RuntimeError: If the cursor indexes a differently sized corpus. The
+                student already carries the cursor's partial training, so the
+                phase can neither honor the count nor restart cleanly in place.
+        """
+        if cursor is None:
+            return 0
+        if cursor.datums != datum_count:
+            raise RuntimeError(
+                f"the off-policy cursor at {self._store.offpolicy_cursor_path} was written "
+                f"over {cursor.datums} datum(s), but this session built {datum_count}: the "
+                "corpus or its filters changed between sessions (offpolicy.keep, "
+                "rollout.context_budget_tokens, train.max_datum_tokens), so the recorded "
+                "step count no longer names the same minibatches. Restore the previous "
+                "settings and resume, or start a fresh --run-dir (the student already "
+                f"carries {cursor.steps_completed} step(s) of this phase, so restarting "
+                "the schedule in place would train that prefix twice)"
+            )
+        logger.info(
+            "resuming the off-policy phase at step %d over %d datum(s) from %s",
+            cursor.steps_completed,
+            cursor.datums,
+            cursor.state_path,
+        )
+        return cursor.steps_completed
+
+    def _warmup(self) -> None:
+        """The legacy supervised warmup phase, run on the off-policy executor.
+
+        Superseded by `[offpolicy]` and kept for the runs already configured
+        against `[warmup]`; the two are mutually exclusive at config load. It
+        is exactly the off-policy schedule pinned to its historical shape: one
+        FULL-batch forward_backward plus one optim_step per `warmup.steps`
+        pass, no per-epoch shuffle, and no cursor (an interrupted warmup
+        re-runs whole, teacher trials included).
+
+        The teacher trials come from `_cross_entropy_corpus` (fresh rollouts
+        charged to the teacher meters, or another run's recorded collection via
+        `warmup.trajectories_from`, which charges nothing). Either way the kept
+        trials merge into cross_entropy datums through the same prefix merge
+        OPD uses. Zero kept datums degrade the run to pure OPD (warning + one
+        metrics row + the skip recorded), never an abort. Afterwards the state
+        is saved and the sampler force-refreshed so OPD step 0 samples the
+        warmed student, and `warmup.json` marks the phase done for resumes.
         """
         cfg = self._cfg
         warmup = cfg.warmup
         learning_rate = (
             warmup.learning_rate if warmup.learning_rate is not None else cfg.train.learning_rate
         )
-        if warmup.trajectories_from is not None:
-            source_dir = Path(warmup.trajectories_from)
-            self._emit(
-                "warmup",
-                f"loading teacher trajectories from {source_dir} "
-                "(the collection was paid by the source run; nothing is charged)",
-            )
-            records, roll_stats = self._load_warmup_trials(source_dir)
-            sourced = "loaded"
-        else:
-            records, roll_stats = self._collect_warmup_trials()
-            sourced = "collected"
-
+        records, roll_stats, sourced = self._cross_entropy_corpus(
+            trajectories_from=warmup.trajectories_from,
+            rollouts_per_task=warmup.rollouts_per_task,
+            setting="warmup",
+            phase="warmup",
+        )
         kept = [record for record in records if warmup.keep == "all" or record.passed]
         # Sampled from the KEPT trials: the SFT set is what warmup trains on,
         # so those are the episodes worth reading.
         self._log_sample_rollouts(kind="warmup", name="warmup", step=None, records=kept)
         datums, datum_stats = build_datums(kept, cfg)
         if not datums:
-            reason = (
-                f"warmup {sourced} {roll_stats.trials} teacher trial(s) but kept "
-                f"{len(kept)} under keep={warmup.keep!r} and built 0 datums"
-            )
-            logger.warning(
-                "%s (teacher solve rate %.2f, %d trial(s) without spans, %d overflow "
-                "drop(s), %d overlong drop(s)); skipping warmup, the run degrades to "
-                "pure on-policy distillation",
-                reason,
-                roll_stats.solve_rate,
-                roll_stats.empty_span_trials,
-                datum_stats.overflow_drops,
-                datum_stats.overlong_drops,
+            reason = self._empty_corpus_reason(
+                label="warmup",
+                sourced=sourced,
+                keep=warmup.keep,
+                roll_stats=roll_stats,
+                kept=len(kept),
+                datum_stats=datum_stats,
             )
             self._append_warmup_row(
                 0,
@@ -2565,19 +2966,18 @@ class _DistillRun:
             self._emit("warmup", f"warmup skipped: {reason}")
             return
 
-        train_tokens = sum(len(datum.model_input_tokens) for datum in datums)
         self._emit(
             "warmup",
             f"training {warmup.steps} cross_entropy pass(es) over {len(datums)} "
             f"datum(s) from {len(kept)}/{roll_stats.trials} kept teacher trial(s) "
             f"(lr {learning_rate:g})",
         )
-        for warmup_step in range(warmup.steps):
-            self._training.forward_backward(datums, loss_fn=CROSS_ENTROPY_LOSS)
-            self._training.optim_step(learning_rate)
-            self._budget.charge("student_train", train_tokens)
+
+        def record_step(result: OffPolicyStepResult) -> None:
+            """Charge, persist, and budget-check one completed warmup pass."""
+            self._budget.charge("student_train", result.train_tokens)
             self._append_warmup_row(
-                warmup_step,
+                result.step,
                 self._warmup_row(
                     trials=roll_stats.trials,
                     kept_trials=len(kept),
@@ -2594,6 +2994,19 @@ class _DistillRun:
                 # No warmup.json yet: an interrupted warmup re-runs whole on
                 # resume (the teacher trials resume trial-level via harbor).
                 self._abort_for_budget(exc, completed_step=None)
+
+        run_offpolicy(
+            datums,
+            OffPolicySchedule(
+                epochs=warmup.steps,
+                minibatch_datums=0,
+                learning_rate=learning_rate,
+                shuffle_seed=None,
+                checkpoint_every=0,
+            ),
+            trainer=self._training,
+            on_step=record_step,
+        )
         state_path = self._training.save_state()
         # The tag forces the save: step 0 was refreshed before preflight, and
         # warmup changed the weights, so OPD step 0 must sample fresh ones.
@@ -2894,6 +3307,8 @@ class _DistillRun:
                 )
             latest = store.latest_checkpoint()
             start_step = latest.step + 1 if latest is not None else 0
+            offpolicy_record = store.read_offpolicy()
+            offpolicy_cursor = store.read_offpolicy_cursor()
             warmup_record = store.read_warmup()
             # The spend ledger is written on every charge, so it carries spend
             # the metrics rows never see (baselines, interim and finalize
@@ -2921,6 +3336,8 @@ class _DistillRun:
                 )
             latest = None
             start_step = 0
+            offpolicy_record = None
+            offpolicy_cursor = None
             warmup_record = None
             prior_usd = 0.0
         # The snapshot is refreshed on resume too: the caller's config wins (the
@@ -2936,6 +3353,25 @@ class _DistillRun:
                 latest.state_path,
             )
             restore_path = latest.state_path
+        elif offpolicy_record is not None and offpolicy_record.state_path is not None:
+            # The off-policy phase finished but no OPD step was checkpointed
+            # yet: restore what it trained instead of starting OPD cold.
+            logger.info(
+                "resuming %s from the post-off-policy state (%s)",
+                self._name,
+                offpolicy_record.state_path,
+            )
+            restore_path = offpolicy_record.state_path
+        elif offpolicy_cursor is not None:
+            # An INTERRUPTED off-policy phase: its cursor names the state saved
+            # at the last checkpointed step, and the phase skips that prefix.
+            logger.info(
+                "resuming %s mid-off-policy from %s (%d step(s) already applied)",
+                self._name,
+                offpolicy_cursor.state_path,
+                offpolicy_cursor.steps_completed,
+            )
+            restore_path = offpolicy_cursor.state_path
         elif warmup_record is not None and warmup_record.state_path is not None:
             # Warmup finished but no OPD step was checkpointed yet: without
             # this restore, a resumed session would start OPD from the COLD
@@ -2991,6 +3427,23 @@ class _DistillRun:
             baseline_from=cfg.eval.student_baseline_from,
             baseline_from_field="eval.student_baseline_from",
         )
+
+        if cfg.offpolicy.epochs > 0:
+            if offpolicy_record is not None:
+                logger.info(
+                    "off-policy distillation already recorded in %s; skipping (%s)",
+                    store.offpolicy_path,
+                    offpolicy_record.skipped_reason
+                    or f"{offpolicy_record.steps} step(s) over {offpolicy_record.datums} datum(s)",
+                )
+            elif start_step > 0:
+                logger.info(
+                    "resumed past step checkpoints (start step %d) with no off-policy "
+                    "record; skipping the phase, the student already trained OPD steps",
+                    start_step,
+                )
+            else:
+                self._offpolicy(offpolicy_cursor)
 
         if cfg.warmup.steps > 0:
             if warmup_record is not None:

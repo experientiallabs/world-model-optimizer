@@ -33,6 +33,7 @@ from wmh.distill.config import (
     EvalConfig,
     GateConfig,
     HarborConfig,
+    OffPolicyConfig,
     PricingConfig,
     RolloutConfig,
     SamplingConfig,
@@ -87,6 +88,7 @@ from wmh.distill.loop import (
     sdk_metric_value,
     tinker_provider_config,
 )
+from wmh.distill.offpolicy import CROSS_ENTROPY_LOSS, OffPolicyMetrics
 from wmh.distill.rollouts import RolloutStats, rollout_stats
 from wmh.distill.samples import SampleRollout
 from wmh.distill.store import AdapterStore, DistillRunStore
@@ -172,9 +174,11 @@ class _Training:
     Args:
         inner: The fake client doing the work; its `calls` list is the
             per-client ordered call log.
-        events: The owning `_Service`'s cross-client event log, appended to on
+        service: The owning `_Service`. Its `events` log is appended to on
             `load_state` so tests can assert nothing (a sampling client, a
-            second training client) came between creation and the restore.
+            second training client) came between creation and the restore, and
+            its cross-session `crash_on_cross_entropy` counter is what lets a
+            test interrupt a cross_entropy phase mid-schedule.
         wedge_load_state: Mirror the live pathology: `load_state` reaches the
             service (initializing the model) and then blows its deadline
             client-side, so a retry on THIS client can only be rejected.
@@ -183,19 +187,25 @@ class _Training:
     def __init__(
         self,
         inner: FakeTrainingClient,
-        events: list[str],
+        service: _Service,
         *,
         wedge_load_state: bool = False,
     ) -> None:
         self.inner = inner
         self.load_state_calls: list[str] = []
-        self._events = events
+        self._service = service
+        self._events = service.events
         self._wedge_load_state = wedge_load_state
 
     def get_tokenizer(self) -> FakeTokenizer:
         return self.inner.get_tokenizer()
 
     def forward_backward(self, datums: Sequence[TrainDatum], loss_fn: str) -> TrainStepOutput:
+        if loss_fn == CROSS_ENTROPY_LOSS:
+            self._service.cross_entropy_calls += 1
+            if self._service.crash_on_cross_entropy == self._service.cross_entropy_calls:
+                # Raised BEFORE the work, so the crashed pass trains nothing.
+                raise RuntimeError("injected cross_entropy crash")
         # Mirror SdkTrainingClient: extract the loss from the SDK-shaped
         # output's metrics dict through the same suffix-tolerant helper.
         output = self.inner.forward_backward([_fake_datum(datum) for datum in datums], loss_fn)
@@ -241,10 +251,16 @@ class _Service:
         self.wedged_load_state_clients = 0
         """The first N training clients blow their load_state deadline."""
 
+        self.cross_entropy_calls = 0
+        """Cross_entropy forward_backward calls across every session's client."""
+
+        self.crash_on_cross_entropy: int | None = None
+        """1-based index of the cross_entropy pass that raises instead of training."""
+
     def create_lora_training_client(self, base_model: str, rank: int = 32) -> _Training:
         training = _Training(
             self.inner.create_lora_training_client(base_model, rank),
-            self.events,
+            self,
             wedge_load_state=len(self.trainings) < self.wedged_load_state_clients,
         )
         self.events.append("create_training_client")
@@ -548,6 +564,41 @@ def _warmup_cfg(
     )
 
 
+def _offpolicy_cfg(
+    *,
+    epochs: int = 2,
+    minibatch_datums: int = 0,
+    rollouts_per_task: int = 2,
+    keep: Literal["passed", "all"] = "passed",
+    learning_rate: float | None = 5e-5,
+    shuffle_seed: int | None = None,
+    checkpoint_every: int = 1,
+    budget_max: float | None = None,
+    pricing: PricingConfig | None = None,
+    trajectories_from: str | None = None,
+) -> DistillConfig:
+    """The 3-step config with off-policy distillation enabled."""
+    return _cfg(budget_max=budget_max, pricing=pricing).model_copy(
+        update={
+            "offpolicy": OffPolicyConfig(
+                epochs=epochs,
+                minibatch_datums=minibatch_datums,
+                rollouts_per_task=rollouts_per_task,
+                keep=keep,
+                learning_rate=learning_rate,
+                shuffle_seed=shuffle_seed,
+                checkpoint_every=checkpoint_every,
+                trajectories_from=trajectories_from,
+            )
+        }
+    )
+
+
+def _offpolicy_rows(run_dir: Path) -> list[JsonObject]:
+    rows = DistillRunStore(run_dir).read_metrics()
+    return [row for row in rows if row.get("phase") == "offpolicy"]
+
+
 def _warmup_calls(env: _Env) -> list[_RolloutCall]:
     warmup_dir = env.run_dir / WARMUP_ROLLOUTS_DIR
     return [call for call in env.rollouts.calls if call.run_dir == warmup_dir]
@@ -615,6 +666,7 @@ class _RecordingTracker:
 
     def __init__(self) -> None:
         self.steps: list[tuple[int, StepMetrics]] = []
+        self.offpolicy_steps: list[tuple[int, OffPolicyMetrics]] = []
         self.warmup_steps: list[tuple[int, WarmupMetrics]] = []
         self.evals: list[tuple[str, float, int | None]] = []
         self.graded_evals: list[tuple[str, float | None]] = []
@@ -626,6 +678,9 @@ class _RecordingTracker:
 
     def log_step(self, step: int, metrics: StepMetrics) -> None:
         self.steps.append((step, metrics))
+
+    def log_offpolicy_step(self, offpolicy_step: int, metrics: OffPolicyMetrics) -> None:
+        self.offpolicy_steps.append((offpolicy_step, metrics))
 
     def log_warmup_step(self, warmup_step: int, metrics: WarmupMetrics) -> None:
         self.warmup_steps.append((warmup_step, metrics))
@@ -1987,6 +2042,283 @@ def test_an_all_empty_first_step_leaves_the_tripwire_unarmed_and_retries(
     assert rows[0]["entropy_per_token"] is None
     assert rows[0]["entropy_baseline"] is None
     assert _number(rows[1], "entropy_ratio") == pytest.approx(1.0)
+
+
+# -- off-policy distillation -------------------------------------------------------------------
+
+
+def test_offpolicy_trains_the_teacher_corpus_then_opd_proceeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = _setup(tmp_path, monkeypatch)
+    tracker = _RecordingTracker()
+
+    result = _run(env, _offpolicy_cfg(), tracker=tracker)
+
+    assert result.steps_completed == 3
+    assert result.gate.accepted
+
+    # The corpus collection ran the TEACHER over the full train split under the
+    # shared cross_entropy rollout root, rollouts_per_task attempts per task.
+    (collection,) = _warmup_calls(env)
+    assert collection.provider_model == _TEACHER
+    assert collection.task_ids == _TRAIN_IDS
+    assert collection.attempts == 2
+
+    # Two full-batch cross_entropy epochs over the kept datums (tasks at even
+    # positions pass: 2 tasks x 2 attempts = 4 kept trials, one datum each),
+    # then the three importance_sampling OPD steps. The off-policy LR applies
+    # to the off-policy steps only.
+    training = env.service.training
+    assert training is not None
+    assert _loss_fns(env) == ["cross_entropy"] * 2 + ["importance_sampling"] * 3
+    ce_batches = [
+        batch for batch, loss in training.inner.forward_backward_calls if loss == "cross_entropy"
+    ]
+    assert all(len(batch) == 4 for batch in ce_batches)
+    assert training.inner.optim_step_lrs == [5e-5, 5e-5, 1e-4, 1e-4, 1e-4]
+
+    # OPD step 0 sampled the trained student: the forced post-phase refresh
+    # published fresh weights, distinct from what the student-before baseline saw.
+    train_calls = [call for call in env.rollouts.calls if call.run_dir == env.run_dir]
+    before_call = next(
+        call for call in env.rollouts.calls if call.run_dir.name == STUDENT_BEFORE_EVAL
+    )
+    assert "offpolicy" in train_calls[0].provider_model
+    assert train_calls[0].provider_model != before_call.provider_model
+
+    rows = _offpolicy_rows(env.run_dir)
+    assert [row["step"] for row in rows] == [0, 1]
+    assert [row["epoch"] for row in rows] == [0, 1]
+    for row in rows:
+        assert row["epochs"] == 2
+        assert row["minibatch"] == 0
+        assert row["planned_steps"] == 2
+        assert row["trials"] == 8
+        assert row["kept_trials"] == 4
+        assert row["solve_rate"] == 0.5
+        assert row["corpus_datums"] == 4
+        assert row["datums"] == 4
+        assert _number(row, "learning_rate") == pytest.approx(5e-5)
+        assert _number(row, "student_train_tokens") > 0
+        assert _number(row, "usd") > 0
+    # The teacher collection's charge folds into the first row only.
+    assert _number(rows[0], "teacher_sample_tokens") > 0
+    assert _number(rows[1], "teacher_sample_tokens") == 0
+
+    assert [step for step, _ in tracker.offpolicy_steps] == [0, 1]
+    for (step, metrics), row in zip(tracker.offpolicy_steps, rows, strict=True):
+        assert row == {"step": step, **metrics.model_dump(mode="json")}
+
+    store = DistillRunStore(env.run_dir)
+    record = store.read_offpolicy()
+    assert record is not None
+    assert record.epochs == 2
+    assert record.steps == 2
+    assert record.trials == 8
+    assert record.kept_trials == 4
+    assert record.datums == 4
+    assert record.skipped_reason is None
+    assert record.state_path is not None
+    assert record.sampler_path == train_calls[0].provider_model
+    # The terminal record supersedes the cursor, so no stale cursor is left.
+    assert store.read_offpolicy_cursor() is None
+    assert "offpolicy" in {event.phase for event in env.progress}
+
+
+def test_offpolicy_minibatches_split_each_epoch_into_optimizer_steps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two datums per step over a 4-datum corpus is 2 optimizer steps an epoch."""
+    env = _setup(tmp_path, monkeypatch)
+
+    result = _run(env, _offpolicy_cfg(epochs=2, minibatch_datums=2))
+
+    assert result.steps_completed == 3
+    training = env.service.training
+    assert training is not None
+    assert _loss_fns(env) == ["cross_entropy"] * 4 + ["importance_sampling"] * 3
+    ce_batches = [
+        batch for batch, loss in training.inner.forward_backward_calls if loss == "cross_entropy"
+    ]
+    assert [len(batch) for batch in ce_batches] == [2, 2, 2, 2]
+    assert training.inner.optim_step_lrs == [5e-5] * 4 + [1e-4] * 3
+
+    rows = _offpolicy_rows(env.run_dir)
+    assert [(row["step"], row["epoch"], row["minibatch"]) for row in rows] == [
+        (0, 0, 0),
+        (1, 0, 1),
+        (2, 1, 0),
+        (3, 1, 1),
+    ]
+    # Each row meters ITS minibatch, not the whole corpus.
+    assert all(row["datums"] == 2 and row["corpus_datums"] == 4 for row in rows)
+    record = DistillRunStore(env.run_dir).read_offpolicy()
+    assert record is not None
+    assert record.steps == 4
+
+
+def test_offpolicy_resumes_from_its_cursor_after_an_interrupted_phase(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An interrupted phase continues at the next minibatch, not from epoch 0.
+
+    The whole point of the cursor: the resumed session restores the state saved
+    at the last checkpointed step, reuses the teacher collection it already
+    paid for, and trains exactly the steps the schedule has left.
+    """
+    env = _setup(tmp_path, monkeypatch)
+    cfg = _offpolicy_cfg(epochs=3, minibatch_datums=1)  # 4 datums x 3 epochs = 12 steps
+    env.service.crash_on_cross_entropy = 5  # dies entering step 4
+
+    with pytest.raises(RuntimeError, match="injected cross_entropy crash"):
+        _run(env, cfg)
+
+    store = DistillRunStore(env.run_dir)
+    assert store.read_offpolicy() is None  # no terminal record: the phase is unfinished
+    cursor = store.read_offpolicy_cursor()
+    assert cursor is not None
+    assert cursor.steps_completed == 4
+    assert (cursor.epoch, cursor.minibatch) == (1, 0)
+    assert cursor.datums == 4
+    assert [row["step"] for row in _offpolicy_rows(env.run_dir)] == [0, 1, 2, 3]
+    assert _loss_fns(env).count("cross_entropy") == 4
+
+    env.service.crash_on_cross_entropy = None
+    result = _run(env, cfg, resume=True)
+
+    assert result.steps_completed == 3
+    # The resumed session restored the cursor's weights and trained only the
+    # 8 remaining steps: 12 cross_entropy passes total, never 4 + 12.
+    training = env.service.training
+    assert training is not None
+    assert training.load_state_calls == [cursor.state_path]
+    assert _loss_fns(env).count("cross_entropy") == 12
+    # The teacher corpus was reused from this run's own manifest, not re-collected.
+    assert len(_warmup_calls(env)) == 1
+    assert [row["step"] for row in _offpolicy_rows(env.run_dir)] == list(range(12))
+    record = store.read_offpolicy()
+    assert record is not None
+    assert record.epochs == 3
+    assert record.steps == 12
+    assert store.read_offpolicy_cursor() is None
+
+
+def test_a_stale_offpolicy_cursor_is_refused_rather_than_retrained(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cursor from a differently sized corpus names different minibatches."""
+    env = _setup(tmp_path, monkeypatch)
+    cfg = _offpolicy_cfg(epochs=3, minibatch_datums=1)
+    env.service.crash_on_cross_entropy = 5
+
+    with pytest.raises(RuntimeError, match="injected cross_entropy crash"):
+        _run(env, cfg)
+
+    store = DistillRunStore(env.run_dir)
+    stale = store.read_offpolicy_cursor()
+    assert stale is not None
+    store.write_offpolicy_cursor(stale.model_copy(update={"datums": stale.datums + 1}))
+
+    env.service.crash_on_cross_entropy = None
+    with pytest.raises(RuntimeError, match="no longer names the same minibatches"):
+        _run(env, cfg, resume=True)
+
+
+def test_offpolicy_zero_passing_trials_skips_to_pure_opd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Nothing to train on degrades the run to pure OPD, never aborts it."""
+    env = _setup(tmp_path, monkeypatch)
+    env.rollouts.teacher_fail_all = True
+
+    with caplog.at_level(logging.WARNING, logger="wmh.distill.loop"):
+        result = _run(env, _offpolicy_cfg())
+
+    assert "pure on-policy distillation" in caplog.text
+    assert result.steps_completed == 3
+    assert _loss_fns(env) == ["importance_sampling"] * 3
+    assert len(_warmup_calls(env)) == 1  # the collection itself did run
+
+    rows = _offpolicy_rows(env.run_dir)
+    assert len(rows) == 1
+    assert rows[0]["trials"] == 8
+    assert rows[0]["kept_trials"] == 0
+    assert rows[0]["datums"] == 0
+    record = DistillRunStore(env.run_dir).read_offpolicy()
+    assert record is not None
+    assert record.epochs == 0
+    assert record.steps == 0
+    assert record.skipped_reason is not None
+    assert "keep='passed'" in record.skipped_reason
+    assert record.state_path is None and record.sampler_path is None
+
+
+def test_offpolicy_loads_a_source_runs_collection_without_collecting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = _setup(tmp_path, monkeypatch)
+    source_dir = tmp_path / "source-run"
+    env.run_dir = source_dir
+    _run(env, _offpolicy_cfg())
+    ce_before = _loss_fns(env).count("cross_entropy")
+    assert ce_before == 2
+
+    env.run_dir = tmp_path / "target-run"
+    result = _run(env, _offpolicy_cfg(trajectories_from=str(source_dir)))
+
+    assert result.steps_completed == 3
+    assert _warmup_calls(env) == []  # the target collected nothing
+    assert _loss_fns(env).count("cross_entropy") == ce_before + 2
+    record = DistillRunStore(env.run_dir).read_offpolicy()
+    assert record is not None
+    assert record.trials == 8
+    assert record.kept_trials == 4
+
+
+def test_offpolicy_load_with_a_mismatched_teacher_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = _setup(tmp_path, monkeypatch)
+    source_dir = tmp_path / "source-run"
+    env.run_dir = source_dir
+    _run(env, _offpolicy_cfg())
+    ce_before = _loss_fns(env).count("cross_entropy")
+
+    env.run_dir = tmp_path / "target-run"
+    cfg = _offpolicy_cfg(trajectories_from=str(source_dir)).model_copy(
+        update={"teacher": TeacherConfig(model="fake/other-teacher-70b")}
+    )
+    with pytest.raises(ValueError, match="sampled by teacher .* this run's teacher"):
+        _run(env, cfg)
+
+    assert _loss_fns(env).count("cross_entropy") == ce_before  # nothing trained
+
+
+def test_offpolicy_shuffle_reorders_epochs_without_dropping_datums(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A seeded shuffle changes the order inside each epoch, never the coverage."""
+    env = _setup(tmp_path, monkeypatch)
+
+    _run(env, _offpolicy_cfg(epochs=2, minibatch_datums=1, shuffle_seed=3))
+
+    training = env.service.training
+    assert training is not None
+    ce_batches = [
+        batch for batch, loss in training.inner.forward_backward_calls if loss == "cross_entropy"
+    ]
+    assert len(ce_batches) == 8  # 4 datums x 2 epochs, one datum per step
+    assert all(len(batch) == 1 for batch in ce_batches)
+    # Each epoch covers the whole corpus exactly once; the two epochs' token
+    # sequences are the same multiset, ordered differently.
+    epochs = [
+        [tuple(batch[0].model_input_tokens) for batch in ce_batches[:4]],
+        [tuple(batch[0].model_input_tokens) for batch in ce_batches[4:]],
+    ]
+    assert sorted(epochs[0]) == sorted(epochs[1])
+    assert len(set(epochs[0])) == 4
+    assert epochs[0] != epochs[1]
 
 
 # -- the supervised warmup phase ---------------------------------------------------------------

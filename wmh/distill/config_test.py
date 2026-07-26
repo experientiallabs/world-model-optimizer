@@ -12,6 +12,7 @@ from wmh.distill.config import (
     DistillConfig,
     EvalConfig,
     HarborConfig,
+    OffPolicyConfig,
     PricingConfig,
     StudentConfig,
     TeacherConfig,
@@ -236,6 +237,80 @@ def test_warmup_keep_rejects_unknown_value(tmp_path: Path) -> None:
         load_distill_config(_write(tmp_path, text))
 
 
+def test_offpolicy_defaults_are_off_and_full_batch(tmp_path: Path) -> None:
+    # Adding the section must not change any existing run: epochs = 0 disables
+    # the mode, and its batch shape default is the legacy full-batch pass.
+    cfg = load_distill_config(_write(tmp_path, MINIMAL_TOML))
+    assert cfg.offpolicy.epochs == 0
+    assert cfg.offpolicy.minibatch_datums == 0
+    assert cfg.offpolicy.learning_rate is None
+    assert cfg.offpolicy.rollouts_per_task == 1
+    assert cfg.offpolicy.keep == "passed"
+    assert cfg.offpolicy.shuffle_seed is None
+    assert cfg.offpolicy.checkpoint_every == 1
+    assert cfg.offpolicy.trajectories_from is None
+
+
+def test_offpolicy_section_loads(tmp_path: Path) -> None:
+    text = MINIMAL_TOML + (
+        "\n[offpolicy]\n"
+        "epochs = 3\n"
+        "minibatch_datums = 8\n"
+        "learning_rate = 2e-5\n"
+        "rollouts_per_task = 4\n"
+        'keep = "all"\n'
+        "shuffle_seed = 11\n"
+        "checkpoint_every = 5\n"
+        'trajectories_from = "runs/prior"\n'
+    )
+    cfg = load_distill_config(_write(tmp_path, text))
+    assert cfg.offpolicy.epochs == 3
+    assert cfg.offpolicy.minibatch_datums == 8
+    assert cfg.offpolicy.learning_rate == pytest.approx(2e-5)
+    assert cfg.offpolicy.rollouts_per_task == 4
+    assert cfg.offpolicy.keep == "all"
+    assert cfg.offpolicy.shuffle_seed == 11
+    assert cfg.offpolicy.checkpoint_every == 5
+    assert cfg.offpolicy.trajectories_from == "runs/prior"
+
+
+def test_offpolicy_keep_rejects_unknown_value(tmp_path: Path) -> None:
+    text = MINIMAL_TOML + "\n[offpolicy]\nkeep = 'best'\n"
+    with pytest.raises(ValueError, match="offpolicy.keep"):
+        load_distill_config(_write(tmp_path, text))
+
+
+def test_offpolicy_and_warmup_together_are_rejected(tmp_path: Path) -> None:
+    # Both phases train the same CE objective on the same teacher corpus, so a
+    # run with both would collect the teacher twice and train the data twice.
+    text = MINIMAL_TOML + "\n[offpolicy]\nepochs = 2\n\n[warmup]\nsteps = 2\n"
+    with pytest.raises(ValueError, match="supersedes"):
+        load_distill_config(_write(tmp_path, text))
+
+
+def test_offpolicy_alone_and_warmup_alone_both_load(tmp_path: Path) -> None:
+    offpolicy_only = load_distill_config(
+        _write(tmp_path, MINIMAL_TOML + "\n[offpolicy]\nepochs = 2\n\n[warmup]\nsteps = 0\n")
+    )
+    assert offpolicy_only.offpolicy.epochs == 2
+    warmup_only = load_distill_config(
+        _write(tmp_path, MINIMAL_TOML + "\n[offpolicy]\nepochs = 0\n\n[warmup]\nsteps = 2\n")
+    )
+    assert warmup_only.warmup.steps == 2
+
+
+def test_snapshot_round_trips_the_offpolicy_section(tmp_path: Path) -> None:
+    for offpolicy in (
+        OffPolicyConfig(),
+        OffPolicyConfig(epochs=4, minibatch_datums=16, learning_rate=3e-5, shuffle_seed=0),
+        OffPolicyConfig(epochs=1, keep="all", checkpoint_every=4, trajectories_from="runs/prior"),
+    ):
+        cfg = _minimal_config().model_copy(update={"offpolicy": offpolicy}, deep=True)
+        path = tmp_path / "snapshot.toml"
+        path.write_text(snapshot_toml(cfg), encoding="utf-8")
+        assert load_distill_config(path) == cfg
+
+
 def test_log_sample_rollouts_defaults_to_two_and_zero_disables(tmp_path: Path) -> None:
     cfg = load_distill_config(_write(tmp_path, MINIMAL_TOML))
     assert cfg.train.log_sample_rollouts == 2
@@ -373,6 +448,12 @@ def test_snapshot_round_trips_the_topk_ce_loss(tmp_path: Path) -> None:
         "[warmup]\nrollouts_per_task = 0",
         "[warmup]\nlearning_rate = 0.0",
         "[warmup]\nlearning_rate = -1e-5",
+        "[offpolicy]\nepochs = -1",
+        "[offpolicy]\nminibatch_datums = -1",
+        "[offpolicy]\nrollouts_per_task = 0",
+        "[offpolicy]\ncheckpoint_every = 0",
+        "[offpolicy]\nlearning_rate = 0.0",
+        "[offpolicy]\nlearning_rate = -1e-5",
         "[eval]\nevery = -1",
         "[eval]\ntasks = 0",
         "[gate]\nk = 0",
@@ -897,6 +978,22 @@ def test_anchor_config_trains_the_raw_gap_under_ppo() -> None:
     assert cfg.train.loss == "ppo"
     assert cfg.train.advantage_clip is None
     assert cfg.train.center_advantages is False
+    assert cfg.warmup.steps == 0
+
+
+def test_offpolicy_example_config_trains_the_teacher_corpus_as_the_objective() -> None:
+    """The example run's shape is pinned: off-policy is the objective, not a warmup.
+
+    Each setting is a decision rather than a default: epochs > 1 so the corpus
+    is trained repeatedly (the cheap arm), minibatches so an epoch is several
+    optimizer steps, a checkpoint cadence so the phase is resumable, and
+    `warmup.steps = 0` because [offpolicy] supersedes it.
+    """
+    cfg = _checked_in_config("distill-offpolicy-example.toml")
+    assert cfg.offpolicy.epochs > 1
+    assert cfg.offpolicy.minibatch_datums > 0
+    assert cfg.offpolicy.checkpoint_every >= 1
+    assert cfg.offpolicy.keep == "passed"
     assert cfg.warmup.steps == 0
 
 

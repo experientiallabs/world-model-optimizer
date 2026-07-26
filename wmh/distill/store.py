@@ -7,8 +7,13 @@ or needs to resume lives under it:
       config.toml         # exact snapshot of the DistillConfig the run started with
       metrics.jsonl       # one JSON row per warmup/training step, appended as steps finish
       spend.json          # cumulative priced USD across every session, updated per charge
+      offpolicy.json      # the OffPolicyRecord marker; its existence means the off-policy
+                          # phase is done
+      offpolicy-cursor.json  # the OffPolicyCursor of an INTERRUPTED off-policy phase;
+                          # removed when the phase reaches its terminal record
       warmup.json         # the WarmupRecord marker; its existence means warmup is done
-      warmup-trials.json  # the warmup collection's TrialRecords (loadable by other runs)
+      warmup-trials.json  # the teacher-trajectory corpus both cross_entropy phases share:
+                          # every assembled TrialRecord, loadable by other runs
       evals/<name>.json   # interim and final eval payloads, keyed by eval name
       samples/<name>.md   # per-batch sample episode rollouts (step-NNNN, warmup, eval-<name>)
       checkpoints.json    # manifest of saved tinker:// state + sampler paths, plus the
@@ -41,6 +46,7 @@ from wmh.config.store import validate_name
 from wmh.core.types import JsonObject
 from wmh.distill.config import DistillConfig, load_distill_config, snapshot_toml
 from wmh.distill.gate import DistillGateRecord
+from wmh.distill.offpolicy import OffPolicyCursorPosition
 from wmh.distill.tokens import TrialRecord
 from wmh.distill.tripwire import TripwireBaseline
 
@@ -82,6 +88,8 @@ _CARD_FILE = "model_card.json"
 _CONFIG_FILE = "config.toml"
 _METRICS_FILE = "metrics.jsonl"
 _SPEND_FILE = "spend.json"
+_OFFPOLICY_FILE = "offpolicy.json"
+_OFFPOLICY_CURSOR_FILE = "offpolicy-cursor.json"
 _WARMUP_FILE = "warmup.json"
 _WARMUP_TRIALS_FILE = "warmup-trials.json"
 _CHECKPOINTS_FILE = "checkpoints.json"
@@ -102,6 +110,57 @@ class SpendLedger(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     total_usd: float = Field(ge=0.0)
+
+
+class OffPolicyRecord(BaseModel):
+    """The offpolicy.json shape: proof one session finished (or skipped) the phase.
+
+    The marker exists exactly when the off-policy phase reached its terminal
+    outcome, so a resumed run never re-runs it. Mid-phase progress lives in
+    `OffPolicyCursor` instead, and the two are mutually exclusive: writing the
+    record removes the cursor.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    epochs: int = Field(ge=0)
+    """Epochs the schedule planned (0 when the phase was skipped)."""
+
+    steps: int = Field(ge=0)
+    """Optimizer steps actually applied across every session of the phase."""
+
+    trials: int = Field(ge=0)
+    """Teacher trials in the corpus collection."""
+
+    kept_trials: int = Field(ge=0)
+    """Trials that survived the `offpolicy.keep` filter."""
+
+    datums: int = Field(ge=0)
+    """Datums the kept trials merged into."""
+
+    state_path: str | None = None
+    """The post-phase tinker:// training-state path; None when skipped."""
+
+    sampler_path: str | None = None
+    """The post-phase tinker:// sampler-weights path; None when skipped."""
+
+    skipped_reason: str | None = None
+    """Why the phase trained nothing (e.g. zero passing trials); None when it ran."""
+
+
+class OffPolicyCursor(OffPolicyCursorPosition):
+    """The offpolicy-cursor.json shape: where an INTERRUPTED phase resumes.
+
+    Rewritten every `offpolicy.checkpoint_every` optimizer steps, always after
+    the training state it names was saved, so the pair is consistent: restoring
+    `state_path` puts the student exactly `steps_completed` steps into the
+    schedule. Deleted when the phase writes its terminal `OffPolicyRecord`.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    state_path: str = Field(min_length=1)
+    """The tinker:// training state saved at this cursor (feeds load_state)."""
 
 
 class WarmupRecord(BaseModel):
@@ -139,12 +198,14 @@ class WarmupRecord(BaseModel):
 
 
 class WarmupTrialsManifest(BaseModel):
-    """The warmup-trials.json shape: the warmup collection's assembled trials.
+    """The warmup-trials.json shape: one teacher-trajectory collection.
 
-    Written when the warmup phase's teacher rollouts finish assembling, BEFORE
-    the `warmup.keep` filter, so another run loading the collection through
-    `warmup.trajectories_from` may filter differently. The teacher identity is
-    recorded so a loading run can refuse trajectories another teacher sampled.
+    The corpus file both cross_entropy phases share (the off-policy mode and
+    the legacy warmup phase write and read the same name, so either can load
+    the other's collection). Written when the teacher rollouts finish
+    assembling, BEFORE the `keep` filter, so a loading run may filter
+    differently. The teacher identity is recorded so a loading run can refuse
+    trajectories another teacher sampled.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -232,6 +293,14 @@ class DistillRunStore:
     @property
     def spend_path(self) -> Path:
         return self.run_dir / _SPEND_FILE
+
+    @property
+    def offpolicy_path(self) -> Path:
+        return self.run_dir / _OFFPOLICY_FILE
+
+    @property
+    def offpolicy_cursor_path(self) -> Path:
+        return self.run_dir / _OFFPOLICY_CURSOR_FILE
 
     @property
     def warmup_path(self) -> Path:
@@ -412,6 +481,88 @@ class DistillRunStore:
                 "fall back to summing metrics rows (which may miss eval spend, so "
                 "consider lowering budget.max_usd accordingly) and resume"
             ) from exc
+
+    # -- off-policy phase ------------------------------------------------------------------------
+
+    def write_offpolicy(self, record: OffPolicyRecord) -> Path:
+        """Persist the off-policy phase's terminal record and drop its cursor.
+
+        The cursor and the record are mutually exclusive by construction: once
+        the phase is done, a leftover cursor would send the next resumed
+        session back into a schedule that already finished.
+
+        Args:
+            record: The phase's outcome.
+
+        Returns:
+            The written path.
+        """
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        write_text_atomic(self.offpolicy_path, record.model_dump_json(indent=2))
+        self.clear_offpolicy_cursor()
+        return self.offpolicy_path
+
+    def read_offpolicy(self) -> OffPolicyRecord | None:
+        """The recorded off-policy outcome, or None when the phase never finished.
+
+        Raises:
+            ValueError: If the file exists but does not parse; the message
+                says how to recover.
+        """
+        try:
+            text = self.offpolicy_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None
+        try:
+            return OffPolicyRecord.model_validate_json(text)
+        except ValidationError as exc:
+            raise ValueError(
+                f"corrupt off-policy record at {self.offpolicy_path}: {exc}; delete the "
+                "file so the resumed run re-runs the off-policy phase (the collected "
+                "teacher trials in warmup-trials.json are reused, so only the training "
+                "passes are repeated)"
+            ) from exc
+
+    def write_offpolicy_cursor(self, cursor: OffPolicyCursor) -> Path:
+        """Persist the off-policy phase's resume cursor (atomically).
+
+        Written at the phase's checkpoint cadence, always AFTER the training
+        state it names exists, so a torn write can only lose progress, never
+        point a resume at weights that were never saved.
+
+        Args:
+            cursor: The position the next session resumes from.
+
+        Returns:
+            The written path.
+        """
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        write_text_atomic(self.offpolicy_cursor_path, cursor.model_dump_json(indent=2))
+        return self.offpolicy_cursor_path
+
+    def read_offpolicy_cursor(self) -> OffPolicyCursor | None:
+        """The interrupted phase's cursor, or None when none was written.
+
+        Raises:
+            ValueError: If the file exists but does not parse; the message
+                says how to recover.
+        """
+        try:
+            text = self.offpolicy_cursor_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None
+        try:
+            return OffPolicyCursor.model_validate_json(text)
+        except ValidationError as exc:
+            raise ValueError(
+                f"corrupt off-policy cursor at {self.offpolicy_cursor_path}: {exc}; delete "
+                "the file to restart the off-policy phase from its first epoch (the "
+                "collected teacher trials are reused, so only the training passes repeat)"
+            ) from exc
+
+    def clear_offpolicy_cursor(self) -> None:
+        """Remove the resume cursor; a no-op when none exists."""
+        self.offpolicy_cursor_path.unlink(missing_ok=True)
 
     # -- warmup ----------------------------------------------------------------------------------
 

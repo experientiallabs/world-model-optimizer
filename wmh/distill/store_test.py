@@ -23,6 +23,8 @@ from wmh.distill.store import (
     AdapterStore,
     DistillModelCard,
     DistillRunStore,
+    OffPolicyCursor,
+    OffPolicyRecord,
     WarmupRecord,
     WarmupTrialsManifest,
     build_handoff_toml,
@@ -240,6 +242,78 @@ def test_corrupt_warmup_record_is_actionable(tmp_path: Path) -> None:
     store.warmup_path.write_text("{not json", encoding="utf-8")
     with pytest.raises(ValueError, match="corrupt warmup record"):
         store.read_warmup()
+
+
+def test_offpolicy_record_round_trips(tmp_path: Path) -> None:
+    store = DistillRunStore(tmp_path / "run")
+    assert store.read_offpolicy() is None  # fresh dir: the phase never finished
+    record = OffPolicyRecord(
+        epochs=3,
+        steps=12,
+        trials=16,
+        kept_trials=8,
+        datums=8,
+        state_path="tinker://fake/state/1",
+        sampler_path="tinker://fake/sampler/offpolicy/0",
+    )
+    path = store.write_offpolicy(record)
+    assert path == store.offpolicy_path
+    assert store.read_offpolicy() == record
+
+
+def test_corrupt_offpolicy_record_is_actionable(tmp_path: Path) -> None:
+    store = DistillRunStore(tmp_path / "run")
+    store.write_offpolicy(OffPolicyRecord(epochs=1, steps=1, trials=1, kept_trials=1, datums=1))
+    store.offpolicy_path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(ValueError, match="corrupt off-policy record"):
+        store.read_offpolicy()
+
+
+def test_offpolicy_cursor_round_trips_and_clears(tmp_path: Path) -> None:
+    store = DistillRunStore(tmp_path / "run")
+    assert store.read_offpolicy_cursor() is None
+    cursor = OffPolicyCursor(
+        steps_completed=5,
+        epoch=1,
+        minibatch=2,
+        datums=9,
+        state_path="tinker://fake/state/offpolicy-5",
+    )
+    path = store.write_offpolicy_cursor(cursor)
+    assert path == store.offpolicy_cursor_path
+    assert store.read_offpolicy_cursor() == cursor
+
+    store.clear_offpolicy_cursor()
+    assert store.read_offpolicy_cursor() is None
+    store.clear_offpolicy_cursor()  # idempotent: no cursor is not an error
+
+
+def test_recording_the_terminal_outcome_drops_the_cursor(tmp_path: Path) -> None:
+    # A cursor outliving the record would send the next resumed session back
+    # into a schedule that already finished.
+    store = DistillRunStore(tmp_path / "run")
+    store.write_offpolicy_cursor(
+        OffPolicyCursor(
+            steps_completed=2, epoch=0, minibatch=2, datums=4, state_path="tinker://fake/state/2"
+        )
+    )
+
+    store.write_offpolicy(OffPolicyRecord(epochs=1, steps=2, trials=4, kept_trials=4, datums=4))
+
+    assert store.read_offpolicy_cursor() is None
+    assert not store.offpolicy_cursor_path.exists()
+
+
+def test_a_cursor_without_a_state_path_is_refused(tmp_path: Path) -> None:
+    # The cursor exists to name restorable weights; one without them would send
+    # a resume into the middle of a schedule with an untrained student.
+    store = DistillRunStore(tmp_path / "run")
+    store.run_dir.mkdir(parents=True)
+    store.offpolicy_cursor_path.write_text(
+        '{"steps_completed": 1, "epoch": 0, "minibatch": 1, "datums": 2}', encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="corrupt off-policy cursor"):
+        store.read_offpolicy_cursor()
 
 
 def _trial_record(task_id: str, *, passed: bool) -> TrialRecord:

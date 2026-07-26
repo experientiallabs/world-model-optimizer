@@ -526,8 +526,12 @@ def _print_cost_estimate(console: Console, cfg: DistillConfig, estimate: CostEst
         else "no budget.max_usd cap"
     )
     warmup = f"{estimate.warmup_episodes} warmup + " if estimate.warmup_episodes > 0 else ""
+    offpolicy = (
+        f"{estimate.offpolicy_episodes} off-policy + " if estimate.offpolicy_episodes > 0 else ""
+    )
     console.print(
-        f"{estimate.train_episodes} train + {warmup}{estimate.eval_episodes} interim-eval + "
+        f"{estimate.train_episodes} train + {offpolicy}{warmup}"
+        f"{estimate.eval_episodes} interim-eval + "
         f"{estimate.baseline_episodes} gate/baseline episode(s); priced total "
         f"${estimate.priced_usd:.2f}; {cap}"
     )

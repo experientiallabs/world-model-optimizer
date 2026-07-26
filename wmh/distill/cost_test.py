@@ -7,6 +7,7 @@ from wmh.distill.config import (
     EvalConfig,
     GateConfig,
     HarborConfig,
+    OffPolicyConfig,
     PricingConfig,
     RolloutConfig,
     SamplingConfig,
@@ -194,6 +195,49 @@ def test_estimate_includes_warmup_teacher_episodes() -> None:
     assert tokens["teacher_sample"] == base_tokens["teacher_sample"] + 15 * 256
     for meter in ("student_prefill", "student_cached_prefill", "student_sample", "student_train"):
         assert tokens[meter] == base_tokens[meter]
+
+
+def test_estimate_includes_offpolicy_teacher_episodes() -> None:
+    # The off-policy corpus is collected the same way the warmup one is, so it
+    # bills as teacher-in-harness episodes; the CE training tokens stay
+    # unprojected (they depend on the unknown pass rate).
+    cfg = _config().model_copy(update={"offpolicy": OffPolicyConfig(epochs=2, rollouts_per_task=3)})
+    estimate = estimate_run_cost(cfg, n_train_tasks=5, n_holdout_tasks=3)
+    baseline = estimate_run_cost(_config(), n_train_tasks=5, n_holdout_tasks=3)
+    assert estimate.offpolicy_episodes == 15
+    assert estimate.warmup_episodes == 0
+    tokens = _tokens(estimate)
+    base_tokens = _tokens(baseline)
+    assert tokens["teacher_prefill"] == base_tokens["teacher_prefill"] + 15 * 4352
+    assert tokens["teacher_cached_prefill"] == base_tokens["teacher_cached_prefill"] + 15 * 2944
+    assert tokens["teacher_sample"] == base_tokens["teacher_sample"] + 15 * 256
+    for meter in ("student_prefill", "student_cached_prefill", "student_sample", "student_train"):
+        assert tokens[meter] == base_tokens[meter]
+
+
+def test_estimate_projects_no_collection_when_the_corpus_is_loaded() -> None:
+    # trajectories_from means another run already paid for the teacher rollouts.
+    cfg = _config().model_copy(
+        update={
+            "offpolicy": OffPolicyConfig(
+                epochs=2, rollouts_per_task=3, trajectories_from="runs/prior"
+            )
+        }
+    )
+    estimate = estimate_run_cost(cfg, n_train_tasks=5, n_holdout_tasks=3)
+    assert estimate.offpolicy_episodes == 0
+    assert _tokens(estimate) == _tokens(
+        estimate_run_cost(_config(), n_train_tasks=5, n_holdout_tasks=3)
+    )
+
+
+def test_estimate_offpolicy_epochs_zero_means_no_offpolicy_episodes() -> None:
+    cfg = _config().model_copy(update={"offpolicy": OffPolicyConfig(epochs=0, rollouts_per_task=3)})
+    estimate = estimate_run_cost(cfg, n_train_tasks=5, n_holdout_tasks=3)
+    assert estimate.offpolicy_episodes == 0
+    assert _tokens(estimate) == _tokens(
+        estimate_run_cost(_config(), n_train_tasks=5, n_holdout_tasks=3)
+    )
 
 
 def test_estimate_warmup_steps_zero_means_no_warmup_episodes() -> None:

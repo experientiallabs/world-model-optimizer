@@ -11,6 +11,7 @@ from wmh.providers.base import Provider, ProviderConfig, ProviderKind
 from wmh.providers.registry import get_provider
 
 OptInModelRole = Literal["agent", "meta"]
+ModelRoleName = Literal["worker", "judge", "summary", "meta", "agent"]
 
 # Azure OpenAI chat completions need an API version on every call. When an opt-in role does not
 # pin one in settings, this shared default API version applies.
@@ -57,7 +58,27 @@ def resolve_required_model_config(root: str, role: OptInModelRole) -> ProviderCo
     return _model_config(configured, role=role)
 
 
-def _model_config(configured: ModelRole, *, role: OptInModelRole) -> ProviderConfig:
+def resolve_base_provider(root: str) -> tuple[Provider, str]:
+    """Resolve the project's ``worker`` model as a workflow's base provider.
+
+    Workflows that own a locally loaded world model use its serving provider as the base for the
+    judge and for unset opt-in roles. Optimizing against a HOSTED world model has no such local
+    provider (prediction happens on the platform), so ``[models.worker]`` must be configured.
+
+    Raises:
+        typer.BadParameter: No ``worker`` role is configured for this project.
+    """
+    configured = load_settings(root).models.resolve("worker")
+    if configured is None:
+        raise typer.BadParameter(
+            "optimizing against a hosted world model still runs the agent and the judge from "
+            "this machine; pin their model with `wmh providers set <provider> <model>` "
+            "(or add a [models.worker] table to <root>/settings.toml)"
+        )
+    return get_provider(_model_config(configured, role="worker")), configured.model
+
+
+def _model_config(configured: ModelRole, *, role: ModelRoleName) -> ProviderConfig:
     """Turn one configured role into provider-neutral config with the Azure default."""
     try:
         kind = ProviderKind(configured.provider)

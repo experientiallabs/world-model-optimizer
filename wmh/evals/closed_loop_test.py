@@ -15,6 +15,7 @@ from wmh.engine.world_model import WorldModel
 from wmh.evals.closed_loop import (
     ClosedLoopReport,
     WorldModelEnvironment,
+    WorldModelSource,
     evaluate_closed_loop,
     evaluate_with_env,
 )
@@ -65,8 +66,13 @@ class RoleProvider:
         raise NotImplementedError
 
 
-def _wm(provider: RoleProvider) -> WorldModel:
+def _model(provider: RoleProvider) -> WorldModel:
     return WorldModel(provider, EmbeddingRetriever(HashingEmbedder(dim=16)))
+
+
+def _wm(provider: RoleProvider) -> WorldModelSource:
+    """The environment under test: a locally loaded world model driven by `provider`."""
+    return WorldModelSource(_model(provider))
 
 
 def test_gold_judge_no_assertions_trivially_passes() -> None:
@@ -98,7 +104,7 @@ def test_closed_loop_reports_failure_when_judge_rejects() -> None:
 
 def test_world_model_environment_steps_and_ends_session() -> None:
     provider = RoleProvider()
-    wm = _wm(provider)
+    wm = _model(provider)
     env = WorldModelEnvironment(wm, task="do a thing")
     session_id = env.session_id
     obs = env.execute(Action(kind=ActionKind.TOOL_CALL, name="bash", arguments={"command": "ls"}))
@@ -117,7 +123,7 @@ def test_world_model_environment_steps_and_ends_session() -> None:
 def test_rollouts_do_not_enrich_the_retrieval_buffer() -> None:
     """A rollout's PREDICTED steps must not become retrieval demos for later rollouts."""
     provider = RoleProvider()
-    wm = _wm(provider)
+    wm = _model(provider)
     before = len(wm.sample_steps(1000))
     env = WorldModelEnvironment(wm, task="do a thing")
     env.execute(Action(kind=ActionKind.TOOL_CALL, name="bash", arguments={"command": "ls"}))

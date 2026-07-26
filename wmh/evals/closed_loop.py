@@ -15,8 +15,9 @@ The environment is a factory parameter: `evaluate_closed_loop` binds it to the w
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from contextlib import contextmanager
 from statistics import fmean, pstdev
 
 from pydantic import BaseModel, Field
@@ -26,7 +27,7 @@ from wmh.core.types import Action, Observation
 from wmh.engine.world_model import WorldModel
 from wmh.evals.gold import GoldJudge, GoldVerdict
 from wmh.evals.tasks import TaskSpec
-from wmh.harness.environment import AgentEnvironment
+from wmh.harness.environment import AgentEnvironment, EnvironmentSource
 from wmh.harness.runtime import (
     AgentRuntime,
     RunResult,
@@ -73,6 +74,33 @@ class WorldModelEnvironment:
         if not self._closed:
             self._wm.end_session(self._session.id)
             self._closed = True
+
+
+class WorldModelSource:
+    """The `EnvironmentSource` backed by a world model loaded in this process."""
+
+    def __init__(self, world_model: WorldModel, *, label: str = "world-model") -> None:
+        """Wrap `world_model`; `label` names it in reports and CLI output."""
+        self._wm = world_model
+        self._label = label
+
+    @property
+    def label(self) -> str:
+        return self._label
+
+    @property
+    def world_model(self) -> WorldModel:
+        """The wrapped model, for callers that need its provider or corpus."""
+        return self._wm
+
+    def open(self, task: str) -> AgentEnvironment:
+        return WorldModelEnvironment(self._wm, task=task)
+
+    @contextmanager
+    def frozen(self) -> Iterator[None]:
+        """Freeze the model for the duration: concurrent rollouts must not mutate its index."""
+        with self._wm.frozen():
+            yield
 
 
 class RolloutEvidence(BaseModel):
@@ -226,7 +254,7 @@ def evaluate_with_env(
 
 def evaluate_closed_loop(
     tasks: list[TaskSpec],
-    world_model: WorldModel,
+    environment: EnvironmentSource,
     agent_provider: Provider,
     judge: GoldJudge,
     *,
@@ -237,18 +265,19 @@ def evaluate_closed_loop(
     on_progress: Callable[[str, int, GoldVerdict], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
 ) -> ClosedLoopReport:
-    """Score the fixed agent on `tasks` against `world_model` (`wmh eval --mode closed-loop`).
+    """Score the fixed agent on `tasks` against `environment` (`wmh eval --mode closed-loop`).
 
-    With `concurrency != 1` the world model steps for many rollouts at once, so the whole eval
-    runs under `world_model.frozen()` (the `scenario_fidelity.score_matrix` precedent): sessions
-    are already independent (`enrich=False`), and freezing keeps parallel stepping from mutating
-    the shared retrieval index mid-eval. Sequential behavior is unchanged.
+    With `concurrency != 1` the environment serves many rollouts at once, so the whole eval runs
+    under `environment.frozen()` (the `scenario_fidelity.score_matrix` precedent): sessions are
+    already independent (`enrich=False`), and freezing a local world model keeps parallel stepping
+    from mutating the shared retrieval index mid-eval. Sequential behavior is unchanged, and a
+    hosted environment (whose state lives server-side) freezes to a no-op.
     """
 
     def _evaluate() -> ClosedLoopReport:
         return evaluate_with_env(
             tasks,
-            lambda task: WorldModelEnvironment(world_model, task=task.instruction),
+            lambda task: environment.open(task.instruction),
             runtime if runtime is not None else AgentRuntime(agent_provider),
             judge,
             label=label,
@@ -260,17 +289,17 @@ def evaluate_closed_loop(
 
     if concurrency == 1:
         return _evaluate()
-    with world_model.frozen():
+    with environment.frozen():
         return _evaluate()
 
 
 class ClosedLoopEval:
-    """The closed-loop `Evaluation`: a live agent runs tasks with the world model as its env."""
+    """The closed-loop `Evaluation`: a live agent runs tasks with the simulation as its env."""
 
     def __init__(
         self,
         tasks: list[TaskSpec],
-        world_model: WorldModel,
+        environment: EnvironmentSource,
         agent_provider: Provider,
         judge: GoldJudge,
         *,
@@ -281,7 +310,7 @@ class ClosedLoopEval:
         on_progress: Callable[[str, int, GoldVerdict], None] | None = None,
     ) -> None:
         self._tasks = tasks
-        self._world_model = world_model
+        self._environment = environment
         self._agent_provider = agent_provider
         self._judge = judge
         self._label = label
@@ -293,7 +322,7 @@ class ClosedLoopEval:
     def run(self) -> ClosedLoopReport:
         return evaluate_closed_loop(
             self._tasks,
-            self._world_model,
+            self._environment,
             self._agent_provider,
             self._judge,
             label=self._label,

@@ -19,7 +19,7 @@ from llm_waterfall import ChatRequest, ChatResponse
 
 from wmh.core.types import JsonObject
 from wmh.engine.world_model import WorldModel
-from wmh.evals.closed_loop import ClosedLoopReport, TaskOutcome
+from wmh.evals.closed_loop import ClosedLoopReport, TaskOutcome, WorldModelSource
 from wmh.evals.gold import AssertionResult, GoldJudge, GoldVerdict
 from wmh.evals.tasks import TaskSpec
 from wmh.harness import create as create_module
@@ -34,6 +34,7 @@ from wmh.harness.create import (
 from wmh.harness.delta import FailureSignature, GateRecord, HarnessDelta
 from wmh.harness.doc import HarnessDoc
 from wmh.harness.e2b_sandbox import SandboxUsage
+from wmh.harness.environment import EnvironmentSource
 from wmh.harness.mutate import parse_delta
 from wmh.harness.proposer import ProposalFailure, ProviderDeltaProposer
 from wmh.harness.runtime import Runtime
@@ -133,8 +134,9 @@ def _gold_assertions(user: str) -> list[str]:
     return [line[2:] for line in tail.splitlines() if line.startswith("- ")]
 
 
-def _wm(provider: RoleProvider) -> WorldModel:
-    return WorldModel(provider, EmbeddingRetriever(HashingEmbedder(dim=16)))
+def _wm(provider: RoleProvider) -> WorldModelSource:
+    """The environment under search: a locally loaded world model driven by `provider`."""
+    return WorldModelSource(WorldModel(provider, EmbeddingRetriever(HashingEmbedder(dim=16))))
 
 
 def _tasks() -> list[TaskSpec]:
@@ -1210,7 +1212,7 @@ def test_e2b_backend_scores_against_the_world_model_through_the_shared_pool(
 
     def spying_evaluate(
         tasks: list[TaskSpec],
-        world_model: WorldModel,
+        environment: EnvironmentSource,
         agent_provider: Provider,
         judge: GoldJudge,
         *,
@@ -1223,7 +1225,7 @@ def test_e2b_backend_scores_against_the_world_model_through_the_shared_pool(
         concurrencies.append(concurrency)
         return real_evaluate(
             tasks,
-            world_model,
+            environment,
             agent_provider,
             judge,
             label=label,
@@ -1457,7 +1459,7 @@ def test_eval_concurrency_overrides_both_backend_defaults(
 
     def fake_evaluate(
         tasks: list[TaskSpec],
-        world_model: WorldModel,
+        environment: EnvironmentSource,
         agent_provider: Provider,
         judge: GoldJudge,
         *,
@@ -1509,7 +1511,7 @@ def test_create_sums_worker_usage_across_score_waves(
 
     def fake_evaluate(
         tasks: list[TaskSpec],
-        world_model: WorldModel,
+        environment: EnvironmentSource,
         agent_provider: Provider,
         judge: GoldJudge,
         *,

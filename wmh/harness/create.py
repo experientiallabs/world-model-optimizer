@@ -28,13 +28,13 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from wmh.engine.world_model import WorldModel
 from wmh.evals.closed_loop import DEFAULT_K, ClosedLoopReport, evaluate_closed_loop
 from wmh.evals.gold import GoldJudge
 from wmh.evals.tasks import TaskSpec
 from wmh.harness.delta import FailureSignature, GateRecord, HarnessDelta, apply_delta
 from wmh.harness.doc import HarnessDoc
 from wmh.harness.e2b_sandbox import SandboxUsage
+from wmh.harness.environment import EnvironmentSource
 from wmh.harness.mutate import render_evidence
 from wmh.harness.proposer import DeltaProposer, ProposalFailure
 from wmh.harness.runtime import (
@@ -386,7 +386,7 @@ def create_harness(
     name: str,
     seed_doc: HarnessDoc,
     tasks: list[TaskSpec],
-    world_model: WorldModel,
+    environment: EnvironmentSource,
     agent_provider: Provider,
     proposer: DeltaProposer,
     judge: GoldJudge,
@@ -432,7 +432,8 @@ def create_harness(
     call already in progress remains bounded by that call's own timeout. Cancellation raises
     :class:`HarnessSearchCancelled` while the normal ``finally`` path retires sandbox resources.
 
-    Every rollout scores against the world-model simulation — the environment is always sim.
+    Every rollout scores against `environment` (a local or hosted world model) — the environment
+    is always sim.
     `harness_backend` picks where the harness PROCESS executes: `local` (the default) runs it
     in/from this process exactly as before; `e2b` runs the real pi agent inside E2B sandboxes
     (pi-node seeds only — that harness's context management is the thing under search), with its
@@ -533,7 +534,7 @@ def create_harness(
             try:
                 report = evaluate_closed_loop(
                     split,
-                    world_model,
+                    environment,
                     agent_provider,
                     judge,
                     label=doc.name,

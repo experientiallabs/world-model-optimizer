@@ -9,6 +9,7 @@ symmetry is what makes a simulated report comparable to a real one (`wmh.evals.a
 
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
 from typing import Protocol, runtime_checkable
 
 from wmh.core.types import Action, ActionKind, Observation
@@ -27,6 +28,30 @@ class AgentEnvironment(Protocol):
 
     def close(self) -> None:
         """Release any underlying resources (end the session)."""
+        ...
+
+
+@runtime_checkable
+class EnvironmentSource(Protocol):
+    """Opens one `AgentEnvironment` per task and brackets a wave of rollouts.
+
+    Closed-loop eval and the harness search hold this, not a world model: the environment under
+    test may be a locally loaded world model (`wmh.evals.closed_loop.WorldModelSource`) or the
+    platform's hosted one (`wmh.platform.hosted_world_model.HostedWorldModelSource`), and neither
+    the scoring core nor the optimizer can tell the difference.
+    """
+
+    @property
+    def label(self) -> str:
+        """The environment's name, as reports and CLI output should identify it."""
+        ...
+
+    def open(self, task: str) -> AgentEnvironment:
+        """Open a fresh environment for one rollout of `task`."""
+        ...
+
+    def frozen(self) -> AbstractContextManager[None]:
+        """A window in which concurrent rollouts may share this source safely."""
         ...
 
 

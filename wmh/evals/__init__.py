@@ -18,6 +18,7 @@ from wmh.evals.closed_loop import (
     ClosedLoopReport,
     TaskOutcome,
     WorldModelEnvironment,
+    WorldModelSource,
     evaluate_closed_loop,
     evaluate_with_env,
 )
@@ -42,6 +43,7 @@ __all__ = [
     "TaskOutcome",
     "TaskSpec",
     "WorldModelEnvironment",
+    "WorldModelSource",
     "compute_agreement",
     "evaluate_closed_loop",
     "evaluate_files",

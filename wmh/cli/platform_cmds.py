@@ -215,6 +215,18 @@ def _browser_login(web_url: str, *, open_browser: bool) -> str | None:
     return token
 
 
+def default_org(client: PlatformClient, configured: str | None) -> str:
+    """Resolve the login's organization, auto-picking only an unambiguous sole org."""
+    if configured is not None:
+        return configured
+    identity = client.whoami()
+    if len(identity.orgs) == 1:
+        return identity.orgs[0].id
+    raise typer.BadParameter(
+        "no default organization selected; run `wmh login` again and choose an organization"
+    )
+
+
 def _client(credentials: PlatformCredentials) -> PlatformClient:
     if credentials.api_url is None or credentials.token is None:
         raise typer.BadParameter("not connected to a platform; run `wmh login` first")

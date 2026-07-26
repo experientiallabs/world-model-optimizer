@@ -16,7 +16,7 @@ from typer.testing import CliRunner, Result
 
 from wmh.cli import app
 from wmh.config.settings import ModelRole, ModelsSettings, ProjectSettings, save_settings
-from wmh.evals.closed_loop import ClosedLoopReport, TaskOutcome
+from wmh.evals.closed_loop import ClosedLoopReport, TaskOutcome, WorldModelSource
 from wmh.evals.gold import GoldJudge, GoldVerdict
 from wmh.evals.tasks import TaskSpec
 from wmh.harness.doc import RUNTIME_KIND_ID, TOOL_POLICY_ID, HarnessDoc, Surface, SurfaceKind
@@ -112,7 +112,7 @@ def _patch_seams(monkeypatch: pytest.MonkeyPatch, seen: dict[str, object]) -> ob
         def __init__(
             self,
             tasks: list[TaskSpec],
-            world_model: object,
+            environment: WorldModelSource,
             agent_provider: object,
             judge: GoldJudge,
             *,
@@ -124,7 +124,7 @@ def _patch_seams(monkeypatch: pytest.MonkeyPatch, seen: dict[str, object]) -> ob
         ) -> None:
             seen.update(
                 {
-                    "world_model": world_model,
+                    "world_model": environment.world_model,
                     "agent_provider": agent_provider,
                     "label": label,
                     "concurrency": concurrency,

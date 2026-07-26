@@ -8,13 +8,16 @@ advertises. Flag validation, task loading, and the harness store are real.
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import json
 import shlex
 from collections.abc import Callable, Sequence
+from contextlib import AbstractContextManager
 from pathlib import Path
 
 import pytest
+import typer
 from typer.testing import CliRunner, Result
 
 from wmh.cli import app
@@ -23,12 +26,22 @@ from wmh.config.settings import ModelRole, ModelsSettings, ProjectSettings, save
 from wmh.evals.tasks import TaskSpec
 from wmh.harness.create import CreateResult, DeltaArchive
 from wmh.harness.doc import HarnessDoc
+from wmh.harness.environment import AgentEnvironment
 from wmh.harness.population import CandidateProposal, EvaluatedCandidate, candidate_slot_id
 from wmh.harness.proposer import ProviderDeltaProposer
 from wmh.harness.scoring import ScoreCell, ScoreReport, ScoreRequest
 from wmh.harness.source_tree import HarnessSourceFile, HarnessSourceTree
 from wmh.harness.store import HarnessStore
-from wmh.providers.base import Completion, Message, ProviderConfig, ProviderKind
+from wmh.platform.client import PlatformError, RemoteWorldModel
+from wmh.platform.credentials import PlatformCredentials
+from wmh.platform.hosted_world_model import HostedWorldModelSource
+from wmh.providers.base import (
+    Completion,
+    Message,
+    ProviderConfig,
+    ProviderKind,
+    VerifyResult,
+)
 
 # The Typer object `harness_app` shadows the submodule name on plain attribute access; go
 # through importlib to monkeypatch module globals (same pattern as app_test.py).
@@ -49,7 +62,7 @@ class _Provider:
     def embed(self, texts: list[str]) -> list[list[float]]:
         return [[0.0] for _ in texts]
 
-    def verify(self) -> object:
+    def verify(self) -> VerifyResult:
         raise NotImplementedError
 
 
@@ -64,7 +77,7 @@ class _CreateRecorder:
         name: str,
         seed_doc: HarnessDoc,
         tasks: list[TaskSpec],
-        world_model: object,
+        environment: object,
         agent_provider: object,
         proposer: object,
         judge: object,
@@ -73,7 +86,7 @@ class _CreateRecorder:
         self.calls.append(
             {
                 "name": name,
-                "world_model": world_model,
+                "environment": environment,
                 "provider": agent_provider,
                 "proposer": proposer,
                 **kwargs,
@@ -109,16 +122,34 @@ def _invoke(tmp_path: Path, *extra: str) -> Result:
     )
 
 
+class _FakeSource:
+    """Stands in for a resolved environment source; the search itself is faked too."""
+
+    def __init__(self, label: str = "wm-alpha") -> None:
+        self.label = label
+
+    def open(self, task: str) -> AgentEnvironment:  # pragma: no cover - never opened
+        raise AssertionError("the faked search never opens an environment")
+
+    def frozen(self) -> AbstractContextManager[None]:  # pragma: no cover - never entered
+        return contextlib.nullcontext()
+
+
 def _patch_load(
-    monkeypatch: pytest.MonkeyPatch, wm: object, provider: _Provider
+    monkeypatch: pytest.MonkeyPatch, source: _FakeSource, provider: _Provider
 ) -> list[str | None]:
+    """Fake environment resolution, recording the ENVIRONMENT argument each run resolved."""
     loads: list[str | None] = []
 
-    def fake_load(model: str | None, root: str) -> tuple[object, _Provider, str]:
+    def fake_resolve(
+        model: str | None, root: str, *, local_only: bool
+    ) -> harness_app_module._OptimizeEnvironment:
         loads.append(model)
-        return wm, provider, "wm-alpha"
+        return harness_app_module._OptimizeEnvironment(
+            source=source, provider=provider, hosted=False
+        )
 
-    monkeypatch.setattr(harness_app_module, "_load_world_model", fake_load)
+    monkeypatch.setattr(harness_app_module, "_resolve_environment", fake_resolve)
     return loads
 
 
@@ -126,7 +157,7 @@ def test_create_e2b_wires_backend_flags_and_still_loads_the_world_model(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     recorder = _CreateRecorder()
-    wm = object()
+    wm = _FakeSource()
     anchored = _Provider()
     monkeypatch.setattr(harness_app_module, "create_harness", recorder)
     loads = _patch_load(monkeypatch, wm, anchored)
@@ -144,7 +175,7 @@ def test_create_e2b_wires_backend_flags_and_still_loads_the_world_model(
     assert result.exit_code == 0, result.output
     assert loads == [None]  # the world model is the environment: ALWAYS loaded, even for e2b
     [call] = recorder.calls
-    assert call["world_model"] is wm
+    assert call["environment"] is wm
     assert call["provider"] is anchored
     assert call["harness_backend"] == "e2b"
     assert call["eval_concurrency"] == 4
@@ -189,7 +220,7 @@ def test_create_default_local_loads_the_world_model(
     project_root = tmp_path / "project with spaces"
     project_root.mkdir()
     recorder = _CreateRecorder()
-    wm = object()
+    wm = _FakeSource()
     monkeypatch.setattr(harness_app_module, "create_harness", recorder)
     loads = _patch_load(monkeypatch, wm, _Provider())
 
@@ -198,7 +229,7 @@ def test_create_default_local_loads_the_world_model(
     assert result.exit_code == 0, result.output
     assert loads == [None]  # default: resolve the only built model
     [call] = recorder.calls
-    assert call["world_model"] is wm
+    assert call["environment"] is wm
     assert call["harness_backend"] == "local"
     assert call["eval_concurrency"] is None  # backend default decided downstream (local -> 1)
     assert call["e2b_template"] is None
@@ -231,7 +262,7 @@ def test_optimize_accepts_world_model_as_second_argument(
 ) -> None:
     recorder = _CreateRecorder()
     monkeypatch.setattr(harness_app_module, "create_harness", recorder)
-    loads = _patch_load(monkeypatch, object(), _Provider())
+    loads = _patch_load(monkeypatch, _FakeSource(), _Provider())
 
     result = runner.invoke(
         app,
@@ -260,7 +291,7 @@ def test_create_meta_role_from_settings_drives_the_proposer(
     recorder = _CreateRecorder()
     anchored = _Provider()
     monkeypatch.setattr(harness_app_module, "create_harness", recorder)
-    _patch_load(monkeypatch, object(), anchored)
+    _patch_load(monkeypatch, _FakeSource(), anchored)
     root = tmp_path / ".wmh"
     save_settings(
         ProjectSettings(
@@ -300,7 +331,7 @@ def test_create_agent_role_from_settings_drives_the_agent_under_test(
     recorder = _CreateRecorder()
     anchored = _Provider()  # the world model's serve provider
     monkeypatch.setattr(harness_app_module, "create_harness", recorder)
-    _patch_load(monkeypatch, object(), anchored)
+    _patch_load(monkeypatch, _FakeSource(), anchored)
     save_settings(
         ProjectSettings(
             models=ModelsSettings(
@@ -340,7 +371,7 @@ def test_create_agent_defaults_to_the_world_model_provider(
     recorder = _CreateRecorder()
     anchored = _Provider()
     monkeypatch.setattr(harness_app_module, "create_harness", recorder)
-    _patch_load(monkeypatch, object(), anchored)
+    _patch_load(monkeypatch, _FakeSource(), anchored)
 
     result = _invoke(tmp_path)
 
@@ -357,7 +388,7 @@ def test_create_meta_defaults_to_the_world_model_provider(
     recorder = _CreateRecorder()
     anchored = _Provider()
     monkeypatch.setattr(harness_app_module, "create_harness", recorder)
-    _patch_load(monkeypatch, object(), anchored)
+    _patch_load(monkeypatch, _FakeSource(), anchored)
 
     result = _invoke(tmp_path)
 
@@ -807,3 +838,179 @@ def test_harbor_resume_accepts_a_restated_episode_timeout_for_an_e2b_run(
     )
     assert resumed.exit_code == 0, resumed.output
     assert "optimized" in resumed.output
+
+
+class _FakeClient:
+    """Stands in for `PlatformClient` in environment resolution: no HTTP, records closes."""
+
+    def __init__(
+        self,
+        *,
+        by_id: dict[str, RemoteWorldModel] | None = None,
+        by_org: list[RemoteWorldModel] | None = None,
+    ) -> None:
+        self.by_id = by_id or {}
+        self.by_org = by_org or []
+        self.closed = False
+
+    def get_world_model(self, world_model_id: str) -> RemoteWorldModel:
+        found = self.by_id.get(world_model_id)
+        if found is None:
+            raise PlatformError(f"World model not found: {world_model_id}", status_code=404)
+        return found
+
+    def list_world_models(self, org_id: str) -> list[RemoteWorldModel]:
+        assert org_id == "org-1"
+        return self.by_org
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _login(monkeypatch: pytest.MonkeyPatch, client: _FakeClient) -> None:
+    """Make this machine look logged in, with `client` serving every platform call."""
+    monkeypatch.setattr(
+        harness_app_module,
+        "load_credentials",
+        lambda: PlatformCredentials(api_url="https://api.test", token="xpl", default_org="org-1"),
+    )
+    monkeypatch.setattr(harness_app_module, "PlatformClient", lambda *a, **kw: client)
+
+
+def _worker_settings(root: Path) -> None:
+    save_settings(
+        ProjectSettings(models=ModelsSettings(worker=ModelRole(provider="bedrock", model="m"))),
+        root,
+    )
+
+
+def test_login_resolves_the_environment_on_the_platform_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A logged-in run optimizes against the org's hosted world model, not a local artifact."""
+    remote = RemoteWorldModel(id="wm-9", name="postgres", status="ready")
+    client = _FakeClient(by_org=[remote])
+    _login(monkeypatch, client)
+    root = tmp_path / ".wmh"
+    _worker_settings(root)
+
+    environment = harness_app_module._resolve_environment("postgres", str(root), local_only=False)
+
+    assert environment.hosted
+    assert isinstance(environment.source, HostedWorldModelSource)
+    assert environment.source.world_model_id == "wm-9"
+    assert environment.source.label == "postgres"
+    # The agent and judge still run from this machine, on the project's worker model.
+    assert environment.provider.config.model == "m"
+    environment.close()
+    assert client.closed  # the connection is the run's, and the run closes it
+
+
+def test_login_resolves_the_environment_by_platform_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ids resolve without an org, so an ambiguous login is not an error on that path."""
+    remote = RemoteWorldModel(id="wm-9", name="postgres", status="ready")
+    client = _FakeClient(by_id={"wm-9": remote})
+    _login(monkeypatch, client)
+    root = tmp_path / ".wmh"
+    _worker_settings(root)
+
+    environment = harness_app_module._resolve_environment("wm-9", str(root), local_only=False)
+
+    assert environment.hosted
+    assert isinstance(environment.source, HostedWorldModelSource)
+    assert environment.source.world_model_id == "wm-9"
+
+
+def test_a_name_the_platform_does_not_know_falls_back_to_the_local_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _FakeClient()
+    _login(monkeypatch, client)
+    local = _FakeSource("local-wm")
+    monkeypatch.setattr(
+        harness_app_module,
+        "_local_environment",
+        lambda name, root: harness_app_module._OptimizeEnvironment(
+            source=local, provider=_Provider(), hosted=False
+        ),
+    )
+
+    environment = harness_app_module._resolve_environment("only-here", ".wmh", local_only=False)
+
+    assert not environment.hosted
+    assert environment.source is local
+    assert client.closed  # nothing hosted is being used, so the connection is released
+
+
+def test_local_flag_skips_the_platform_entirely(monkeypatch: pytest.MonkeyPatch) -> None:
+    def explode(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("--local must not touch the platform")
+
+    monkeypatch.setattr(
+        harness_app_module,
+        "load_credentials",
+        lambda: PlatformCredentials(api_url="https://api.test", token="xpl", default_org="org-1"),
+    )
+    monkeypatch.setattr(harness_app_module, "PlatformClient", explode)
+    local = _FakeSource("local-wm")
+    monkeypatch.setattr(
+        harness_app_module,
+        "_local_environment",
+        lambda name, root: harness_app_module._OptimizeEnvironment(
+            source=local, provider=_Provider(), hosted=False
+        ),
+    )
+
+    environment = harness_app_module._resolve_environment("wm", ".wmh", local_only=True)
+
+    assert environment.source is local
+
+
+def test_a_world_model_that_is_still_building_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    remote = RemoteWorldModel(id="wm-9", name="postgres", status="building")
+    client = _FakeClient(by_org=[remote])
+    _login(monkeypatch, client)
+
+    with pytest.raises(typer.BadParameter, match="not ready"):
+        harness_app_module._resolve_environment("postgres", str(tmp_path), local_only=False)
+    assert client.closed
+
+
+def test_hosted_optimization_requires_a_configured_worker_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prediction is hosted, but the agent and judge are not: their model must be pinned here."""
+    remote = RemoteWorldModel(id="wm-9", name="postgres", status="ready")
+    _login(monkeypatch, _FakeClient(by_org=[remote]))
+
+    with pytest.raises(typer.BadParameter, match="wmh providers set"):
+        harness_app_module._resolve_environment("postgres", str(tmp_path), local_only=False)
+
+
+def test_declining_the_prompt_still_releases_the_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Answering No before the search starts must not leak a hosted platform connection."""
+    closed: list[bool] = []
+    monkeypatch.setattr(
+        harness_app_module,
+        "_resolve_environment",
+        lambda name, root, *, local_only: harness_app_module._OptimizeEnvironment(
+            source=_FakeSource(), provider=_Provider(), hosted=True, client=_FakeClient()
+        ),
+    )
+    monkeypatch.setattr(
+        harness_app_module._OptimizeEnvironment, "close", lambda self: closed.append(True)
+    )
+    monkeypatch.setattr(harness_app_module.Confirm, "ask", lambda *a, **kw: False)
+    # The confirmation only appears on a terminal, which the CLI runner is not.
+    monkeypatch.setattr(type(harness_app_module._console), "is_terminal", True)
+
+    result = _invoke(tmp_path)
+
+    assert result.exit_code == 0, result.output
+    assert closed == [True]

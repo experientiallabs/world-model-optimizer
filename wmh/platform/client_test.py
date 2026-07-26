@@ -494,3 +494,17 @@ def test_fetch_cli_config_maps_failures() -> None:
 
     with pytest.raises(PlatformError, match="discovery failed"):
         fetch_cli_config("https://platform.test", transport=httpx.MockTransport(handler))
+
+
+def test_get_world_model_reads_one_record_by_id() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/world-models/wm-9"
+        return httpx.Response(
+            200,
+            json={"id": "wm-9", "name": "postgres", "status": "ready", "config": {"depth": 2}},
+        )
+
+    with _client(handler) as client:
+        model = client.get_world_model("wm-9")
+
+    assert (model.id, model.name, model.status) == ("wm-9", "postgres", "ready")

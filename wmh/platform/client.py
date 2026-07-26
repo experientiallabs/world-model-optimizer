@@ -376,6 +376,12 @@ class PlatformClient:
 
     # -- world models --------------------------------------------------------------------------
 
+    def get_world_model(self, world_model_id: str) -> RemoteWorldModel:
+        """Read one world model by platform id."""
+        response = self._client.get(f"/api/world-models/{world_model_id}")
+        self._raise_for_error(response)
+        return RemoteWorldModel.model_validate(response.json())
+
     def list_world_models(self, org_id: str) -> list[RemoteWorldModel]:
         response = self._client.get(f"/api/orgs/{org_id}/world-models")
         self._raise_for_error(response)

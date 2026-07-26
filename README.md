@@ -51,6 +51,17 @@ Copy an agent ID from the platform and run its current champion harness:
 wmh run <agent-id>
 ```
 
+Once logged in, `wmh optimize` resolves its environment on the platform first, so a hosted world
+model can be optimized against without building or downloading it:
+
+```bash
+wmh optimize my-agent <world-model-name-or-id> --tasks tasks.jsonl
+```
+
+Rollouts step hosted world-model sessions; the agent under test, the proposer, and the judge run
+from this machine on the model set with `wmh providers set`. Pass `--local` to search against a
+locally built world model of that name instead.
+
 ### E2B backend
 
 Hosted agents already run in platform-managed E2B sandboxes. To evaluate a local optimization in

@@ -43,6 +43,7 @@ from wmh.cli.hosted_session import (
     SessionAction,
     patch_revision,
 )
+from wmh.cli.platform_cmds import default_org
 from wmh.cli.session_state import (
     DetachedSessionState,
     SessionStateError,
@@ -1044,7 +1045,7 @@ def _build_driver(
             confirm_local()
         client = PlatformClient(str(credentials.api_url), str(credentials.token))
         try:
-            org_id = _default_org(client, credentials.default_org)
+            org_id = default_org(client, credentials.default_org)
             run = client.create_local_pi_run(org_id)
         except typer.BadParameter:
             client.close()
@@ -1109,15 +1110,3 @@ def _build_driver(
     except PlatformError as error:
         client.close()
         raise typer.BadParameter(str(error)) from error
-
-
-def _default_org(client: PlatformClient, configured: str | None) -> str:
-    """Resolve the login's organization, auto-picking only an unambiguous sole org."""
-    if configured is not None:
-        return configured
-    identity = client.whoami()
-    if len(identity.orgs) == 1:
-        return identity.orgs[0].id
-    raise typer.BadParameter(
-        "no default organization selected; run `wmh login` again and choose an organization"
-    )

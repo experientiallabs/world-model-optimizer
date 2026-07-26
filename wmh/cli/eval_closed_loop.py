@@ -19,7 +19,7 @@ from wmh.cli.model_roles import resolve_opt_in_model_provider
 from wmh.config import WorldModelStore
 from wmh.engine import load_world_model
 from wmh.evals.agreement import compute_agreement
-from wmh.evals.closed_loop import ClosedLoopEval, ClosedLoopReport
+from wmh.evals.closed_loop import ClosedLoopEval, ClosedLoopReport, WorldModelSource
 from wmh.evals.gold import GoldJudge, GoldVerdict
 from wmh.evals.tasks import load_tasks
 from wmh.harness.doc import MAX_TURNS_ID, HarnessDoc, Surface, SurfaceKind
@@ -136,7 +136,7 @@ def run_closed_loop(
     try:
         evaluation = ClosedLoopEval(
             tasks,
-            world_model,
+            WorldModelSource(world_model, label=model_dir.name),
             agent_provider,
             GoldJudge(provider),
             label=f"{report_agent_label}@{model_dir.name}",

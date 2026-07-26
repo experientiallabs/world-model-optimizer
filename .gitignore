@@ -23,6 +23,8 @@ demos/
 logs/
 
 .wmh-fixed/
+# Ad-hoc eval harness run dirs (headroom measurements, baseline sweeps).
+.wmh-eval*/
 
 # dev-run artifacts of the RL arms (official rows are committed deliberately under results/)
 examples/tau-bench/rl/*.results.jsonl

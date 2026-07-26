@@ -20,6 +20,14 @@ Two span sources feed the same `TrialRecord` shape, one per rollout agent:
 
 Either way `assemble_trial_records` joins the spans with the scorer's reward
 cells into `TrialRecord`s, the unit the datum builder consumes.
+
+`reconstruct_conversation` replays the canonical (tokenizer-independent)
+conversation of one episode from the same spans: the per-span message deltas
+concatenated, with each span's own sampled tokens parsed back into the
+assistant turn they represent. That message list plus the recorded tool
+schemas is what a cross-tokenizer teacher re-renders with its own chat
+template, so multi-turn agentic rollouts (not just single-turn math) can be
+scored against a different tokenizer.
 """
 
 from __future__ import annotations
@@ -28,10 +36,13 @@ import json
 import logging
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Protocol
 
+from llm_waterfall.types import ChatMessage, ChatTool
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from wmh.core.types import JsonObject
+from wmh.distill.rendering import ParsedAssistantMessage
 from wmh.harness.runtime import StopReason
 from wmh.harness.scoring import GradedTests, ScoreCell
 from wmh.providers.tinker import TokenSpan
@@ -398,6 +409,123 @@ def read_terminus_stop_reason(artifact_dir: Path, *, max_turns: int) -> str | No
     # The loop returned early without claiming completion: terminus-2 does that only when its
     # tmux session died under it, which is a harness failure, not a task verdict.
     return StopReason.ERROR.value
+
+
+class SampledTurnParser(Protocol):
+    """The one thing conversation replay needs from a renderer.
+
+    `wmh.distill.rendering.CookbookChatRendering` (and anything satisfying
+    `ChatRendering`) satisfies this structurally; the parse is what turns a
+    span's raw sampled ids back into a structured assistant turn.
+    """
+
+    def parse_response(self, sampled_ids: list[int]) -> ParsedAssistantMessage:
+        """Parse sampled token ids into an assistant message (text plus tool calls)."""
+        ...
+
+
+class ConversationReplay(BaseModel):
+    """One episode's canonical conversation, replayed from its token spans.
+
+    This is the cross-tokenizer hand-off: a teacher with a different tokenizer
+    re-renders `messages` (and `tools`) with its own chat template instead of
+    trying to reuse the student's token ids, and `assistant_index_by_span`
+    pairs each sampled span with the assistant message its tokens produced so
+    the chunk planner knows which rendered region a span must align to.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    messages: list[ChatMessage]
+    """The full conversation in order: the spans' message deltas interleaved
+    with the assistant turn each span sampled."""
+
+    tools: list[ChatTool] | None = None
+    """The tool schemas the episode was sampled with; None when there were none.
+
+    None rather than `[]`, because that is what the teacher renderer reads as
+    "render no tools section at all" (`wmh.distill.xtoken.teacher_render`).
+    `TokenSpan.tools` spells the same thing as an empty list, so the two are
+    normalized here rather than at every consumer."""
+
+    assistant_index_by_span: dict[int, int]
+    """Span position (0-based, equal to `call_index` for a sink that passed
+    `load_trial_spans`) to the index in `messages` of the assistant message
+    that span's sampled tokens produced."""
+
+
+def reconstruct_conversation(
+    spans: Sequence[TokenSpan], rendering: SampledTurnParser
+) -> ConversationReplay | None:
+    """Replay one episode's canonical conversation from its recorded spans.
+
+    Walks the spans in call order, appending each span's `delta_messages` (the
+    messages that call added) and then the assistant message that span's
+    sampled ids parse to, so the result is the conversation the agent actually
+    held: system, user, assistant (with tool calls), tool result, assistant,
+    and so on.
+
+    Args:
+        spans: One trial's spans in call order, as `load_trial_spans` or
+            `load_trial_rollout_spans` returns them.
+        rendering: The student's rendering, used only to parse each span's
+            sampled ids back into a structured assistant turn.
+
+    Returns:
+        The replay, or None when this episode cannot be replayed honestly:
+        no spans at all, a span recorded before message capture existed (an old
+        sink), a span whose prompt was reused or fully re-rendered rather than
+        extended (`TokenSpan.delta_messages` is None for both), or spans that
+        disagree about their tool schemas. Callers must degrade (skip the
+        cross-tokenizer path for the trial) rather than score a conversation
+        that differs from the sampled one; the reason is logged.
+    """
+    if not spans:
+        logger.info("no token spans to reconstruct a conversation from; nothing was sampled")
+        return None
+    tools = spans[0].tools
+    messages: list[ChatMessage] = []
+    assistant_index_by_span: dict[int, int] = {}
+    for index, span in enumerate(spans):
+        if span.delta_messages is None:
+            logger.warning(
+                "cannot reconstruct the conversation: span %d (call_index %d) carries no "
+                "delta_messages, so the canonical messages of that call are unknown; the "
+                "sink predates message capture or that call re-rendered/reused its prompt "
+                "instead of extending the previous one. Re-run the rollout step to capture "
+                "messages, and skip the cross-tokenizer teacher for this trial",
+                index,
+                span.call_index,
+            )
+            return None
+        if span.tools != tools:
+            logger.warning(
+                "cannot reconstruct the conversation: span %d (call_index %d) was rendered "
+                "with different tool schemas than span 0, so one tool list cannot describe "
+                "the episode; split the spans at the schema change before reconstructing",
+                index,
+                span.call_index,
+            )
+            return None
+        messages.extend(span.delta_messages)
+        parsed = rendering.parse_response(span.sampled_token_ids)
+        assistant_index_by_span[index] = len(messages)
+        # Same shape TinkerChatProvider.complete_chat handed the agent, so the
+        # replayed turn is the turn the conversation actually continued from.
+        messages.append(
+            ChatMessage(
+                role="assistant",
+                content=parsed.text or None,
+                tool_calls=parsed.tool_calls or None,
+            )
+        )
+    return ConversationReplay(
+        messages=messages,
+        # `[]` and None both mean "no schemas were rendered"; the teacher
+        # renderer only understands the None spelling.
+        tools=tools or None,
+        assistant_index_by_span=assistant_index_by_span,
+    )
 
 
 def read_trial_stop_reason(artifact_dir: Path) -> str | None:

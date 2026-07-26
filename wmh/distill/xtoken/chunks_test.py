@@ -10,6 +10,7 @@ from wmh.distill.data import TrainDatum
 from wmh.distill.xtoken.chunks import (
     ChunkPlan,
     ChunkSpan,
+    _chunk_totals,
     attach_chunk_advantages,
 )
 
@@ -323,3 +324,36 @@ def test_centering_is_across_the_whole_batch() -> None:
     assert attached[1].advantages[1] == pytest.approx(1.0)
     assert stats.advantage_mean == pytest.approx(0.0)
     assert stats.chunks == 2
+
+
+def test_clip_none_disables_clipping() -> None:
+    """A clip of None must train unclipped rather than raise.
+
+    The same-tokenizer lane widened `train.advantage_clip` to optional in its own
+    branch. This module must already tolerate that when the branches meet, or a
+    valid config would raise TypeError deep inside a training step. Exercised
+    against `_chunk_totals` directly, because THIS branch's config still requires
+    a float, and widening a shared config's semantics is not this lane's call.
+    """
+    datum = _datum({1, 2}, 4, sampled_logprob=-1.0)
+    plan = ChunkPlan(
+        trial_name="t",
+        fragment_index=0,
+        teacher_token_count=3,
+        chunks=[
+            ChunkSpan(student_start=1, student_end=2, teacher_start=1, teacher_end=2),
+            ChunkSpan(student_start=2, student_end=3, teacher_start=2, teacher_end=3),
+        ],
+    )
+    row: list[float | None] = [None, 99.0, -0.5]
+    unclipped = _chunk_totals(datum, plan, row, None)
+    assert unclipped is not None
+    totals, clipped = unclipped
+    # The full +100.0 gap survives, and nothing is counted as clipped.
+    assert totals[0] == pytest.approx(100.0)
+    assert clipped == 0
+    # The same input WITH a clip bounds it, proving the branch is live.
+    bounded = _chunk_totals(datum, plan, row, 4.0)
+    assert bounded is not None
+    assert bounded[0][0] == pytest.approx(4.0)
+    assert bounded[1] == 1

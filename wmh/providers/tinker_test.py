@@ -42,7 +42,7 @@ from wmh.distill.data import build_datums
 from wmh.distill.deadlines import TinkerDeadlineError
 from wmh.distill.fake_tinker import FakeSampledSequence, FakeSamplingClient, FakeTokenizer
 from wmh.distill.rendering import ParsedAssistantMessage
-from wmh.distill.tokens import TrialRecord
+from wmh.distill.tokens import TrialRecord, reconstruct_conversation
 from wmh.providers.base import (
     UNPARSED_TOOL_CALLS_KEY,
     ContextWindowProvider,
@@ -203,6 +203,58 @@ def test_token_span_requires_aligned_logprobs() -> None:
         )
 
 
+def test_token_span_canonical_message_fields_default_for_old_sinks() -> None:
+    """Spans on disk from earlier runs carry only the four original keys."""
+    span = TokenSpan.model_validate_json(
+        json.dumps(
+            {
+                "call_index": 3,
+                "prompt_token_ids": [1],
+                "sampled_token_ids": [2],
+                "sampled_logprobs": [-0.5],
+            }
+        )
+    )
+    assert span.delta_start is None
+    assert span.delta_messages is None
+    assert span.tools == []
+
+
+def test_token_span_round_trips_the_canonical_message_fields() -> None:
+    tool = ChatTool(
+        function=ChatFunctionDefinition(
+            name="bash", description="run bash", parameters={"type": "object"}
+        )
+    )
+    span = TokenSpan(
+        call_index=0,
+        prompt_token_ids=[1],
+        sampled_token_ids=[2],
+        sampled_logprobs=[-0.5],
+        delta_start=0,
+        delta_messages=[
+            ChatMessage(role="user", content="hi"),
+            ChatMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[
+                    ChatToolCall(
+                        id="call_0",
+                        function=ChatFunctionCall(name="bash", arguments='{"cmd": "ls"}'),
+                    )
+                ],
+            ),
+        ],
+        tools=[tool],
+    )
+    restored = TokenSpan.model_validate_json(span.model_dump_json())
+    assert restored == span
+    assert restored.delta_messages is not None
+    assert restored.delta_messages[1].tool_calls is not None
+    assert restored.delta_messages[1].tool_calls[0].function.arguments == '{"cmd": "ls"}'
+    assert restored.tools == [tool]
+
+
 def test_recorder_snapshot_is_a_copy() -> None:
     recorder = TokenRecorder()
     recorder.record(_span())
@@ -306,6 +358,9 @@ def test_tool_choice_none_renders_without_tool_schemas() -> None:
     provider.complete_chat(request)
     prompt_text = rendering.decode(recorder.spans()[0].prompt_token_ids)
     assert "tools:" not in prompt_text
+    # The span records the schemas actually rendered, so a teacher re-render
+    # sees the same (empty) tool surface the student saw.
+    assert recorder.spans()[0].tools == []
 
 
 @pytest.mark.parametrize("choice", ["required", {"type": "function", "function": {"name": "bash"}}])
@@ -544,6 +599,10 @@ def test_genuine_history_edit_falls_back_and_fragments(
     spans = recorder.spans()
     # The fallback prompt is a correct full render of the edited history.
     assert spans[2].prompt_token_ids == rendering.build_generation_prompt(edited)
+    # A re-rendered prompt is not a delta over the previous call, so the span
+    # records no canonical messages and replay degrades instead of lying.
+    assert spans[2].delta_messages is None
+    assert reconstruct_conversation(spans, rendering) is None
     datums, stats = build_datums([_trial(recorder)], _distill_cfg())
     assert len(datums) == 2
     assert stats.fragments == 1
@@ -572,6 +631,68 @@ def test_max_tokens_truncation_gets_end_of_turn_framing() -> None:
     assert stats.fragments == 0
 
 
+def test_spans_record_the_canonical_message_delta_not_the_full_history() -> None:
+    """TB2 blocker: the sink must carry the messages a cross-tokenizer teacher
+    re-renders, and only the DELTA (full history per call is quadratic in text)."""
+    provider, recorder = _framed_provider(['ok|calls=bash:{"cmd": "ls"}</>', "done</>"])
+    _chat(provider, _HISTORY)
+    extended = [*_HISTORY, _echo('{"cmd": "ls"}'), _tool_result("a.txt b.txt")]
+    _chat(provider, extended)
+
+    first, second = recorder.spans()
+    assert first.delta_messages == _HISTORY
+    # The caller's assistant echo is NOT in the delta: the previous span's
+    # sampled ids are that turn's ground truth.
+    assert second.delta_messages == [_tool_result("a.txt b.txt")]
+
+
+def test_message_delta_boundary_matches_the_token_prefix_boundary() -> None:
+    """The recorded delta must start exactly where the token prefix stops; a
+    disagreement would silently mis-describe the sampled conversation."""
+    rendering = _FramedRendering()
+    provider, recorder = _framed_provider(['ok|calls=bash:{"cmd": "ls"}</>', "done</>"])
+    _chat(provider, _HISTORY)
+    extended = [*_HISTORY, _echo('{"cmd":"ls"}'), _tool_result("a.txt b.txt")]
+    _chat(provider, extended)
+
+    first, second = recorder.spans()
+    assert second.delta_messages is not None
+    delta_start = len(extended) - len(second.delta_messages)
+    assert second.delta_messages == extended[delta_start:]
+    episode = first.prompt_token_ids + first.sampled_token_ids
+    assert second.prompt_token_ids[: len(episode)] == episode
+    # The token suffix is exactly the render of the messages from that boundary.
+    assert second.prompt_token_ids[len(episode) :] == rendering.render_suffix(
+        extended, delta_start, None, previous_sampled_ids=first.sampled_token_ids
+    )
+
+
+def test_recorded_spans_replay_the_episode_conversation() -> None:
+    """End to end: recorder sink -> reconstruct_conversation -> the real conversation."""
+    provider, recorder = _framed_provider(['ok|calls=bash:{"cmd": "ls"}</>', "done</>"])
+    first_reply = _chat(provider, _HISTORY)
+    extended = [*_HISTORY, _echo('{"cmd":"ls"}'), _tool_result("a.txt b.txt")]
+    second_reply = _chat(provider, extended)
+
+    replay = reconstruct_conversation(recorder.spans(), _FramedRendering())
+
+    assert replay is not None
+    assert [message.role for message in replay.messages] == [
+        "system",
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+    ]
+    assert replay.messages[:2] == _HISTORY
+    assert replay.messages[3] == _tool_result("a.txt b.txt")
+    assert replay.assistant_index_by_span == {0: 2, 1: 4}
+    # The replayed assistant turns are the turns the provider actually served.
+    assert replay.messages[2].content == first_reply.content
+    assert replay.messages[4].content == second_reply.content
+    assert replay.tools is None
+
+
 def test_re_asked_identical_history_reuses_the_exact_prompt() -> None:
     provider, recorder = _framed_provider(["a</>", "b</>"])
     _chat(provider, _HISTORY)
@@ -579,6 +700,10 @@ def test_re_asked_identical_history_reuses_the_exact_prompt() -> None:
     first, second = recorder.spans()
     assert second.prompt_token_ids == first.prompt_token_ids
     assert recorder.fallback_count == 0
+    # A reused prompt drops the previous sampled turn, so concatenated deltas
+    # would describe a conversation that never happened: record none.
+    assert second.delta_messages is None
+    assert reconstruct_conversation(recorder.spans(), _FramedRendering()) is None
 
 
 def test_tool_schema_change_mid_episode_falls_back() -> None:
@@ -598,6 +723,9 @@ def test_tool_schema_change_mid_episode_falls_back() -> None:
     )
     provider.complete_chat(follow_up)
     assert recorder.fallback_count == 1
+    # Each span carries the schemas its own prompt rendered with.
+    assert recorder.spans()[0].tools == [tool]
+    assert recorder.spans()[1].tools == []
 
 
 def test_complete_plain_text_uses_same_machinery() -> None:

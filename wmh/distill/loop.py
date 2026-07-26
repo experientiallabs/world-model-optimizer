@@ -73,6 +73,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import random
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -84,7 +85,7 @@ from llm_waterfall.types import ChatMessage
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from wmh.config.store import validate_name
-from wmh.distill.config import DistillConfig, PricingConfig
+from wmh.distill.config import DistillConfig, PricingConfig, TeacherConfig
 from wmh.distill.cost import (
     METER_NAMES,
     BudgetExhausted,
@@ -123,7 +124,7 @@ from wmh.distill.teacher import (
     TinkerTeacher,
     tokenizer_fingerprint_check,
 )
-from wmh.distill.tokens import TrialRecord
+from wmh.distill.tokens import TrialRecord, reconstruct_conversation
 from wmh.distill.tracking import DistillTracker, build_tracker
 from wmh.distill.tripwire import (
     PolicyHealth,
@@ -135,6 +136,10 @@ from wmh.distill.tripwire import (
     metric_ratio,
     policy_health,
 )
+from wmh.distill.xtoken.chunks import attach_chunk_advantages
+from wmh.distill.xtoken.plan import ChunkPlan, SurfaceTokenizer, build_chunk_plan
+from wmh.distill.xtoken.prompt_logprobs import PromptLogprobClient
+from wmh.distill.xtoken.teacher_render import TemplateTokenizer, render_for_teacher
 from wmh.harness.doc import (
     MAX_OUTPUT_TOKENS_ID,
     MAX_TURNS_ID,
@@ -1535,6 +1540,211 @@ def pin_rollout_params(harness: HarnessDoc, cfg: DistillConfig) -> HarnessDoc:
     return HarnessDoc(name=harness.name, version=harness.version, surfaces=surfaces)
 
 
+class _ChunkScoringStats(BaseModel):
+    """Why datums were dropped on the way to chunk scoring.
+
+    Every counter is reported, because each drop reason is a different bug with
+    a different fix and a bare "coverage was low" hides which one fired.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    scored: int = 0
+    fragmented: int = 0
+    """Datums from a trial that `build_datums` split into several fragments.
+
+    Skipped rather than guessed: `reconstruct_conversation` returns ONE replay
+    per trial, so pairing fragment N against it would align the wrong assistant
+    turn and silently corrupt every advantage in the datum. A high count here
+    means the fragment-to-conversation mapping must be built before this path
+    can carry a real run."""
+
+    no_replay: int = 0
+    """Trials where a span lost `delta_messages`, so no canonical conversation
+    exists to re-render for the teacher (one re-render fallback anywhere in an
+    episode disqualifies the whole trial)."""
+
+    no_islands: int = 0
+    no_chunks: int = 0
+    scoring_failed: int = 0
+    scored_student_tokens: int = 0
+    loss_tokens: int = 0
+
+    @property
+    def coverage(self) -> float:
+        """Fraction of trainable student tokens a chunk actually covered."""
+        return self.scored_student_tokens / self.loss_tokens if self.loss_tokens else 0.0
+
+
+class ChunkScorer(Protocol):
+    """The one call cross-tokenizer scoring makes on the teacher.
+
+    `wmh.distill.xtoken.prompt_logprobs.PromptLogprobClient` satisfies it; the
+    tests supply a recording fake instead of reaching a live endpoint.
+    """
+
+    def score(self, token_ids: list[int]) -> list[float | None]:
+        """Per-position logprobs for the teacher's own token ids; entry 0 is None."""
+        ...
+
+
+def _chunk_scored_datums(
+    datums: Sequence[TrainDatum],
+    records: Sequence[TrialRecord],
+    rendering: ChatRendering,
+    student_tokenizer: SurfaceTokenizer,
+    teacher_tokenizer: TemplateTokenizer,
+    teacher: ChunkScorer,
+) -> tuple[list[TrainDatum], list[ChunkPlan], list[list[float | None]], _ChunkScoringStats]:
+    """Score each datum's conversation on the teacher's own tokenization.
+
+    For every datum: rebuild the canonical multi-turn conversation from its
+    trial's spans, re-render it with the teacher's chat template, locate the
+    byte-identical content islands, intersect the two token partitions inside
+    them, and ask the teacher for one logprob per token of ITS sequence. A
+    trajectory that cannot be scored is skipped with its reason counted; one bad
+    trajectory must never kill a step that other trajectories can still train.
+
+    Args:
+        datums: Datums from `build_datums`, advantages not yet attached.
+        records: The same batch's trial records, for the span history.
+        rendering: The student-side renderer, for conversation replay.
+        student_tokenizer: The student's tokenizer (byte offsets).
+        teacher_tokenizer: The teacher's own tokenizer (render + byte offsets).
+        teacher: The HTTP scoring client.
+
+    Returns:
+        The scoreable datums, their chunk plans, the teacher logprob rows
+        aligned to those datums, and the drop-reason counters.
+    """
+    by_trial: dict[str, TrialRecord] = {record.trial_name: record for record in records}
+    fragments: dict[str, int] = {}
+    for datum in datums:
+        fragments[datum.trial_name] = fragments.get(datum.trial_name, 0) + 1
+
+    kept: list[TrainDatum] = []
+    plans: list[ChunkPlan] = []
+    rows: list[list[float | None]] = []
+    counts = {
+        "scored": 0,
+        "fragmented": 0,
+        "no_replay": 0,
+        "no_islands": 0,
+        "no_chunks": 0,
+        "scoring_failed": 0,
+        "scored_student_tokens": 0,
+        "loss_tokens": 0,
+    }
+    for datum in datums:
+        counts["loss_tokens"] += datum.loss_token_count
+        if fragments.get(datum.trial_name, 0) != 1:
+            counts["fragmented"] += 1
+            continue
+        record = by_trial.get(datum.trial_name)
+        replay = reconstruct_conversation(record.spans, rendering) if record else None
+        if replay is None:
+            counts["no_replay"] += 1
+            continue
+        render = render_for_teacher(teacher_tokenizer, replay.messages, replay.tools)
+        if not render.islands:
+            counts["no_islands"] += 1
+            continue
+        plan = build_chunk_plan(datum, render, student_tokenizer, teacher_tokenizer)
+        if not plan.chunks:
+            counts["no_chunks"] += 1
+            continue
+        try:
+            row = teacher.score(list(render.token_ids))
+        except Exception as exc:  # noqa: BLE001 - one bad trajectory must not kill the step
+            logger.warning("teacher scoring failed for %s: %s", datum.trial_name, exc)
+            counts["scoring_failed"] += 1
+            continue
+        kept.append(datum)
+        plans.append(plan)
+        rows.append(row)
+        counts["scored"] += 1
+        counts["scored_student_tokens"] += plan.scored_student_tokens
+    return kept, plans, rows, _ChunkScoringStats(**counts)
+
+
+def _build_chunk_teacher(teacher: TeacherConfig) -> PromptLogprobClient:
+    """The HTTP scoring client a cross-tokenizer teacher is reached through.
+
+    A `chunk` teacher scores its OWN tokenization of the conversation, so it
+    never touches the Tinker service and never sees a student token id. The
+    dialect is `echo` because that is the only one a hosted provider serves:
+    `prompt_logprobs` is vLLM-specific. Fireworks is the only hosted endpoint
+    measured to round-trip caller-supplied token ids faithfully.
+
+    The key comes from `WMH_ENDPOINT_API_KEY`, matching `_teacher_provider`, so
+    one variable authenticates the teacher whether it is generating or scoring.
+    `PromptLogprobClient` deliberately never reads the environment itself, so
+    passing it here is the only way it is supplied. A self-hosted server needs
+    no key, hence None rather than a hard failure.
+
+    Args:
+        teacher: The validated teacher config; `alignment == "chunk"`
+            guarantees `endpoint` and `tokenizer` are both set.
+
+    Returns:
+        A client bound to that endpoint and served model, safe to share across
+        the scoring pool's threads.
+    """
+    if teacher.endpoint is None:
+        raise ValueError(
+            "teacher.alignment = 'chunk' requires teacher.endpoint; config validation "
+            "should have rejected this combination before the run started"
+        )
+    return PromptLogprobClient(
+        teacher.endpoint,
+        teacher.model,
+        api_key=os.environ.get("WMH_ENDPOINT_API_KEY"),
+        dialect="echo",
+    )
+
+
+def _load_teacher_tokenizer(teacher: TeacherConfig) -> TemplateTokenizer:
+    """The teacher's own tokenizer, for rendering and tokenizing its side.
+
+    Called lazily, on the first chunk-scored step, NOT at run construction: it
+    fetches from the HuggingFace hub, and a run that never reaches the chunk
+    train arm (a served-teacher baseline, a preflight-only failure) must not
+    depend on that network call to start.
+
+    Loaded from a HuggingFace repo id rather than the cookbook, which knows
+    nothing about a model that is not in the Tinker lineup. This is the tokenizer
+    the chunk plan measures byte offsets against, so it must be the one the
+    served model actually uses -- a mismatch produces spans that decode to the
+    right text under the wrong ids and corrupts every advantage silently.
+
+    Args:
+        teacher: The validated teacher config; `alignment == "chunk"`
+            guarantees `tokenizer` is set.
+
+    Returns:
+        The loaded tokenizer.
+    """
+    if teacher.tokenizer is None:
+        raise ValueError(
+            "teacher.alignment = 'chunk' requires teacher.tokenizer; config validation "
+            "should have rejected this combination before the run started"
+        )
+    # Imported here, not at module scope: `transformers` arrives only with the
+    # `distill` extra, while this module is on the import path of every `wmh`
+    # command (cli.app -> harness_app -> harness_distill -> loop). A top-level
+    # import makes the bare-wheel CLI, and the CI wheel smoke that runs
+    # `wmh --help`, die with ModuleNotFoundError before argv is even parsed.
+    from transformers import AutoTokenizer
+
+    # `from_pretrained` is typed as a union over every backend it may return;
+    # the chat-template slice this seam needs is the fast tokenizer's, which is
+    # what a served chat model always resolves to.
+    return cast(
+        "TemplateTokenizer",
+        AutoTokenizer.from_pretrained(teacher.tokenizer, trust_remote_code=True),
+    )
+
+
 def _batch_reverse_kl(
     datums: Sequence[TrainDatum], rows: Sequence[Sequence[float | None]]
 ) -> float | None:
@@ -1607,6 +1817,33 @@ def _measured_graded_rate(report: DistillEvalReport) -> float | None:
     a run that predates the field (`graded_trials == 0`), so neither charts a fabricated 0.0.
     """
     return report.graded_solve_rate if report.graded_trials else None
+
+
+def _require_span_recording_provider(config: ProviderConfig, *, purpose: str, remedy: str) -> None:
+    """Refuse a rollout provider that cannot record the tokens `purpose` trains on.
+
+    Only the Tinker provider reports the exact token ids it sampled
+    (`wmh.distill.agents`), and every training datum is built from those ids, so
+    any batch whose tokens become datums must sample Tinker. Generation-only
+    batches (the gate's teacher holdout baseline) are exempt and never call
+    this. Checked BEFORE the batch runs, so a provider that cannot be trained on
+    costs nothing instead of yielding a batch of span-less trials.
+
+    Args:
+        config: The provider config the batch is about to sample.
+        purpose: What would train on the spans, named in the error message.
+        remedy: The configuration fix, appended to the error message.
+
+    Raises:
+        ValueError: If the provider kind is not tinker.
+    """
+    if config.kind is ProviderKind.TINKER:
+        return
+    raise ValueError(
+        f"{purpose} train on exact sampled token spans, which only the Tinker "
+        f"provider records, but {config.model!r} is provider kind "
+        f"{config.kind.value!r}; {remedy}"
+    )
 
 
 class _RunBudget:
@@ -1707,8 +1944,13 @@ class _DistillRun:
         self._rendering: ChatRendering | None = None
         # Set up by execute():
         self._training: DistillTrainingClient
-        self._teacher: TinkerTeacher
-        self._teacher_client: DistillSamplingClient
+        # A chunk teacher is an HTTP scoring client, not a Tinker sampling
+        # wrapper; both expose verify() and usage(), which is all the shared
+        # code paths (preflight, budget charging) call on it.
+        self._teacher: TinkerTeacher | PromptLogprobClient
+        self._teacher_tokenizer: TemplateTokenizer | None = None
+        """Loaded lazily by `_chunk_teacher_tokenizer`; None until first use."""
+        self._teacher_client: DistillSamplingClient | None
         self._sampler: StudentSampler
         self._tasks: TaskSampler
         self._budget: _RunBudget
@@ -1965,7 +2207,70 @@ class _DistillRun:
         return self._sampler.provider_config(self._cfg.student.base_model)
 
     def _teacher_provider(self) -> ProviderConfig:
-        return tinker_provider_config(self._teacher_identity, self._cfg.teacher.model)
+        """The provider config teacher-in-harness episodes sample the teacher through.
+
+        Keyed by `teacher.backend`, because the two teachers are reached over
+        different transports: a `tinker` teacher samples through the Tinker
+        service like the student, while an `openai_compat` teacher is a served
+        OpenAI-compatible chat endpoint (`wmh.providers.openai` points the client
+        at `config.endpoint` and authenticates with `WMH_ENDPOINT_API_KEY`, never
+        `OPENAI_API_KEY`). A served teacher cannot score the student's token ids,
+        which is the whole reason the cross-tokenizer path exists, but it can
+        GENERATE, and generation is all a teacher-in-harness episode needs (the
+        gate's holdout baseline is verifier rewards, not tokens).
+        """
+        teacher = self._cfg.teacher
+        if teacher.backend == "tinker":
+            return tinker_provider_config(self._teacher_identity, teacher.model)
+        return ProviderConfig(
+            kind=ProviderKind.OPENAI,
+            model=teacher.model,
+            model_type=teacher.model,
+            # TeacherConfig validation guarantees an endpoint for this backend.
+            endpoint=teacher.endpoint,
+            # Every OpenAI-compatible server (vLLM, Fireworks) accepts `max_tokens`,
+            # while `max_completion_tokens` is a newer OpenAI-only spelling some of
+            # them reject outright; the endpoint is never real OpenAI here.
+            chat_max_tokens_field="max_tokens",
+        )
+
+    def _tinker_teacher(self) -> TinkerTeacher:
+        """The Tinker teacher, on the paths whose config guarantees one.
+
+        Both `topk_ce` and `same_tokenizer` alignment are rejected at config
+        load for an `openai_compat` teacher, so reaching either scoring branch
+        with the cross-tokenizer client is a wiring bug, not a user error.
+
+        Returns:
+            The Tinker teacher.
+
+        Raises:
+            RuntimeError: If the run is actually holding a chunk teacher.
+        """
+        if not isinstance(self._teacher, TinkerTeacher):
+            raise RuntimeError(
+                "this scoring path reads the teacher's logprobs off the student's own "
+                "token ids, which only a Tinker teacher can do; config validation "
+                "guarantees one here, so holding the cross-tokenizer client is a wiring bug"
+            )
+        return self._teacher
+
+    def _chunk_teacher(self) -> PromptLogprobClient:
+        """The cross-tokenizer scoring client, on the chunk-aligned path.
+
+        Returns:
+            The HTTP scoring client.
+
+        Raises:
+            RuntimeError: If the run is actually holding a Tinker teacher.
+        """
+        if isinstance(self._teacher, TinkerTeacher):
+            raise RuntimeError(
+                "chunk scoring needs the cross-tokenizer HTTP client, which "
+                'teacher.alignment = "chunk" builds; holding the Tinker teacher here '
+                "is a wiring bug"
+            )
+        return self._teacher
 
     def _log_sample_rollouts(
         self, *, kind: str, name: str, step: int | None, records: Sequence[TrialRecord]
@@ -2002,6 +2307,18 @@ class _DistillRun:
         """
         cfg = self._cfg
         self._emit("preflight", "running preflight checks before any spend")
+        if cfg.warmup.steps > 0:
+            # Warmup SFT trains on the TEACHER's own sampled tokens, so a teacher
+            # that records no spans would silently produce zero warmup datums.
+            _require_span_recording_provider(
+                self._teacher_provider(),
+                purpose="supervised warmup passes",
+                remedy=(
+                    "set teacher.backend = 'tinker' to warm up on a Tinker teacher's "
+                    "trajectories, or leave warmup.steps = 0 (the default) so the run "
+                    "goes straight to on-policy steps"
+                ),
+            )
         tokenizer = self._training.get_tokenizer()
         # The renderer must exist for the base model before any trial runs; the
         # tokenizer satisfies the renderer's slice at runtime (rendering.py makes
@@ -2018,6 +2335,17 @@ class _DistillRun:
                 self._teacher_identity,
                 tokenizer,
                 self._teacher_client.get_tokenizer(),
+            )
+        elif cfg.teacher.alignment == "chunk":
+            # Deliberately NOT a same-tokenizer assumption: this teacher has a
+            # DIFFERENT vocabulary by construction, and the chunk plan verifies
+            # the join per span against decoded bytes instead. Comparing
+            # fingerprints here would fail by design.
+            logger.info(
+                "cross-tokenizer teacher (%s tokenized by %s); skipping the "
+                "fingerprint check, alignment is verified per span by the chunk plan",
+                cfg.teacher.model,
+                cfg.teacher.tokenizer,
             )
         else:
             logger.info(
@@ -2626,8 +2954,17 @@ class _DistillRun:
             step=step,
         )
         sampler_path = self._sampler.sampler_path
+        student = self._student_provider()
+        _require_span_recording_provider(
+            student,
+            purpose="on-policy distillation steps",
+            remedy=(
+                "sample the student through Tinker (student.base_model must be a Tinker "
+                "catalog model, sampled from this run's tinker:// sampler path)"
+            ),
+        )
         records, roll_stats = collect_rollouts(
-            step, batch, cfg, self._harness, self._student_provider(), self._run_dir
+            step, batch, cfg, self._harness, student, self._run_dir
         )
         self._charge_rollout_billing(batch_billing(records), teacher=False)
         self._log_sample_rollouts(kind="train", name=f"step-{step:04d}", step=step, records=records)
@@ -2656,7 +2993,7 @@ class _DistillRun:
             # candidate rows AND the realized logprobs, so the reverse-KL
             # metric below means exactly what it means in the default mode.
             try:
-                scores = self._teacher.score_topk(datums, cfg.train.topk)
+                scores = self._tinker_teacher().score_topk(datums, cfg.train.topk)
             finally:
                 # Charged even when scoring raises mid-batch: the pool joins
                 # every submitted call before propagating, so the whole batch
@@ -2668,9 +3005,78 @@ class _DistillRun:
             mismatch_drops = topk_stats.mismatch_drops
             trained_loss_tokens = topk_stats.loss_tokens
             trained_context_tokens = topk_stats.context_tokens
+        elif cfg.teacher.alignment == "chunk":
+            # Cross-tokenizer: the teacher scores ITS OWN tokenization of the same
+            # conversation, so there is no position-for-position row to compare.
+            # Chunks join the two sides inside byte-identical content, and each
+            # chunk's reverse-KL gap is broadcast to its student tokens.
+            if self._teacher_tokenizer is None:
+                self._teacher_tokenizer = _load_teacher_tokenizer(cfg.teacher)
+            try:
+                if self._rendering is None:
+                    raise RuntimeError(
+                        "chunk scoring needs the student renderer, which preflight builds; "
+                        "reaching a train step without it is a wiring bug"
+                    )
+                scored, plans, rows, chunk_stats = _chunk_scored_datums(
+                    datums,
+                    records,
+                    self._rendering,
+                    # The training seam declares only the encode slice it needs;
+                    # the concrete tokenizer is the student's full HF tokenizer,
+                    # which is what byte-offset reconstruction reads.
+                    cast("SurfaceTokenizer", self._training.get_tokenizer()),
+                    self._teacher_tokenizer,
+                    self._chunk_teacher(),
+                )
+            finally:
+                # Same contract as the topk_ce branch above.
+                self._budget.charge("teacher_prefill", self._teacher.usage() - teacher_usage_before)
+            logger.info(
+                "step %d chunk scoring: %d/%d datum(s) scored, coverage %.1f%% "
+                "(dropped: %d fragmented, %d no-replay, %d no-islands, %d no-chunks, "
+                "%d scoring-failed)",
+                step,
+                chunk_stats.scored,
+                len(datums),
+                100 * chunk_stats.coverage,
+                chunk_stats.fragmented,
+                chunk_stats.no_replay,
+                chunk_stats.no_islands,
+                chunk_stats.no_chunks,
+                chunk_stats.scoring_failed,
+            )
+            if not scored:
+                raise RuntimeError(
+                    f"step {step} produced no chunk-scoreable datums out of {len(datums)} "
+                    f"(fragmented={chunk_stats.fragmented}, no_replay={chunk_stats.no_replay}, "
+                    f"no_islands={chunk_stats.no_islands}, no_chunks={chunk_stats.no_chunks}, "
+                    f"scoring_failed={chunk_stats.scoring_failed}); a step that trains on "
+                    "nothing must abort rather than report a vacuous optimizer step"
+                )
+            trained, chunk_adv = attach_chunk_advantages(scored, plans, rows, cfg)
+            # The chunk path's reverse-KL is a per-CHUNK gap, not the per-token
+            # quantity the same-tokenizer path reports, so it is surfaced under its
+            # own name rather than conflated with it.
+            reverse_kl = chunk_adv.chunk_reverse_kl
+            loss_fn = IMPORTANCE_SAMPLING_LOSS
+            mismatch_drops = chunk_adv.mismatch_drops
+            advantage_mean = chunk_adv.advantage_mean
+            advantage_std = chunk_adv.advantage_std
+            # Chunks are the clipping unit here: an advantage is broadcast whole to
+            # a chunk's tokens, so clipping counts chunks, and the token figure is
+            # not available without re-deriving it from the plans.
+            clipped_tokens = chunk_adv.clipped_chunks
+            # Post-drop volume, on `StepMetrics`' convention: every mask-1.0 token
+            # of the ATTACHED datums, whether or not a chunk covered it (an
+            # uncovered one trains at advantage 0.0 but is still in the batch).
+            trained_loss_tokens = chunk_adv.scored_loss_tokens + chunk_adv.unscored_loss_tokens
+            trained_context_tokens = (
+                sum(len(datum.model_input_tokens) for datum in trained) - trained_loss_tokens
+            )
         else:
             try:
-                rows, reverse_kl = _teacher_rows(self._teacher, datums)
+                rows, reverse_kl = _teacher_rows(self._tinker_teacher(), datums)
             finally:
                 # Same contract as the topk_ce branch above.
                 self._budget.charge("teacher_prefill", self._teacher.usage() - teacher_usage_before)
@@ -2951,8 +3357,19 @@ class _DistillRun:
         # student sampler refresh, and preflight all come after, so preflight
         # validates the RESTORED weights rather than the bare base model.
         self._training = self._open_training_client(restore_path)
-        self._teacher_client = self._service.create_sampling_client(self._teacher_identity)
-        self._teacher = TinkerTeacher(cfg.teacher, sampling_client=self._teacher_client)
+        if cfg.teacher.alignment == "chunk":
+            # A cross-tokenizer teacher is NOT in the Tinker lineup and cannot read
+            # the student's ids, so asking the service for a sampling client on its
+            # name would fail on an unknown model. It scores its own tokenization of
+            # the same conversation over HTTP instead, and the two sides are joined
+            # by byte-identical content spans (`wmh.distill.xtoken`).
+            self._teacher = _build_chunk_teacher(cfg.teacher)
+            # No Tinker sampling client exists on this path at all, which the
+            # fingerprint check below reads as "nothing to compare".
+            self._teacher_client = None
+        else:
+            self._teacher_client = self._service.create_sampling_client(self._teacher_identity)
+            self._teacher = TinkerTeacher(cfg.teacher, sampling_client=self._teacher_client)
         self._sampler = StudentSampler(self._service, self._training, self._name)
         self._sampler.refresh(start_step)
         self._budget = _RunBudget(

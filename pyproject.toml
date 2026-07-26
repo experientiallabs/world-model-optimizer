@@ -67,7 +67,15 @@ postgres = ["psycopg[binary]>=3.1"]
 # lineup churns, so base-model names live in run configs, never in code. The tinker pin tracks
 # the 0.23.x exception surface llm-waterfall's classification trusts by name (classify.py).
 # wandb is optional run tracking (lazy import, activated only via [wandb] enabled in the run config).
-distill = ["tinker>=0.23,<0.24", "tinker-cookbook>=0.4.3,<0.5", "wandb>=0.17"]
+distill = [
+    "tinker>=0.23,<0.24",
+    "tinker-cookbook>=0.4.3,<0.5",
+    "wandb>=0.17",
+    # Declared, not transitive: the cross-tokenizer teacher loads its own
+    # tokenizer through `transformers`, which previously arrived only as a
+    # tinker-cookbook dependency.
+    "transformers>=4.44",
+]
 # dev pulls in every backend SDK so `ty check` and the full test suite resolve over the whole
 # project (the providers import anthropic/openai/boto3 lazily, but type-checking needs them present).
 dev = [

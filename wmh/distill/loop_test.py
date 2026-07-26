@@ -93,10 +93,11 @@ from wmh.distill.store import AdapterStore, DistillRunStore
 from wmh.distill.teacher import EncodingTokenizer
 from wmh.distill.tokens import TrialRecord
 from wmh.distill.tracking import DistillTracker
+from wmh.distill.xtoken.chunks import ChunkAdvantageStats
 from wmh.harness.doc import HarnessDoc
 from wmh.harness.runtime import StopReason
 from wmh.harness.scoring import GradedTests
-from wmh.providers.base import ProviderConfig, ProviderKind
+from wmh.providers.base import ProviderConfig, ProviderKind, VerifyResult
 from wmh.providers.tinker import SampledSequenceLike, TokenSpan
 
 _NAME = "distill-loop-test"
@@ -271,6 +272,8 @@ class _RolloutCall:
     provider_model: str
     run_dir: Path
     doc_hash: str
+    provider: ProviderConfig
+    """The exact provider config the batch was told to sample."""
 
 
 class _FakeRollouts:
@@ -355,6 +358,7 @@ class _FakeRollouts:
                     provider_model=provider_config.model,
                     run_dir=run_dir,
                     doc_hash=harness.doc_hash,
+                    provider=provider_config,
                 )
             )
             return [], rollout_stats([], max_tokens=4096)
@@ -406,6 +410,7 @@ class _FakeRollouts:
                 provider_model=provider_config.model,
                 run_dir=run_dir,
                 doc_hash=harness.doc_hash,
+                provider=provider_config,
             )
         )
         return records, stats
@@ -471,11 +476,74 @@ class _Env:
     progress: list[DistillProgress] = field(default_factory=list)
 
 
+def _fake_chunk_advantage_stats(datums: int) -> ChunkAdvantageStats:
+    """Neutral stats for the stubbed chunk path (see `_setup`)."""
+    return ChunkAdvantageStats(
+        datums=datums,
+        mismatch_drops=0,
+        empty_coverage_drops=0,
+        chunks=datums,
+        scored_loss_tokens=datums,
+        unscored_loss_tokens=0,
+        clipped_chunks=0,
+        chunk_reverse_kl=0.0,
+        advantage_mean=0.0,
+        advantage_std=0.0,
+    )
+
+
+class _FakeChunkTeacher:
+    """Stands in for the cross-tokenizer HTTP scoring client.
+
+    The real `PromptLogprobClient` reaches a live endpoint in `verify()` and
+    retries up to 30 times on failure, so constructing it against a fake URL
+    wedges the suite. These tests exercise baseline/gate routing and budget
+    accounting, none of which depend on real scoring.
+    """
+
+    def __init__(self) -> None:
+        self.scored: list[list[int]] = []
+
+    def verify(self) -> VerifyResult:
+        return VerifyResult(ok=True, kind=ProviderKind.OPENAI, model=_TEACHER)
+
+    def usage(self) -> int:
+        return 0
+
+    def score(self, token_ids: list[int]) -> list[float | None]:
+        self.scored.append(list(token_ids))
+        return [None] + [-0.5] * (len(token_ids) - 1)
+
+
 def _setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Env:
     service = _Service()
     rollouts = _FakeRollouts(service)
     monkeypatch.setattr(loop_module, "collect_rollouts", rollouts)
     monkeypatch.setattr(loop_module, "build_renderer", _fake_build_renderer)
+    monkeypatch.setattr(loop_module, "_build_chunk_teacher", lambda _teacher: _FakeChunkTeacher())
+    # The cross-tokenizer scoring path needs the teacher's real tokenizer, a real
+    # chat template and a live endpoint. These tests cover baseline/gate ROUTING
+    # for a served teacher, so the chunk mechanics are stubbed here and covered
+    # directly by `_chunk_scored_datums`'s own tests instead.
+    monkeypatch.setattr(loop_module, "_load_teacher_tokenizer", lambda _teacher: object())
+    monkeypatch.setattr(
+        loop_module,
+        "_chunk_scored_datums",
+        lambda datums, *_args, **_kwargs: (
+            list(datums),
+            [],
+            [],
+            loop_module._ChunkScoringStats(scored=len(datums), loss_tokens=1),
+        ),
+    )
+    monkeypatch.setattr(
+        loop_module,
+        "attach_chunk_advantages",
+        lambda datums, _plans, _rows, _cfg: (
+            list(datums),
+            _fake_chunk_advantage_stats(len(datums)),
+        ),
+    )
     return _Env(
         service=service,
         rollouts=rollouts,
@@ -1165,6 +1233,111 @@ def test_teacher_in_harness_episodes_charge_the_teacher_sample_rate(
     expected_sampled = (2 * 1 + 4 * 2) * 2 * 5
     assert lines["teacher_sample"].tokens == expected_sampled
     assert result.spend.total_usd == pytest.approx(float(expected_sampled))
+
+
+# -- the served (non-tinker) teacher ------------------------------------------------------------
+
+_SERVED_ENDPOINT = "http://teacher.invalid:8000/v1"
+
+
+def _served_teacher_cfg(*, warmup_steps: int = 0) -> DistillConfig:
+    """The 3-step config whose teacher is a served OpenAI-compatible endpoint."""
+    base = _cfg() if warmup_steps == 0 else _warmup_cfg(warmup_steps=warmup_steps)
+    return base.model_copy(
+        update={
+            "teacher": TeacherConfig(
+                backend="openai_compat",
+                model=_TEACHER,
+                endpoint=_SERVED_ENDPOINT,
+                tokenizer="fake/teacher-tokenizer",
+                alignment="chunk",
+            )
+        }
+    )
+
+
+def _baseline_call(env: _Env) -> _RolloutCall:
+    """The single rollout batch that measured the teacher holdout baseline."""
+    baseline_dir = env.run_dir / EVAL_ROLLOUTS_DIR / TEACHER_BASELINE_EVAL
+    [call] = [call for call in env.rollouts.calls if call.run_dir == baseline_dir]
+    return call
+
+
+def test_tinker_teacher_baseline_samples_the_tinker_teacher(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = _setup(tmp_path, monkeypatch)
+
+    _run(env, _cfg())
+
+    provider = _baseline_call(env).provider
+    assert provider.kind is ProviderKind.TINKER
+    assert provider.model == _TEACHER
+    assert provider.endpoint is None
+
+
+def test_served_teacher_baseline_runs_through_the_endpoint_and_gates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A teacher that cannot score student ids can still GENERATE the gate baseline.
+
+    The whole point: `teacher.backend = "openai_compat"` used to leave the gate
+    uncomputable, because the teacher holdout baseline had no provider to run
+    with. It now runs as ordinary harbor trials against the served endpoint and
+    the gate reaches a verdict, while training keeps sampling the Tinker student.
+    """
+    env = _setup(tmp_path, monkeypatch)
+
+    result = _run(env, _served_teacher_cfg())
+
+    provider = _baseline_call(env).provider
+    assert provider.kind is ProviderKind.OPENAI
+    assert provider.model == _TEACHER
+    assert provider.endpoint == _SERVED_ENDPOINT
+    # `max_tokens` is the spelling every OpenAI-compatible server accepts.
+    assert provider.resolved_chat_max_tokens_field() == "max_tokens"
+
+    # Training batches (run_dir is the run root) are untouched: still the student.
+    train_calls = [call for call in env.rollouts.calls if call.run_dir == env.run_dir]
+    assert len(train_calls) == 3
+    assert all(call.provider.kind is ProviderKind.TINKER for call in train_calls)
+
+    # A real gate verdict, measured against the served teacher's solve rate.
+    assert result.gate.teacher_solve_rate == pytest.approx(0.5)
+    assert result.gate.reason
+    assert result.gate.accepted
+
+
+def test_warmup_on_a_served_teacher_is_refused_before_any_spend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Warmup SFT trains on the teacher's own tokens, which a served teacher cannot report."""
+    env = _setup(tmp_path, monkeypatch)
+
+    with pytest.raises(ValueError, match="supervised warmup passes train on exact sampled"):
+        _run(env, _served_teacher_cfg(warmup_steps=2))
+
+    assert env.rollouts.calls == []
+
+
+def test_training_rollouts_refuse_a_student_that_records_no_spans(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The loud training-path refusal survives: OPD needs the student's exact ids."""
+    env = _setup(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        loop_module.StudentSampler,
+        "provider_config",
+        lambda self, base_model: ProviderConfig(
+            kind=ProviderKind.OPENAI, model=base_model, endpoint=_SERVED_ENDPOINT
+        ),
+    )
+
+    with pytest.raises(ValueError, match="on-policy distillation steps train on exact sampled"):
+        _run(env, _cfg())
+
+    # No training batch ever ran (the baselines precede the first step).
+    assert [call for call in env.rollouts.calls if call.run_dir == env.run_dir] == []
 
 
 # -- baseline reuse across runs ----------------------------------------------------------------

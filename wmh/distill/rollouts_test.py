@@ -580,6 +580,114 @@ def test_rollout_stats_is_a_pure_function_of_the_records() -> None:
     assert empty.empty_span_trials == 0
 
 
+def _sized_trial(task_id: str, *, lengths: Sequence[int], canonical: bool) -> TrialRecord:
+    """A trial whose spans sample `lengths[i]` tokens each, at logprob -1.0.
+
+    `canonical=False` leaves `delta_messages` None on the LAST span only, which
+    is the realistic shape: a re-render fallback happens at one turn, not the
+    whole episode, and `reconstruct_conversation` still refuses the trial whole.
+    """
+    spans = [
+        TokenSpan(
+            call_index=index,
+            prompt_token_ids=[1, 2, index],
+            sampled_token_ids=[70] * length,
+            sampled_logprobs=[-1.0] * length,
+            delta_start=(None if (not canonical and index == len(lengths) - 1) else 0),
+            delta_messages=(None if (not canonical and index == len(lengths) - 1) else []),
+        )
+        for index, length in enumerate(lengths)
+    ]
+    return TrialRecord(
+        task_id=task_id,
+        attempt=1,
+        trial_name=f"{task_id}__s1",
+        reward=0.0,
+        passed=False,
+        spans=spans,
+        artifact_dir=f"/trials/{task_id}",
+    )
+
+
+def test_rollout_stats_reports_the_length_distribution_not_just_its_mean() -> None:
+    """Percentiles separate a shortening policy from a bimodal one.
+
+    Both batches below have the same mean, so a mean-only metric cannot tell
+    them apart -- but one is a tight distribution and the other has collapsed
+    into a terminate-immediately mode plus a never-terminate mode, which is the
+    failure this metric exists to catch.
+    """
+    tight = rollout_stats(
+        [_sized_trial(f"t{i}", lengths=[100], canonical=True) for i in range(4)], max_tokens=4096
+    )
+    assert tight.mean_sampled_tokens == 100.0
+    assert (tight.p50_sampled_tokens, tight.p99_sampled_tokens) == (100, 100)
+
+    bimodal = rollout_stats(
+        [_sized_trial("a", lengths=[2], canonical=True)]
+        + [_sized_trial("b", lengths=[2], canonical=True)]
+        + [_sized_trial("c", lengths=[198], canonical=True)]
+        + [_sized_trial("d", lengths=[198], canonical=True)],
+        max_tokens=4096,
+    )
+    assert bimodal.mean_sampled_tokens == 100.0
+    assert bimodal.p50_sampled_tokens == 198
+    assert bimodal.max_sampled_tokens == 198
+    # Same mean, wildly different shape: the spread is the tell.
+    assert bimodal.p50_sampled_tokens != tight.p50_sampled_tokens
+
+    # Per-trial totals sum a multi-turn episode's spans rather than reporting
+    # each call separately, since termination is an episode-level property.
+    multi = rollout_stats(
+        [_sized_trial("m", lengths=[10, 20, 30], canonical=True)], max_tokens=4096
+    )
+    assert multi.mean_sampled_tokens == 60.0
+    assert multi.max_sampled_tokens == 60
+
+
+def test_rollout_stats_entropy_estimate_is_the_mean_negated_logprob() -> None:
+    """At temperature 1.0 this is a Monte Carlo estimate of per-token entropy."""
+    stats = rollout_stats([_sized_trial("a", lengths=[3], canonical=True)], max_tokens=4096)
+    assert stats.entropy_estimate == pytest.approx(1.0)
+
+    # Mixed magnitudes average over TOKENS, not over trials, so a long rollout
+    # weighs proportionally -- entropy is a per-token quantity.
+    mixed = rollout_stats(
+        [
+            _trial("short", passed=False, spans=True),  # 2 tokens at -0.5, -1.0
+            _sized_trial("long", lengths=[6], canonical=True),  # 6 tokens at -1.0
+        ],
+        max_tokens=4096,
+    )
+    assert mixed.entropy_estimate == pytest.approx((0.5 + 1.0 + 6 * 1.0) / 8)
+
+    assert rollout_stats([], max_tokens=4096).entropy_estimate == 0.0
+
+
+def test_rollout_stats_counts_trials_the_cross_tokenizer_path_will_refuse() -> None:
+    """One non-canonical span anywhere disqualifies its whole trial.
+
+    `reconstruct_conversation` returns None for a trial if ANY span lost its
+    delta_messages, so the count is per TRIAL, not per span -- a trial with one
+    bad span out of four contributes nothing to teacher scoring.
+    """
+    stats = rollout_stats(
+        [
+            _sized_trial("ok", lengths=[5, 5], canonical=True),
+            _sized_trial("bad", lengths=[5, 5, 5], canonical=False),
+        ],
+        max_tokens=4096,
+    )
+    assert stats.trials_without_delta == 1
+    assert stats.trials_with_spans == 2
+
+    # A trial with no spans at all is already counted as empty_span_trials and
+    # must not be double-counted here.
+    with_empty = rollout_stats([_trial("none", passed=False, spans=False)], max_tokens=4096)
+    assert with_empty.empty_span_trials == 1
+    assert with_empty.trials_without_delta == 0
+
+
 def test_module_scope_never_imports_the_harbor_extra() -> None:
     """The collector module must stay importable without the harbor extra."""
     assert rollouts_module.__file__ is not None

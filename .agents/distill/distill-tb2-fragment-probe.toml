@@ -1,0 +1,94 @@
+# TB2 fragmentation probe: ONE step of real TerminalBench-2 rollouts with the
+# real 27B student, to measure how often an episode's spans break the prefix
+# property before any cross-tokenizer work is built on top of them.
+#
+# Why this run exists. `build_datums` emits one datum per contiguous prefix run,
+# so a mid-episode history edit splits a trial into multiple fragments, and
+# `reconstruct_conversation` -- the documented cross-tokenizer hand-off -- returns
+# None outright if ANY span in the trial lost its delta_messages. So a single
+# re-render fallback discards the whole episode's teacher signal, and it does so
+# silently: the step still reports datums > 0, just with coverage near zero. A
+# recorded live batch fragmented 100 of 108 datums. If TB2 does that, the chunk
+# branch cannot work no matter how good the aligner is, so this is measured
+# FIRST.
+#
+# The teacher here is deliberately Tinker/same_tokenizer, not GLM: fragmentation
+# is a property of the student's turn loop and the pi harness, and the chunk
+# teacher cannot execute yet (loop.py builds a Tinker sampling client for the
+# teacher unconditionally). Nothing about this run's teacher choice affects what
+# it measures.
+[student]
+base_model = "Qwen/Qwen3.5-9B"
+lora_rank = 32
+
+[teacher]
+backend = "tinker"
+model = "Qwen/Qwen3.5-9B"
+alignment = "same_tokenizer"
+
+[harbor]
+job_template = ".agents/distill/tb2-harbor-job-template.yaml"
+backend = "e2b"
+reward_key = "reward"
+
+# max_turns 100 and a 1800 s wall are both load-bearing: measured TB2 episodes
+# run p50 21 calls / p95 57, and p50 597 s / p95 1,185 s per trial. The former
+# defaults of 20 turns and a 300 s wall silently truncated the majority of
+# episodes and scored them 0, which reads as incapability rather than a timeout.
+[rollout]
+max_turns = 100
+episode_timeout_s = 1800.0
+# 65024, NOT 65536: Tinker rejected a 65,534-token sample for Qwen3.5-9B with
+# "Input length (65534) exceeds the maximum allowed length (65530)", so the real
+# ceiling is 65,530 and a budget equal to the advertised 65,536 permits prompts
+# the service refuses. The margin also covers the renderer's generation-prompt
+# suffix, which is appended after the budget check.
+context_budget_tokens = 65024
+compaction = false
+
+# REQUIRED for a reasoning student: terminus-2 keeps only the parsed text of each
+# assistant turn, and Qwen3.5/Qwen3.6's auto-discovered renderer hands the terminus
+# parser a list instead of a string, raising TypeError before the trial grades
+# anything. The wmh verbatim renderer also replays each turn from its exact sampled
+# ids, which is what keeps an episode one datum instead of one fragment per turn.
+[rollout.renderers]
+"Qwen/Qwen3.5-9B" = "wmh/qwen3_5_verbatim"
+
+[train]
+steps = 1
+tasks_per_batch = 4
+group_size = 2
+learning_rate = 1e-4
+loss = "importance_sampling"
+advantage_clip = 4.0
+center_advantages = true
+# Matches the rollout budget above for the same reason: a datum longer than what
+# Tinker accepts is paid for and then rejected at forward_backward.
+max_datum_tokens = 65024
+sampler_refresh_every = 1
+save_state_every = 1
+trial_concurrency = 8
+
+# 16384 is the measured max sampled length on real TB2 episodes (p99 11,500), so
+# no rollout is cut by the sampling cap.
+[sampling]
+temperature = 1.0
+max_tokens = 16384
+
+[eval]
+every = 0
+tasks = 2
+k = 1
+
+[gate]
+k = 1
+min_teacher_fraction = 0.7
+require_no_regression = false
+
+[budget]
+max_usd = 40.0
+
+[wandb]
+enabled = true
+project = "wmh-distill"
+run_name = "tb2-fragment-probe-qwen3.5-9b"

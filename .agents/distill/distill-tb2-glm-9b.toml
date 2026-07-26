@@ -1,0 +1,119 @@
+# THE headline run: Qwen3.5-9B distilled from GLM-5.2 on TerminalBench-2, across
+# tokenizers. The teacher never generates here -- it SCORES the student's own
+# trajectories on its own tokenization, and the two are joined inside
+# byte-identical content spans (teacher.alignment = "chunk").
+#
+# Why this configuration and not the 27B on math:
+#   - Measured headroom on TB2 (24 tasks, identical harness, 1 attempt):
+#     GLM-5.2 0.556 graded vs Qwen3.5-9B 0.335 graded, +23.4 pp, paired 95% CI
+#     [+2.9, +45.1], 6 of 7 discordant tasks favour GLM. That gap is a LOWER
+#     bound: GLM lost 5 of 24 trials to its own output-token budget.
+#   - On AIME the relationship inverts (Qwen3.6-27B 93.3% beats every teacher
+#     measurement available), so math cannot demonstrate this method at all. An
+#     earlier 8-step 9B math run lost >=25 pp, which is what distilling toward a
+#     teacher that is not better looks like.
+#
+# Only importance_sampling works across vocabularies: top-k CE would need
+# teacher-vocab candidate ids as student targets, and the config validator
+# rejects that combination.
+[student]
+base_model = "Qwen/Qwen3.5-9B"
+lora_rank = 32
+
+[teacher]
+backend = "openai_compat"
+model = "accounts/fireworks/models/glm-5p2"
+tokenizer = "zai-org/GLM-5.2"
+alignment = "chunk"
+# Fireworks is the only hosted provider measured to score caller-supplied token
+# ids faithfully: echo + INTEGER logprobs + token-id prompts, exact round trip.
+# Azure/Bedrock/OpenRouter/Cloudflare/DeepInfra all structurally cannot (they
+# either reject echo, silently ignore it, or normalize the response). Azure is
+# still the right endpoint for GLM GENERATION, which is why the headroom eval
+# used it and this run does not.
+endpoint = "https://api.fireworks.ai/inference/v1"
+
+[harbor]
+job_template = ".agents/distill/tb2-harbor-job-template.yaml"
+backend = "e2b"
+reward_key = "reward"
+
+[rollout]
+# Measured on real TB2 episodes: p50 21 calls, p95 57, max 72. A 20-turn cap is
+# a silent rollout filter, not a safety limit.
+max_turns = 100
+# p50 trial wall 597 s, p95 1,185 s, max 1,988 s. The 300 s default kills most
+# trials on the clock and scores them 0, which reads as incapability.
+episode_timeout_s = 1800.0
+# 65,024 and NOT 65,536: Tinker rejected a 65,534-token sample for this model
+# ("exceeds the maximum allowed length (65530)"), so the advertised ceiling is
+# not the usable one. Qwen3.5-9B has no long-context variant in the catalog --
+# both it and the 27B report max_context 65,536 -- so long episodes (observed
+# prompts of 68,879 / 80,733 / 168,839) are DROPPED WHOLE and counted rather
+# than compacted. Compaction is refused by config validation for a reason: it
+# rewrites the token prefix mid-episode, which destroys the verbatim-prefix
+# property that both the cost model and cross-tokenizer scoring depend on.
+context_budget_tokens = 65024
+compaction = false
+
+# REQUIRED for a reasoning student: terminus-2 keeps only the parsed text of each
+# assistant turn, and Qwen3.5/Qwen3.6's auto-discovered renderer hands the terminus
+# parser a list instead of a string, raising TypeError before the trial grades
+# anything. The wmh verbatim renderer also replays each turn from its exact sampled
+# ids, which is what keeps an episode one datum instead of one fragment per turn.
+[rollout.renderers]
+"Qwen/Qwen3.5-9B" = "wmh/qwen3_5_verbatim"
+
+[train]
+steps = 24
+tasks_per_batch = 8
+group_size = 2
+learning_rate = 1e-4
+loss = "importance_sampling"
+advantage_clip = 4.0
+center_advantages = true
+max_datum_tokens = 65024
+sampler_refresh_every = 1
+save_state_every = 2
+# 2 E2B sandboxes per trial, sandbox creates capped at 4/sec; 16 trials per step
+# admits in ~8 s of gating.
+trial_concurrency = 16
+
+# temperature 1.0 keeps the sampler's issued logprobs comparable to the
+# untempered teacher logprobs, which is what makes the reverse-KL advantage
+# unbiased. It is also the only temperature at which the entropy tripwire
+# (mean of -sampled_logprobs) estimates anything real.
+[sampling]
+temperature = 1.0
+max_tokens = 16384
+
+[eval]
+every = 0
+tasks = 17
+k = 1
+
+[gate]
+k = 1
+min_teacher_fraction = 0.7
+# The 17-task holdout cannot resolve a real effect on its own (historically only
+# a handful are ever solved, so a binary rate there reads noise). The gate is
+# kept for its mechanics; the REAL measurement is a separate paired eval on a
+# larger set with partial credit, which is how the +23.4 pp headroom was
+# established in the first place.
+require_no_regression = false
+
+# Teacher prices MUST be set here. The sibling vLLM config leaves them unset on
+# the argument that a self-hosted teacher bills no meter; with Fireworks that is
+# false, and an unset rate silently drops the teacher out of budget enforcement.
+# Fireworks `echo` also disables prompt caching, so every scoring call bills as
+# uncached prefill.
+[pricing]
+teacher_prefill = 0.90
+
+[budget]
+max_usd = 300.0
+
+[wandb]
+enabled = true
+project = "wmh-distill"
+run_name = "tb2-glm5.2-to-qwen3.5-9b-xtoken"

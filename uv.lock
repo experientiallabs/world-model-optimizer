@@ -3952,12 +3952,14 @@ dev = [
     { name = "seaborn" },
     { name = "tinker" },
     { name = "tinker-cookbook" },
+    { name = "transformers" },
     { name = "ty" },
     { name = "wandb" },
 ]
 distill = [
     { name = "tinker" },
     { name = "tinker-cookbook" },
+    { name = "transformers" },
     { name = "wandb" },
 ]
 e2b = [
@@ -4013,6 +4015,7 @@ requires-dist = [
     { name = "tinker", marker = "extra == 'distill'", specifier = ">=0.23,<0.24" },
     { name = "tinker-cookbook", marker = "extra == 'distill'", specifier = ">=0.4.3,<0.5" },
     { name = "tomli-w", specifier = ">=1.0" },
+    { name = "transformers", marker = "extra == 'distill'", specifier = ">=4.44" },
     { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.1a1" },
     { name = "typer", specifier = ">=0.16" },
     { name = "uvicorn", specifier = ">=0.38" },

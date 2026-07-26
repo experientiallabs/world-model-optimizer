@@ -47,6 +47,7 @@ import math
 import threading
 import time
 from collections.abc import Callable
+from typing import Literal
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -58,8 +59,18 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT_S = 1200.0
 """Per-request wall-clock bound; see the module docstring for the sizing."""
 
-DEFAULT_MAX_ATTEMPTS = 3
-"""Attempts per `score` call, counting the first; only transient failures retry."""
+DEFAULT_MAX_ATTEMPTS = 30
+"""Attempts per `score` call, counting the first; only transient failures retry.
+
+Sized against the MEASURED placeholder-corruption rate, not against ordinary
+transient-failure intuition. A sibling lane re-measured 26-45% of echo requests
+returning all-zero logprobs, and at 45% bad the retry depth is load-bearing: 6
+attempts leaves ~0.8% failure per sequence, which across 32 sequences in a step
+is a ~23% chance of losing the ENTIRE step (they hit exactly that, failing at
+7178/7178 positions after 6 attempts). 30 attempts puts it near 1e-11. Retries
+are cheap here because a placeholder response is refused before any span is
+summed, and each retry reconnects so it can reach a different replica.
+"""
 
 _RETRY_BASE_DELAY_S = 2.0
 _RETRY_MAX_DELAY_S = 30.0
@@ -88,6 +99,93 @@ class PromptLogprobError(RuntimeError):
     """
 
 
+PLACEHOLDER_ZERO_FRACTION = 0.9
+"""Fraction of exactly-0.0 scored positions above which a row is placeholder junk.
+
+Fireworks' serverless echo has a measured silent-corruption mode: 26 to 45% of
+requests return all-zero `token_logprobs` (with a junk one-entry `top_logprobs`
+of `{"!": 0.0}`) and HTTP 200, and responses also come back partly real and
+partly placeholder, so see `MAX_PLACEHOLDER_RUN` for the mixed case. Nothing in
+the response marks it, so an unchecked
+consumer trains on zeros: every chunk's teacher sum becomes 0.0 and its
+advantage becomes `-student_logprob`, which is not a KL signal at all.
+
+Real logprobs are never all exactly 0.0 over a long span, though INDIVIDUAL
+positions legitimately are (a near-certain continuation returns -0.0, observed
+on digits inside an equation), so the test is a high fraction rather than any
+occurrence. Pinning `x-session-affinity` is NOT the fix: it locked onto a bad
+replica 16 times out of 16. Detect and retry instead.
+"""
+
+_MIN_POSITIONS_FOR_PLACEHOLDER_CHECK = 8
+"""Below this many scored positions, an all-zero row is not distinguishable
+from a genuinely deterministic short span, so it is allowed through."""
+
+
+class PromptLogprobPlaceholderError(PromptLogprobError):
+    """The endpoint returned a placeholder all-zero row instead of real logprobs.
+
+    Retryable on purpose: the corruption is per-replica, so another attempt
+    usually lands on a healthy one.
+    """
+
+
+MAX_PLACEHOLDER_RUN = 24
+"""Longest run of consecutive exactly-0.0 scored positions treated as real.
+
+A whole-response fraction test is not enough: responses come back MIXED, part
+real and part placeholder (measured by a sibling lane on a 12k-token response),
+and a half-corrupt row passes any 90%-zeros threshold while silently poisoning
+half the span. Placeholder corruption appears as a contiguous BLOCK of exact
+zeros, whereas genuine near-certain tokens are isolated (observed: -0.0 on
+individual digits inside an equation). So a long consecutive run is the
+signature to reject on, independently of the overall fraction.
+"""
+
+
+def _reject_placeholder_row(row: list[float | None], url: str) -> None:
+    """Raise when a scored row looks like placeholder output, whole or partial.
+
+    Two independent tests, because the corruption has two shapes:
+    a high overall fraction of exact zeros (whole-response placeholder), and a
+    long contiguous run of them (a mixed response whose fraction stays low).
+
+    Args:
+        row: The per-position row, position 0 already None.
+        url: Endpoint, for the error message.
+
+    Raises:
+        PromptLogprobPlaceholderError: If the row looks placeholder-corrupted.
+    """
+    scored = [value for value in row[1:] if value is not None]
+    if len(scored) < _MIN_POSITIONS_FOR_PLACEHOLDER_CHECK:
+        return
+    zeros = sum(1 for value in scored if value == 0.0)
+    fraction = zeros / len(scored)
+    longest_run = 0
+    current_run = 0
+    for value in scored:
+        current_run = current_run + 1 if value == 0.0 else 0
+        longest_run = max(longest_run, current_run)
+    whole = fraction >= PLACEHOLDER_ZERO_FRACTION
+    partial = longest_run >= MAX_PLACEHOLDER_RUN
+    if not whole and not partial:
+        return
+    reason = (
+        f"{zeros} of {len(scored)} scored positions are exactly 0.0 ({fraction:.0%})"
+        if whole
+        else f"a run of {longest_run} consecutive exactly-0.0 positions (a MIXED response, "
+        f"only {fraction:.0%} zeros overall, which a fraction test alone would pass)"
+    )
+    raise PromptLogprobPlaceholderError(
+        f"teacher scoring from {url} returned {reason}, which is the known placeholder "
+        "response rather than real logprobs. This is a per-replica fault that HTTP 200 "
+        "hides, so it is retried on a fresh connection; if it persists the endpoint is "
+        "serving corrupt echo responses and the run must stop rather than train on zeros "
+        "(do NOT pin session affinity, which locks onto the bad replica)"
+    )
+
+
 class PromptLogprobTimeoutError(PromptLogprobError, TimeoutError):
     """A teacher scoring request blew its wall-clock deadline.
 
@@ -105,16 +203,32 @@ class _LogprobEntry(BaseModel):
     logprob: float
 
 
+class _LegacyLogprobs(BaseModel):
+    """The legacy `logprobs` object returned by the `echo` dialect.
+
+    Flat arrays, one entry per echoed prompt position plus the throwaway
+    sampled token, so `token_logprobs[p]` scores `token_ids[p]`. Verified
+    against Fireworks serving GLM-5.2: `token_ids` comes back identical to the
+    ids sent, which is what makes span alignment safe.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    token_logprobs: list[float | None] = Field(default_factory=list)
+    token_ids: list[int] = Field(default_factory=list)
+
+
 class _Choice(BaseModel):
-    """The one completion choice, which carries `prompt_logprobs` on some versions."""
+    """The one completion choice, carrying whichever logprob shape the server returns."""
 
     model_config = ConfigDict(extra="ignore")
 
     prompt_logprobs: list[dict[str, _LogprobEntry] | None] | None = None
+    logprobs: _LegacyLogprobs | None = None
 
 
 class _CompletionsResponse(BaseModel):
-    """A `/v1/completions` response, tolerant of where `prompt_logprobs` lands."""
+    """A `/v1/completions` response, tolerant of where the logprobs land."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -122,8 +236,39 @@ class _CompletionsResponse(BaseModel):
     choices: list[_Choice] = Field(default_factory=list)
 
 
+ScoringDialect = Literal["echo", "prompt_logprobs"]
+"""How the server exposes logprobs over caller-supplied prompt tokens.
+
+`echo` is the OpenAI legacy form (`echo: true` plus an INTEGER `logprobs`),
+which is what hosted providers expose; Fireworks' GLM-5.2 needs it, and it
+additionally echoes `token_ids` so the round trip can be verified.
+`prompt_logprobs` is the vLLM-native form, available when we run the server
+ourselves. The two differ in both request and response shape, so the dialect is
+explicit rather than sniffed: a silent guess would send a body the server
+accepts while returning nothing useful.
+"""
+
+
+class _EchoRequest(BaseModel):
+    """Scoring body for the `echo` dialect.
+
+    `logprobs` MUST be an integer. Sending `true` selects the newer
+    OpenAI-style `content` array, which carries no prompt positions at all, and
+    the server returns 200 either way.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    model: str
+    prompt: list[int]
+    max_tokens: int = 1
+    echo: bool = True
+    logprobs: int = 1
+    temperature: float = 0.0
+
+
 class _CompletionsRequest(BaseModel):
-    """The scoring request body: a token-id prompt, one throwaway sampled token."""
+    """Scoring body for the vLLM-native `prompt_logprobs` dialect."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -182,6 +327,7 @@ class PromptLogprobClient:
         model: str,
         *,
         api_key: str | None = None,
+        dialect: ScoringDialect = "echo",
         timeout_s: float = DEFAULT_TIMEOUT_S,
         transport: httpx.BaseTransport | None = None,
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
@@ -196,6 +342,9 @@ class PromptLogprobClient:
                 `WMH_ENDPOINT_API_KEY`; this module never reads the environment
                 itself, so the real provider keys cannot leak to an arbitrary host.
                 None (the norm for a private vLLM host) sends no auth header.
+            dialect: Which logprob surface the server exposes (see
+                `ScoringDialect`). Defaults to `echo`, what hosted providers
+                offer; use `prompt_logprobs` against a vLLM server we run.
             timeout_s: Per-request wall-clock bound in seconds, applied to connect,
                 read, write, and pool waits. Defaults to `DEFAULT_TIMEOUT_S`
                 (1200s), sized for a 65k-token prefill queued behind other
@@ -221,14 +370,18 @@ class PromptLogprobClient:
             )
         self._url = _completions_url(endpoint)
         self._model = model
+        self._dialect: ScoringDialect = dialect
         self._timeout_s = timeout_s
         self._max_attempts = max_attempts
         self._sleep = sleep
         self._usage_tokens = 0
+        self._placeholder_responses = 0
         self._usage_lock = threading.Lock()
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
+        self._headers = headers
+        self._transport = transport
         self._client = httpx.Client(
             timeout=httpx.Timeout(timeout_s),
             transport=transport,
@@ -315,10 +468,117 @@ class PromptLogprobClient:
         self.close()
 
     def _score(self, token_ids: list[int], *, count_usage: bool) -> list[float | None]:
-        body = _CompletionsRequest(model=self._model, prompt=token_ids).model_dump()
-        response = self._post(body, token_count=len(token_ids) if count_usage else 0)
-        rows = self._prompt_logprob_rows(response, expected=len(token_ids))
-        return self._realized_row(rows, token_ids)
+        """Score once, retrying the placeholder-response fault.
+
+        The placeholder check can only run after the body is parsed, so it gets
+        its own attempt loop rather than riding `_post`'s: the request succeeded
+        at the HTTP level and only its CONTENT is unusable.
+        """
+        if self._dialect == "echo":
+            body = _EchoRequest(model=self._model, prompt=token_ids).model_dump()
+        else:
+            body = _CompletionsRequest(model=self._model, prompt=token_ids).model_dump()
+        last: PromptLogprobPlaceholderError | None = None
+        for attempt in range(1, self._max_attempts + 1):
+            response = self._post(body, token_count=len(token_ids) if count_usage else 0)
+            try:
+                if self._dialect == "echo":
+                    return self._echo_row(response, token_ids)
+                rows = self._prompt_logprob_rows(response, expected=len(token_ids))
+                return self._realized_row(rows, token_ids)
+            except PromptLogprobPlaceholderError as exc:
+                last = exc
+                self._placeholder_responses += 1
+                if attempt < self._max_attempts:
+                    # A pooled keep-alive connection is implicit replica
+                    # affinity: every retry down the same socket reaches the
+                    # same (bad) replica, which is why 4 of 4 attempts came
+                    # back identically corrupt in the first live run. Drop the
+                    # pool so the retry reconnects and can land elsewhere.
+                    self._reconnect()
+                    logger.warning(
+                        "teacher returned a placeholder all-zero row (attempt %d/%d); "
+                        "reconnecting so the retry can reach a different replica",
+                        attempt,
+                        self._max_attempts,
+                    )
+        assert last is not None  # noqa: S101 - only reachable after a placeholder raise
+        raise last
+
+    def _reconnect(self) -> None:
+        """Rebuild the connection pool so the next request opens a fresh socket.
+
+        The transport is preserved when one was injected (tests pass a
+        `MockTransport`), so this is a no-op there beyond the pool swap.
+        """
+        with self._usage_lock:
+            old = self._client
+            self._client = httpx.Client(
+                timeout=httpx.Timeout(self._timeout_s),
+                transport=self._transport,
+                headers=self._headers,
+            )
+        old.close()
+
+    def placeholder_responses(self) -> int:
+        """How many placeholder all-zero rows this client has seen and retried.
+
+        Worth logging per step: a rising rate means the endpoint is degrading,
+        and the measured baseline is 26 to 38% of requests.
+        """
+        return self._placeholder_responses
+
+    def _echo_row(self, response: _CompletionsResponse, token_ids: list[int]) -> list[float | None]:
+        """Per-position logprobs from the legacy `echo` response shape.
+
+        The response echoes the prompt plus the one throwaway sampled token, so
+        it is one entry LONGER than the prompt and is truncated back. Two checks
+        are not optional:
+
+        - `token_ids` must equal the ids we sent. The server is free to
+          re-tokenize or prepend a BOS; if it did, every span offset the chunk
+          aligner computed would be shifted and every span sum silently wrong.
+        - position 0 is forced to None. Fireworks returns `0.0` there rather
+          than null, and a logprob of 0.0 means probability 1, so summing it
+          would inflate any span that started at position 0.
+        """
+        if not response.choices or response.choices[0].logprobs is None:
+            raise PromptLogprobError(
+                f"teacher scoring response from {self._url} carried no logprobs object; the "
+                "echo dialect needs `echo: true` with an INTEGER `logprobs` (sending `true` "
+                "returns a content array with no prompt positions). Confirm the served model "
+                f"{self._model!r} supports /v1/completions with echo"
+            )
+        legacy = response.choices[0].logprobs
+        expected = len(token_ids)
+        returned_ids = legacy.token_ids[:expected]
+        if returned_ids != token_ids:
+            first = next(
+                (
+                    index
+                    for index, (sent, got) in enumerate(zip(token_ids, returned_ids, strict=False))
+                    if sent != got
+                ),
+                min(len(token_ids), len(returned_ids)),
+            )
+            raise PromptLogprobError(
+                f"teacher scoring echoed {len(returned_ids)} token id(s) that do not match the "
+                f"{expected} sent (first difference at position {first}); the server "
+                "re-tokenized the prompt instead of scoring the exact ids, so every chunk span "
+                "offset would be wrong. Send the prompt as a token-id array (not text) and "
+                "confirm the endpoint's tokenizer matches the one the chunk plan was built with"
+            )
+        values = legacy.token_logprobs[:expected]
+        if len(values) != expected:
+            raise PromptLogprobError(
+                f"teacher scoring returned {len(values)} logprob(s) for a {expected}-token "
+                "prompt; the echo response must carry one entry per prompt position"
+            )
+        row: list[float | None] = list(values)
+        # Position 0 has no context; Fireworks reports 0.0 rather than null.
+        row[0] = None
+        _reject_placeholder_row(row, self._url)
+        return row
 
     def _post(self, body: dict[str, object], *, token_count: int) -> _CompletionsResponse:
         """POST one scoring request, retrying only transient failures."""

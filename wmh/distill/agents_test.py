@@ -20,6 +20,7 @@ from wmh.distill.agents import (
 from wmh.harness.doc import HarnessDoc
 from wmh.harness.runtime import RunResult, StopReason
 from wmh.providers.base import ProviderConfig, ProviderKind
+from wmh.providers.openai import OpenAIProvider
 from wmh.providers.retry import RetryingToolCallingProvider
 from wmh.providers.tinker import TinkerChatProvider, TokenSpan
 
@@ -113,10 +114,30 @@ def test_construction_never_imports_the_tinker_sdk(
     assert isinstance(agent._provider, RetryingToolCallingProvider)
 
 
-def test_non_tinker_provider_is_rejected_with_the_remedy(tmp_path: Path) -> None:
-    config = ProviderConfig(kind=ProviderKind.OPENAI, model="gpt-5.5")
-    with pytest.raises(ValueError, match="kind 'tinker'"):
-        _agent(tmp_path, provider_config=config)
+def test_served_teacher_generates_without_token_capture(tmp_path: Path) -> None:
+    """A generation-only trial (the gate's served teacher baseline) needs no sink.
+
+    The served teacher cannot report the ids it sampled, so the trial gets the
+    base bridge's plain retry-wrapped provider, records nothing, and is scored on
+    its verifier reward alone.
+    """
+    config = ProviderConfig(
+        kind=ProviderKind.OPENAI,
+        model="accounts/fireworks/models/glm-5p2",
+        endpoint="https://api.fireworks.ai/inference/v1",
+    )
+    sink_dir = tmp_path / "tokens" / "step-0000"
+
+    agent = _agent(tmp_path, provider_config=config, token_sink_dir=str(sink_dir))
+
+    assert agent.token_sink_path is None
+    wrapped = agent._provider
+    assert isinstance(wrapped, RetryingToolCallingProvider)
+    inner = wrapped._provider
+    assert isinstance(inner, OpenAIProvider)
+    assert inner.config.endpoint == "https://api.fireworks.ai/inference/v1"
+    # Nothing was prepared for a recorder that does not exist.
+    assert not sink_dir.exists()
 
 
 def test_empty_token_sink_dir_is_rejected(tmp_path: Path) -> None:

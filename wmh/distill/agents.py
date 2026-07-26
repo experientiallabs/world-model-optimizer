@@ -3,9 +3,17 @@
 Harbor instantiates `WmhDistillHarborAgent` (via
 `WMH_DISTILL_HARBOR_AGENT_IMPORT_PATH` plus JSON kwargs) for every distillation
 trial. The one behavioral difference from the base `WmhHarborAgent` is
-provider construction: the worker provider must be the Tinker student, and it
-is built with a `TokenRecorder` that writes the trial's exact sampled token
-spans to `{token_sink_dir}/{trial_name}.jsonl`.
+provider construction: a Tinker worker provider is built with a `TokenRecorder`
+that writes the trial's exact sampled token spans to
+`{token_sink_dir}/{trial_name}.jsonl`.
+
+A batch that only needs GENERATION takes the base bridge's plain provider
+instead (no recorder, `token_sink_path` stays None): a served
+OpenAI-compatible teacher (`teacher.backend = "openai_compat"`) cannot report
+the token ids it sampled, but the teacher-in-harness episodes it runs (the
+gate's holdout baseline) are scored on verifier rewards alone and never
+trained on. The paths that DO train on spans refuse a non-tinker provider up
+front, before harbor spends anything (`wmh.distill.loop`).
 
 The sink lives OUTSIDE harbor's trial directory on purpose: the scorer's
 entry prune deletes invalid trial dirs wholesale before re-running them, and
@@ -38,9 +46,11 @@ from wmh.providers.tinker import TinkerChatProvider, TokenRecorder
 
 WMH_DISTILL_HARBOR_AGENT_IMPORT_PATH = "wmh.distill.agents:WmhDistillHarborAgent"
 
+logger = logging.getLogger(__name__)
+
 
 class WmhDistillHarborAgent(WmhHarborAgent):
-    """Runs the candidate with a Tinker student provider that records token spans.
+    """Runs the candidate with a Tinker provider that records its token spans.
 
     Everything else (episode execution, trace persistence, cancellation
     semantics) is inherited from `WmhHarborAgent` unchanged.
@@ -51,8 +61,9 @@ class WmhDistillHarborAgent(WmhHarborAgent):
             derived from harbor's logs-dir layout (`{trial_dir}/agent`).
     """
 
-    token_sink_path: Path
-    """The exact sink file this trial's recorder writes (set at construction)."""
+    token_sink_path: Path | None
+    """The exact sink file this trial's recorder writes (set at construction),
+    or None for a generation-only trial whose provider records no spans."""
 
     def __init__(
         self,
@@ -99,28 +110,41 @@ class WmhDistillHarborAgent(WmhHarborAgent):
         )
 
     def _build_provider(self, config: ProviderConfig) -> Provider:
-        """Build the retry-wrapped Tinker student provider with this trial's span sink.
+        """Build this trial's worker provider, recording spans when it can.
+
+        Two explicit paths, keyed by the provider kind, because only the Tinker
+        provider reports the exact token ids it sampled:
+
+        - `tinker` (the student, or a Tinker teacher): wrapped with a
+          `TokenRecorder` writing this trial's spans to
+          `{token_sink_dir}/{trial_name}.jsonl`, which is what training reads.
+        - any other kind: a generation-only trial (a served OpenAI-compatible
+          teacher producing the gate's holdout baseline). Built exactly like the
+          base bridge, with no recorder and no sink file. Callers that train on
+          spans refuse these providers before the batch runs, so reaching this
+          branch means the batch is scored on verifier rewards alone.
 
         Args:
-            config: The validated worker provider config; must be the tinker kind
-                (distillation trains on the student's exact sampled tokens, which
-                only the Tinker provider records).
+            config: The validated worker provider config.
 
         Returns:
-            The retry-wrapped `TinkerChatProvider`. Spans record only after a
-            completion fully succeeds, so retries never duplicate them.
+            The retry-wrapped provider. Spans record only after a completion
+            fully succeeds, so retries never duplicate them.
 
         Raises:
-            ValueError: If the provider kind is not tinker, or the trial name
-                cannot be derived from the logs dir.
+            ValueError: If the trial name cannot be derived from the logs dir.
         """
         if config.kind is not ProviderKind.TINKER:
-            raise ValueError(
-                "distillation rollouts must sample the Tinker student so its token "
-                f"spans can be recorded, got provider kind {config.kind.value!r}; "
-                "configure the worker provider with kind 'tinker' (or run the standard "
-                "WmhHarborAgent when no token capture is wanted)"
+            logger.info(
+                "trial %s samples %s (kind %s) without token capture: only the Tinker "
+                "provider can record sampled token ids, so this trial contributes "
+                "verifier reward only",
+                self.logs_dir.parent.name,
+                config.model,
+                config.kind.value,
             )
+            self.token_sink_path = None
+            return super()._build_provider(config)
         trial_name = self.logs_dir.parent.name
         if not trial_name:
             raise ValueError(

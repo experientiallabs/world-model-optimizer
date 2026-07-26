@@ -6,8 +6,16 @@ import json
 from pathlib import Path
 
 import pytest
+from llm_waterfall.types import (
+    ChatFunctionCall,
+    ChatFunctionDefinition,
+    ChatMessage,
+    ChatTool,
+    ChatToolCall,
+)
 from pydantic import ValidationError
 
+from wmh.distill.rendering import ParsedAssistantMessage
 from wmh.distill.tokens import (
     TrialRecord,
     assemble_harbor_trial_records,
@@ -16,6 +24,7 @@ from wmh.distill.tokens import (
     load_trial_spans,
     read_terminus_stop_reason,
     read_trial_stop_reason,
+    reconstruct_conversation,
 )
 from wmh.harness.scoring import GradedTests, ScoreCell
 from wmh.providers.tinker import TokenRecorder, TokenSpan
@@ -28,6 +37,29 @@ def _span(call_index: int) -> TokenSpan:
         sampled_token_ids=[65, 66],
         sampled_logprobs=[-0.5, -1.5],
     )
+
+
+_BASH_TOOL = ChatTool(
+    function=ChatFunctionDefinition(
+        name="bash", description="run bash", parameters={"type": "object"}
+    )
+)
+
+
+class _ScriptedParser:
+    """A `SampledTurnParser` that parses sampled ids from a canned table.
+
+    Keeps the replay tests independent of any real renderer: the mapping from
+    token ids to an assistant turn is exactly what a renderer supplies.
+    """
+
+    def __init__(self, table: dict[tuple[int, ...], ParsedAssistantMessage]) -> None:
+        self._table = table
+
+    def parse_response(self, sampled_ids: list[int]) -> ParsedAssistantMessage:
+        parsed = self._table.get(tuple(sampled_ids))
+        assert parsed is not None, f"no scripted parse for sampled ids {sampled_ids}"
+        return parsed
 
 
 def _cell(task_id: str, attempt: int, *, reward: float, artifact_dir: Path) -> ScoreCell:
@@ -93,6 +125,170 @@ def test_load_trial_spans_rejects_a_gap_in_the_sequence(tmp_path: Path) -> None:
     sink.write_text("\n".join(lines) + "\n", encoding="utf-8")
     with pytest.raises(ValueError, match="expected 0..1"):
         load_trial_spans(tmp_path, "t")
+
+
+def _tool_call() -> ChatToolCall:
+    return ChatToolCall(
+        id="call_0", function=ChatFunctionCall(name="bash", arguments='{"cmd": "ls"}')
+    )
+
+
+def _tool_use_episode() -> tuple[list[TokenSpan], _ScriptedParser]:
+    """Two spans of one tool-using episode, shaped exactly as the provider records them."""
+    spans = [
+        TokenSpan(
+            call_index=0,
+            prompt_token_ids=[1, 2, 3],
+            sampled_token_ids=[10, 11],
+            sampled_logprobs=[-0.1, -0.2],
+            delta_start=0,
+            delta_messages=[
+                ChatMessage(role="system", content="be terse"),
+                ChatMessage(role="user", content="list files"),
+            ],
+            tools=[_BASH_TOOL],
+        ),
+        TokenSpan(
+            call_index=1,
+            prompt_token_ids=[1, 2, 3, 10, 11, 4],
+            sampled_token_ids=[12, 13],
+            sampled_logprobs=[-0.3, -0.4],
+            # Only the NEW message: the caller's echo of the assistant turn is
+            # the previous span's sampled ids, never repeated here.
+            delta_start=3,
+            delta_messages=[
+                ChatMessage.model_validate(
+                    {"role": "tool", "content": "a.txt b.txt", "tool_call_id": "call_0"}
+                )
+            ],
+            tools=[_BASH_TOOL],
+        ),
+    ]
+    parser = _ScriptedParser(
+        {
+            (10, 11): ParsedAssistantMessage(text="on it", tool_calls=[_tool_call()], stopped=True),
+            (12, 13): ParsedAssistantMessage(text="a.txt b.txt is all", stopped=True),
+        }
+    )
+    return spans, parser
+
+
+def test_load_trial_spans_round_trips_the_canonical_messages_and_tools(tmp_path: Path) -> None:
+    """The teacher-facing fields must survive the recorder's jsonl sink verbatim."""
+    spans, _ = _tool_use_episode()
+    recorder = TokenRecorder(jsonl_path=tmp_path / "task-a__x1.jsonl")
+    for span in spans:
+        recorder.record(span)
+
+    loaded = load_trial_spans(tmp_path, "task-a__x1")
+
+    assert loaded == spans
+    assert loaded[0].delta_messages is not None
+    assert [message.role for message in loaded[0].delta_messages] == ["system", "user"]
+    assert loaded[1].delta_messages is not None
+    assert loaded[1].delta_messages[0].tool_call_id == "call_0"
+    assert loaded[1].tools is not None
+    assert loaded[1].tools[0].function.name == "bash"
+
+
+def test_load_trial_spans_still_reads_a_sink_without_the_canonical_messages(
+    tmp_path: Path,
+) -> None:
+    """Real sinks on disk carry only the four original keys; they MUST still load."""
+    old_format = [
+        {
+            "call_index": 0,
+            "prompt_token_ids": [1, 2],
+            "sampled_token_ids": [65, 66],
+            "sampled_logprobs": [-0.5, -1.5],
+        },
+        {
+            "call_index": 1,
+            "prompt_token_ids": [1, 2, 65, 66, 7],
+            "sampled_token_ids": [67],
+            "sampled_logprobs": [-0.25],
+        },
+    ]
+    sink = tmp_path / "t.jsonl"
+    sink.write_text("".join(json.dumps(item) + "\n" for item in old_format), encoding="utf-8")
+
+    spans = load_trial_spans(tmp_path, "t")
+
+    assert [span.call_index for span in spans] == [0, 1]
+    assert spans[0].sampled_logprobs == [-0.5, -1.5]
+    assert all(span.delta_messages is None for span in spans)
+    assert all(span.tools == [] for span in spans)
+
+
+def test_reconstruct_conversation_replays_a_multi_turn_tool_use_episode() -> None:
+    spans, parser = _tool_use_episode()
+
+    replay = reconstruct_conversation(spans, parser)
+
+    assert replay is not None
+    assert [message.role for message in replay.messages] == [
+        "system",
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+    ]
+    assert replay.messages[1].content == "list files"
+    first_assistant = replay.messages[2]
+    assert first_assistant.content == "on it"
+    assert first_assistant.tool_calls is not None
+    assert first_assistant.tool_calls[0].function.name == "bash"
+    assert first_assistant.tool_calls[0].function.arguments == '{"cmd": "ls"}'
+    assert replay.messages[3].tool_call_id == "call_0"
+    assert replay.messages[4].content == "a.txt b.txt is all"
+    assert replay.messages[4].tool_calls is None
+    # The planner pairs each sampled span with the message its tokens produced.
+    assert replay.assistant_index_by_span == {0: 2, 1: 4}
+    assert replay.tools == [_BASH_TOOL]
+
+
+def test_reconstruct_conversation_returns_none_for_an_old_sink(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An old sink has no canonical messages: degrade honestly, never guess one."""
+    sink = tmp_path / "t.jsonl"
+    sink.write_text(
+        json.dumps(
+            {
+                "call_index": 0,
+                "prompt_token_ids": [1, 2],
+                "sampled_token_ids": [10, 11],
+                "sampled_logprobs": [-0.5, -1.5],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    spans = load_trial_spans(tmp_path, "t")
+    _, parser = _tool_use_episode()
+
+    with caplog.at_level("WARNING", logger="wmh.distill.tokens"):
+        assert reconstruct_conversation(spans, parser) is None
+
+    assert any("carries no delta_messages" in record.message for record in caplog.records)
+    assert any("Re-run the rollout step" in record.message for record in caplog.records)
+
+
+def test_reconstruct_conversation_returns_none_without_spans() -> None:
+    _, parser = _tool_use_episode()
+    assert reconstruct_conversation([], parser) is None
+
+
+def test_reconstruct_conversation_returns_none_when_spans_disagree_about_tools(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    spans, parser = _tool_use_episode()
+    spans[1].tools = []
+
+    with caplog.at_level("WARNING", logger="wmh.distill.tokens"):
+        assert reconstruct_conversation(spans, parser) is None
+
+    assert any("different tool schemas" in record.message for record in caplog.records)
 
 
 def test_read_trial_stop_reason_full_and_partial_traces(tmp_path: Path) -> None:

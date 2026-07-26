@@ -1,0 +1,81 @@
+# Cross-tokenizer run: Qwen3.6-27B distilled from a self-hosted NVFP4 GLM-5.2
+# on the full TB2 split. The teacher is NOT in the Tinker lineup, so it is
+# served from our own vLLM OpenAI-compatible endpoint and scored through
+# byte-aligned chunks (teacher.alignment = "chunk") instead of on the student's
+# token ids. Only importance_sampling works across vocabularies: top-k CE would
+# need teacher-vocab candidate ids as student targets.
+# The student name is a tinker-cookbook catalog name (pinned by
+# test_checked_in_run_configs_resolve_cookbook_renderers); the teacher name is
+# an HF repo id served by vLLM, and the cookbook knows nothing about it.
+[student]
+base_model = "Qwen/Qwen3.6-27B"
+lora_rank = 32
+
+[teacher]
+backend = "openai_compat"
+model = "nvidia/GLM-5.2-NVFP4"
+tokenizer = "zai-org/GLM-5.2"
+alignment = "chunk"
+# PLACEHOLDER: replace with the actual vLLM server URL before launching.
+endpoint = "http://REPLACE-ME-vllm-host:8000/v1"
+
+[harbor]
+job_template = ".agents/distill/tb2-harbor-job-template.yaml"
+backend = "e2b"
+reward_key = "reward"
+
+[rollout]
+max_turns = 20
+context_budget_tokens = 65536
+compaction = false
+
+# REQUIRED for a reasoning student: terminus-2 keeps only the parsed text of each
+# assistant turn, and Qwen3.5/Qwen3.6's auto-discovered renderer hands the terminus
+# parser a list instead of a string, raising TypeError before the trial grades
+# anything. The wmh verbatim renderer also replays each turn from its exact sampled
+# ids, which is what keeps an episode one datum instead of one fragment per turn.
+[rollout.renderers]
+"Qwen/Qwen3.6-27B" = "wmh/qwen3_5_verbatim"
+
+[train]
+steps = 40
+tasks_per_batch = 8
+group_size = 4
+learning_rate = 1e-4
+loss = "importance_sampling"
+advantage_clip = 4.0
+center_advantages = true
+max_datum_tokens = 65536
+sampler_refresh_every = 1
+save_state_every = 4
+trial_concurrency = 32
+
+# temperature 1.0 keeps issued sampler logprobs comparable to the untempered
+# teacher logprobs (unbiased reverse-KL advantages).
+[sampling]
+temperature = 1.0
+max_tokens = 8192
+
+# Interim evals off (the default): the holdout gate is the measurement that
+# matters, and interim train-subsample evals only burn rollout budget.
+[eval]
+every = 0
+tasks = 12
+k = 1
+
+[gate]
+k = 3
+min_teacher_fraction = 0.7
+require_no_regression = true
+
+# Teacher prices are deliberately unset: the GLM teacher runs on our own box,
+# so its scoring calls bill no Tinker meter (the run's meter stays
+# student-only and pricing.is_complete() is false by design here).
+
+[budget]
+max_usd = 100.0
+
+[wandb]
+enabled = true
+project = "wmh-distill"
+run_name = "qwen3.6-27b-from-glm-5.2-xtoken"

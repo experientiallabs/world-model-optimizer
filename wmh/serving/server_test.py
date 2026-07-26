@@ -381,3 +381,23 @@ def test_traces_downloadable_when_card_declares_hub_source() -> None:
 def test_download_traces_400_without_source() -> None:
     resp = _client().post("/world_models/airline/traces/download")
     assert resp.status_code == 400
+def test_score_accepts_a_rubric_body_and_stays_backward_compatible() -> None:
+    wm = _rewarded_world_model()
+    client = TestClient(create_app(world_models={"airline": wm}))
+    session_id = client.post("/world_models/airline/sessions", json={"task": "t"}).json()[
+        "session_id"
+    ]
+    client.post(
+        f"/world_models/airline/sessions/{session_id}/step",
+        json={"action": {"kind": "tool_call", "name": "get_user", "arguments": {}}},
+    )
+    # with a rubric body
+    assert (
+        client.post(
+            f"/world_models/airline/sessions/{session_id}/score",
+            json={"rubric": "complete iff X"},
+        ).status_code
+        == 200
+    )
+    # and without one (existing consumers unchanged)
+    assert client.post(f"/world_models/airline/sessions/{session_id}/score").status_code == 200

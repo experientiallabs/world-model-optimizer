@@ -59,6 +59,17 @@ _SPANS = [
     reason="no AWS_REGION; skipping live end-to-end build+step test",
 )
 def test_build_load_step_against_real_bedrock(tmp_path) -> None:  # noqa: ANN001 - pytest fixture; pragma: no cover - network
+    try:
+        _run_live_build_load_step(tmp_path)
+    except Exception as exc:  # noqa: BLE001 - classify, re-raise below
+        # Live test: Bedrock saturation is an environment condition, not a regression — skip
+        # like we do for missing creds. Anything else is a real failure.
+        if "ServiceUnavailable" in str(exc) or "Throttling" in str(exc):
+            pytest.skip(f"Bedrock capacity-constrained right now: {exc}")
+        raise
+
+
+def _run_live_build_load_step(tmp_path) -> None:  # noqa: ANN001 - pytest tmp_path passthrough
     region = os.environ["AWS_REGION"]
     traces_file = tmp_path / "traces.jsonl"
     traces_file.write_text("\n".join(json.dumps(s) for s in _SPANS), encoding="utf-8")

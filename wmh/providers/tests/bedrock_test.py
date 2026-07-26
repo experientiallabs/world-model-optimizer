@@ -155,7 +155,10 @@ def test_live_verify() -> None:  # pragma: no cover - network
             region=os.environ["AWS_REGION"],
         )
     )
-    assert provider.verify().ok is True
+    result = provider.verify()
+    if not result.ok and ("ServiceUnavailable" in result.detail or "Throttling" in result.detail):
+        pytest.skip(f"Bedrock capacity-constrained right now, not a code failure: {result.detail}")
+    assert result.ok is True
 
 
 @pytest.mark.skipif(
@@ -180,3 +183,4 @@ def test_live_titan_embed() -> None:  # pragma: no cover - network
     assert all(len(v) == 256 for v in vectors)
     # Distinct inputs should not produce identical embeddings.
     assert vectors[0] != vectors[1]
+

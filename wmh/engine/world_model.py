@@ -232,13 +232,18 @@ class WorldModel:
         """Return up to `n` steps from the replay buffer (used to seed `wmh play` suggestions)."""
         return self._retriever.sample(n)
 
-    def score_session(self, session_id: str) -> EpisodeScore:
+    def score_session(self, session_id: str, rubric: str | None = None) -> EpisodeScore:
         """Judge the session's rollout so far: episode reward, per-step rewards, and a critique.
 
         This is the RL reward signal. The reward judge sees the session's task and its full step
         history — never a gold trace — and returns everything the algorithms need in one call:
         scalar reward/success (GRPO, PPO, REINFORCE++), `step_rewards` (dense diagnostics), and
         `critique` (SDPO's teacher feedback). Raises `KeyError` for an unknown session id.
+
+        `rubric` — the scenario's pinned success criteria (see the per-benchmark scenario files'
+        `rubric` field) — anchors the verdict; without it the judge re-infers success conditions
+        from the task text per call, which varies run to run (D65). Pass it whenever the scenario
+        carries one.
 
         Judge usage is metered onto the session's tracker under `Phase.JUDGE`, so `session_usage`
         keeps reward cost separate from the world model's SERVE cost.
@@ -250,7 +255,7 @@ class WorldModel:
             if tracker is not None
             else self._reward_provider
         )
-        score = EpisodeRewardJudge(provider).score(session.task, session.history)
+        score = EpisodeRewardJudge(provider).score(session.task, session.history, rubric=rubric)
         # The scalar rides the final observation too, so replay-buffer consumers that read
         # Observation.reward (DreamGym-style terminal r) see the same number the API returned.
         if session.history:

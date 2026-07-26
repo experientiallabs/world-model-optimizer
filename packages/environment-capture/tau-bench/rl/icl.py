@@ -24,10 +24,10 @@ completes, so a mid-run failure keeps every finished row. Policy backends:
 no effect there) or `vllm:<model>@<base-url>` (Qwen3.5-9B on the wake/sleep server's vLLM,
 which does honor --temperature).
 
-Examples:
-    uv run python packages/environment-capture/tau-bench/rl/icl.py --mode base --scenarios eval --limit 2
-    uv run python packages/environment-capture/tau-bench/rl/icl.py --mode collect --scenarios train --wm haiku
-    uv run python packages/environment-capture/tau-bench/rl/icl.py --mode multi --scenarios eval --wm gpt-5.5 \
+Examples (from the repo root, script at packages/environment-capture/tau-bench/rl/icl.py):
+    uv run python <script> --mode base --scenarios eval --limit 2
+    uv run python <script> --mode collect --scenarios train --wm haiku
+    uv run python <script> --mode multi --scenarios eval --wm gpt-5.5 \
         --policy vllm:Qwen/Qwen3.5-9B@http://localhost:8001/v1
 """
 
@@ -35,6 +35,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -49,6 +51,7 @@ from wmh.env import DONE_SIGNAL, Scenario, WorldModelEnv, run_episode
 from wmh.optimize.reward import EpisodeScore
 from wmh.providers.base import Message, Provider, ProviderConfig, ProviderKind
 from wmh.providers.registry import get_provider
+from wmh.providers.waterfall import WaterfallProvider
 
 _HERE = Path(__file__).resolve().parent
 _MODEL_DIR = _HERE.parent / "models" / "tau-bench"
@@ -58,6 +61,13 @@ _TOOLS_PATH = _HERE / "tools.json"
 HAIKU = "us.anthropic.claude-haiku-4-5-20251001-v1:0"  # dated profile id (undated is rejected)
 OPUS = "us.anthropic.claude-opus-4-8"  # eval reward judge: third family vs both WM backends
 REGION = "us-east-1"
+# The judge fails over with the SAME Opus id in every link (identical judgement). Lessons from
+# a saturated afternoon: (1) `us.` profile capacity (ServiceUnavailable) is shared across an
+# account's regions, but per-region API quotas differ, so same-account region hops still help
+# on bursts; (2) the endflow account has NO Opus access — AccessDenied is a non-capacity error
+# that propagates immediately and kills the cascade, so only Opus-capable pools belong in the
+# chain; (3) saturation is bursty — --retry-errors sweeps converge in 1-2 passes.
+JUDGE_POOLS = ((None, "us-east-1"), (None, "us-west-2"), (None, "us-east-2"))
 MAX_STEPS = 20  # shared eval protocol (DECISIONS.md D30)
 POLICY_MAX_TOKENS = 6000  # room for Qwen3.5 reasoning + tool call (D30/D31)
 OBS_CHARS = 800  # observation excerpt per history line in the policy prompt
@@ -180,21 +190,49 @@ class PolicyAgent:
         return _parse_action(completion.text)
 
 
+_QWEN_FUNCTION_RE = re.compile(r"<function=([\w.-]+)>(.*?)</function>", re.DOTALL)
+_QWEN_PARAMETER_RE = re.compile(r"<parameter=([\w.-]+)>(.*?)</parameter>", re.DOTALL)
+
+
 def _parse_action(text: str) -> Action | None:
-    """One of the two allowed reply shapes, or None if the reply matches neither."""
+    """One of the allowed reply shapes, or None if the reply matches none.
+
+    Accepts the prompted JSON shapes first, then falls back to Qwen3.5's native XML tool-call
+    format (`<function=...><parameter=...>` — see DECISIONS.md D31): the wake/sleep server
+    applies no tool parser, and the ICL rows must measure the policy, not the parser.
+    """
     raw = extract_json_object(text)
-    if raw is None:
+    if raw is not None:
+        try:
+            call = _ToolCall.model_validate_json(raw)
+            return Action(kind=ActionKind.TOOL_CALL, name=call.tool, arguments=call.arguments)
+        except ValidationError:
+            pass
+        try:
+            done = _Done.model_validate_json(raw)
+        except ValidationError:
+            done = None
+        if done is not None:
+            return Action(kind=ActionKind.MESSAGE, content=DONE_SIGNAL) if done.done else None
+    return _parse_qwen_xml(text)
+
+
+def _parse_qwen_xml(text: str) -> Action | None:
+    """Qwen3.5's XML tool-call format. Parameter values parse as JSON where possible."""
+    match = _QWEN_FUNCTION_RE.search(text)
+    if match is None:
         return None
-    try:
-        call = _ToolCall.model_validate_json(raw)
-        return Action(kind=ActionKind.TOOL_CALL, name=call.tool, arguments=call.arguments)
-    except ValidationError:
-        pass
-    try:
-        done = _Done.model_validate_json(raw)
-    except ValidationError:
-        return None
-    return Action(kind=ActionKind.MESSAGE, content=DONE_SIGNAL) if done.done else None
+    name, body = match.group(1), match.group(2)
+    arguments: JsonObject = {}
+    for key, value in _QWEN_PARAMETER_RE.findall(body):
+        value = value.strip()
+        try:
+            arguments[key] = json.loads(value)
+        except ValueError:
+            arguments[key] = value
+    if name.lower() == "done":
+        return Action(kind=ActionKind.MESSAGE, content=DONE_SIGNAL)
+    return Action(kind=ActionKind.TOOL_CALL, name=name, arguments=arguments)
 
 
 def _load_tools() -> dict[str, str]:
@@ -240,7 +278,12 @@ def _build_wm(kind: str) -> WorldModel:
         judge = env_provider  # cheap critiques while collecting memory / dev
     elif kind == "gpt-5.5":
         env_provider = get_provider(ProviderConfig(kind=ProviderKind.OPENAI, model="gpt-5.5"))
-        judge = get_provider(ProviderConfig(kind=ProviderKind.BEDROCK, model=OPUS, region=REGION))
+        judge = WaterfallProvider(
+            [
+                ProviderConfig(kind=ProviderKind.BEDROCK, model=OPUS, region=region)
+                for _profile, region in JUDGE_POOLS
+            ]
+        )
     else:
         raise SystemExit(f"unknown --wm {kind!r}; use haiku or gpt-5.5")
     return WorldModel.load(str(_MODEL_DIR), env_provider, reward_provider=judge)
@@ -356,6 +399,11 @@ def main() -> int:
     parser.add_argument("--memory", type=Path, default=_HERE / "icl_memory.jsonl")
     parser.add_argument("--out", type=Path, default=None, help="results JSONL (default: derived)")
     parser.add_argument("--wandb", action="store_true", help="log rows to wandb wmh-rl-transfer")
+    parser.add_argument(
+        "--retry-errors",
+        action="store_true",
+        help="re-run ONLY the scenarios whose rows in --out carry an infra error, keep good rows",
+    )
     args = parser.parse_args()
     if args.attempts < 1:
         parser.error("--attempts must be >= 1")
@@ -406,10 +454,47 @@ def main() -> int:
         ]
 
     out = args.out or _HERE / f"icl_{args.mode}_{args.scenarios}_wm-{args.wm}.results.jsonl"
+    kept_rows: list[RowResult] = []
+    write_target = out  # retry passes write to a tmp file and atomically replace at the end,
+    # so an interrupted sweep never destroys the prior rows (fresh runs keep per-row appends)
+    if args.retry_errors:
+        # Failed rows only ever lost their JUDGE call (or env error) — the fix is to redo those
+        # scenarios and splice, not re-pay for the rows that scored.
+        if not out.exists():
+            raise SystemExit(f"--retry-errors needs an existing results file at {out}")
+        prior_rows = [
+            RowResult.model_validate_json(line)
+            for line in out.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        kept_rows = [r for r in prior_rows if r.error is None]
+        retry_counts: dict[str, int] = {}
+        for r in prior_rows:
+            if r.error is not None:
+                retry_counts[r.scenario_id] = retry_counts.get(r.scenario_id, 0) + 1
+        retry_list: list[PinnedScenario] = []
+        for scenario in scenarios:
+            key = scenario.provenance[0]
+            if retry_counts.get(key, 0) > 0:
+                retry_counts[key] -= 1
+                retry_list.append(scenario)
+        scenarios = retry_list
+        unmatched = {k: v for k, v in retry_counts.items() if v > 0}
+        if unmatched:
+            raise SystemExit(
+                "retry-errors could not match these errored rows against the current scenario "
+                "selection (check --episodes-per-scenario/--limit match the original run): "
+                f"{unmatched}"
+            )
+        print(f"retry-errors: {len(kept_rows)} rows kept, {len(scenarios)} scenarios to re-run")
     attempts = args.attempts if args.mode == "single" else 1
-    rows: list[RowResult] = []
-    collected: list[MemoryRecord] = []
-    with out.open("w", encoding="utf-8") as sink:  # rows land as they finish, not at the end
+    if args.retry_errors:
+        write_target = out.with_suffix(out.suffix + ".retry-tmp")
+    rows: list[RowResult] = list(kept_rows)
+    with write_target.open("w", encoding="utf-8") as sink:  # rows land as they finish
+        for row in kept_rows:
+            sink.write(row.model_dump_json() + "\n")
+        sink.flush()
         for i, scenario in enumerate(scenarios, start=1):
             prior: list[RowResult] = []
             for attempt in range(1, attempts + 1):
@@ -443,22 +528,29 @@ def main() -> int:
                         "scenario_index": i,
                     }
                 )
-            if args.mode == "collect" and final.error is None:
-                collected.append(
-                    MemoryRecord(
-                        scenario_id=final.scenario_id,
-                        domain=final.domain,
-                        success=final.success,
-                        reward=final.reward,
-                        critique=final.critique,
-                    )
-                )
 
+
+    if args.retry_errors:
+        os.replace(write_target, out)
     if args.mode == "collect":
+        # Rebuild memory from EVERY scored row of the final results (kept + new): a retry pass
+        # must never truncate memory to just the retried scenarios. Judge-parse failures are
+        # excluded — an "Unparseable reward-judge reply" is not a learning.
+        records = [
+            MemoryRecord(
+                scenario_id=r.scenario_id,
+                domain=r.domain,
+                success=r.success,
+                reward=r.reward,
+                critique=r.critique,
+            )
+            for r in rows
+            if r.error is None and not r.critique.startswith("Unparseable reward-judge reply")
+        ]
         args.memory.write_text(
-            "\n".join(r.model_dump_json() for r in collected) + "\n", encoding="utf-8"
+            "\n".join(r.model_dump_json() for r in records) + "\n", encoding="utf-8"
         )
-        print(f"memory -> {args.memory} ({len(collected)} records)")
+        print(f"memory -> {args.memory} ({len(records)} records)")
     print(f"\n== icl --mode {args.mode} --scenarios {args.scenarios} --wm {args.wm} ==")
     print(_summarize(rows))
     print(f"rows -> {out}")

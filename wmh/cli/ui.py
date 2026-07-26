@@ -49,7 +49,7 @@ from wmh.config import (
     upsert_env_var,
     validate_name,
 )
-from wmh.core.types import Action, ActionKind, Session
+from wmh.core.types import Action, ActionKind, EnvState, Session
 from wmh.engine.play import PlayTurn, parse_action, play_turn
 from wmh.engine.world_model import WorldModel
 from wmh.providers import verify_all, verify_embedder
@@ -1013,6 +1013,7 @@ def run_play_repl(
     task: str | None,
     reader: PromptReader | None = None,
     suggestions: list[str] | None = None,
+    seed_state: EnvState | None = None,
 ) -> None:
     """Run the human-in-the-loop demo against `world_model`.
 
@@ -1020,7 +1021,7 @@ def run_play_repl(
     in tests, defaults to the console's prompt. The loop ends on `:quit`, EOF, or KeyboardInterrupt.
     """
     ask = reader if reader is not None else console.input
-    session = world_model.new_session(task=task)
+    session = world_model.new_session(task=task, seed_state=seed_state)
     body = _PLAY_HELP
     if suggestions:
         sampled = "\n".join(f"  [cyan]{escape(line)}[/cyan]" for line in suggestions)

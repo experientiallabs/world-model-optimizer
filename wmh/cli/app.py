@@ -73,7 +73,7 @@ from wmh.config import (
     validate_name,
 )
 from wmh.config.card import make_build_card, save_card
-from wmh.core.types import JsonObject
+from wmh.core.types import JsonObject, Trace
 from wmh.engine.build import build as run_build
 from wmh.engine.build import ingest, split_traces
 from wmh.engine.demo import run_demo
@@ -1849,17 +1849,7 @@ def demo(
     wm, resolved_name, _provider, model_root = _load_model_any(
         name, root, max_fidelity=max_fidelity
     )
-    traces_file = Path(traces) if traces else _traces_for_root(model_root)
-    if traces_file is None or not traces_file.exists():
-        raise typer.BadParameter(
-            f"no trace file found for {resolved_name!r} under {model_root}; pass --traces"
-        )
-    model_dir = WorldModelStore(str(model_root)).resolve(resolved_name)
-    config = load_config(model_dir)  # the model dir holds its own HarnessConfig
-    candidates = [t for t in ingest(config, file=str(traces_file)) if t.steps]
-    if not candidates:
-        raise typer.BadParameter(f"{traces_file} contains no replayable traces")
-    trace = random.Random(seed).choice(candidates)
+    trace = _sample_trace(model_root, resolved_name, traces, seed, require_trace=True)
 
     total = min(steps, len(trace.steps))
     _console.print(
@@ -1942,7 +1932,8 @@ def demo(
             provider = wrap_provider_with_retries(
                 providers.get_provider(switched), on_retry=_NARRATOR.on_retry, sleep=_NARRATOR.sleep
             )
-            wm = WorldModel.load(str(model_dir), provider, telemetry_root=str(model_root))
+            model_dir_resolved = WorldModelStore(str(model_root)).resolve(resolved_name)
+            wm = WorldModel.load(str(model_dir_resolved), provider, telemetry_root=str(model_root))
             _console.print(
                 f"[dim]resuming from step {len(done) + 1} with "
                 f"{provider_name} ({model_type})…[/dim]"
@@ -1968,14 +1959,49 @@ def play(
     max_fidelity: bool = typer.Option(
         False, "--max-fidelity", help="Run with the online extras on (default: pure RAG)."
     ),
+    traces: str = typer.Option(
+        None, "--traces", help="Trace file to sample the scenario from (default: the model's)."
+    ),
+    seed: int = typer.Option(None, help="Seed for the scenario sample (default: random)."),
 ) -> None:
     """Step into the environment yourself: type actions, the world model returns observations."""
-    wm, resolved_name, _provider, _model_root = _load_model_any(
+    wm, resolved_name, _provider, model_root = _load_model_any(
         name, root, max_fidelity=max_fidelity
     )
-    suggestions = _action_suggestions(wm)
-    run_play_repl(_console, wm, resolved_name, task, suggestions=suggestions)
+    trace = _sample_trace(model_root, resolved_name, traces, seed)
+    seed_state = None
+    if trace and trace.steps:
+        seed_state = trace.steps[0].state_before
+        if not task:
+            task = trace.steps[0].task
 
+    suggestions = _action_suggestions(wm)
+    run_play_repl(_console, wm, resolved_name, task, suggestions=suggestions, seed_state=seed_state)
+
+
+def _sample_trace(
+    model_root: Path,
+    resolved_name: str,
+    traces: str | None = None,
+    seed: int | None = None,
+    require_trace: bool = False,
+) -> Trace | None:
+    """Shared logic to load and sample a scenario trace."""
+    traces_file = Path(traces) if traces else _traces_for_root(model_root)
+    if traces_file is None or not traces_file.exists():
+        if require_trace or traces:
+            raise typer.BadParameter(
+                f"no trace file found for {resolved_name!r} under {model_root}; pass --traces"
+            )
+        return None
+    model_dir = WorldModelStore(str(model_root)).resolve(resolved_name)
+    config = load_config(model_dir)  # the model dir holds its own HarnessConfig
+    candidates = [t for t in ingest(config, file=str(traces_file)) if t.steps]
+    if not candidates:
+        if require_trace or traces:
+            raise typer.BadParameter(f"{traces_file} contains no replayable traces")
+        return None
+    return random.Random(seed).choice(candidates)
 
 def _traces_for_root(model_root: Path) -> Path | None:
     """The trace corpus that built the models under `model_root`, when it ships alongside."""

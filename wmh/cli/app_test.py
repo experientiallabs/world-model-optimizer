@@ -728,6 +728,62 @@ def test_play_repl_steps_and_quits(patched_provider, tmp_path) -> None:  # noqa:
     assert "user u1 found" in result.output
 
 
+def test_play_with_traces_seeds_state(patched_provider, tmp_path) -> None:  # noqa: ANN001
+    root = tmp_path / ".wmh"
+    _build(root, "default", tmp_path)
+
+    span_llm = {
+        "traceId": "b" * 32,
+        "spanId": "s1",
+        "name": "chat",
+        "startTimeUnixNano": 1,
+        "attributes": [
+            {"key": "gen_ai.operation.name", "value": {"stringValue": "chat"}},
+            {"key": "gen_ai.prompt", "value": {"stringValue": "seeded task"}},
+            {"key": "wmh.state.scratchpad", "value": {"stringValue": "my seeded scratchpad"}},
+        ],
+    }
+    path = tmp_path / "traces_with_state.jsonl"
+    path.write_text(json.dumps(span_llm) + "\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["play", "--root", str(root), "--traces", str(path), "--seed", "0"],
+        input=':state\n:quit\n',
+    )
+    assert result.exit_code == 0, result.output
+    assert "task: seeded task" in result.output
+    assert "my seeded scratchpad" in result.output
+
+
+def test_play_auto_discovered_trace_empty_does_not_raise(patched_provider, tmp_path) -> None:  # noqa: ANN001
+    root = tmp_path / ".wmh"
+    _build(root, "default", tmp_path)
+
+    # Put a trace file where auto-discovery will find it (default model root),
+    # but make sure it has no replayable steps (e.g. just a generic span).
+    model_root = root / "models" / "default"
+    path = model_root / "traces.otel.jsonl"
+    span_generic = {
+        "traceId": "c" * 32,
+        "spanId": "s1",
+        "name": "something_else",
+        "startTimeUnixNano": 1,
+        "attributes": [],
+    }
+    path.write_text(json.dumps(span_generic) + "\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["play", "--root", str(root)],
+        input=':state\n:quit\n',
+    )
+    assert result.exit_code == 0, result.output
+    # seed_state should be None, meaning state is empty.
+    assert "no task set" in result.output
+    assert "task: (none)" in result.output
+
+
 def test_build_interactive_wizard_creates_model(
     patched_provider,  # noqa: ANN001 - pytest fixture
     tmp_path,  # noqa: ANN001 - pytest fixture

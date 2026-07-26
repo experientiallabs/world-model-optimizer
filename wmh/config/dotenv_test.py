@@ -42,11 +42,16 @@ def test_upsert_env_var_appends_and_replaces(tmp_path, monkeypatch) -> None:  # 
 
     upsert_env_var("WMH_TEST_ADDED", "v", env)
     assert env.read_text(encoding="utf-8").endswith("WMH_TEST_ADDED=v\n")
-    assert env.stat().st_mode & 0o777 == 0o600  # owner-only, even for a pre-existing file
+    if os.name != "nt":
+        assert env.stat().st_mode & 0o777 == 0o600  # owner-only, even for a pre-existing file
     monkeypatch.delenv("WMH_TEST_UPSERT")
     monkeypatch.delenv("WMH_TEST_ADDED")
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows symlink creation requires elevated privileges (Developer Mode or admin)",
+)
 def test_upsert_env_var_refuses_symlinked_env(tmp_path, monkeypatch) -> None:  # noqa: ANN001
     target = tmp_path / "victim"
     target.write_text("do not clobber\n", encoding="utf-8")

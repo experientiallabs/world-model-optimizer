@@ -132,6 +132,27 @@ def test_save_load_roundtrip_preserves_topk(tmp_path) -> None:  # noqa: ANN001 -
     assert len(dst._steps) == 3
 
 
+def test_save_load_survives_unicode_line_separators(tmp_path) -> None:  # noqa: ANN001 - pytest fixture
+    """Observations from scraped web/AX content can contain \u2028/\u2029/\x85.
+
+    ``str.splitlines()`` splits on those, cutting a persisted JSON line mid-string
+    (hit by the gui-tasks corpus — the first web-content corpus). The loader must
+    split on newlines only.
+    """
+    from wmh.retrieval.embedders import HashingEmbedder
+
+    weird = "before\u2028middle\x85after\u2029end"
+    steps = [_step("alpha", 1, weird), _step("beta", 2, "plain")]
+    src = EmbeddingRetriever(HashingEmbedder(dim=64))
+    src.index([Trace(trace_id="t", steps=steps)])
+    src.save(tmp_path / "index")
+
+    dst = EmbeddingRetriever(HashingEmbedder(dim=64))
+    dst.load(tmp_path / "index")
+    assert len(dst._steps) == 2
+    assert dst._steps[0].observation.content == weird
+
+
 def test_save_load_empty_buffer(tmp_path) -> None:  # noqa: ANN001 - pytest fixture
     from wmh.retrieval.embedders import HashingEmbedder
 

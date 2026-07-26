@@ -142,9 +142,12 @@ class EmbeddingRetriever:
         """Reload a buffer previously written by `save`, replacing any current contents."""
         path = Path(index_dir)
         matrix = np.load(path / _MATRIX_FILE)
+        # Split on newlines ONLY: str.splitlines() also splits on U+2028/U+2029/\x85,
+        # which are legal inside JSON strings and appear verbatim in web-content
+        # observations (gui-tasks corpus) — splitting there cuts a record mid-string.
         steps = [
             Step.model_validate_json(line)
-            for line in (path / _STEPS_FILE).read_text(encoding="utf-8").splitlines()
+            for line in (path / _STEPS_FILE).read_text(encoding="utf-8").split("\n")
             if line.strip()
         ]
         self._steps = steps

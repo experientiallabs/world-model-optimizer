@@ -102,6 +102,25 @@ class _FailFirstProvider(_ScriptedProvider):
         raise RuntimeError("RateLimitError: 429 too many requests")
 
 
+class _UnusableBackendProvider(_ScriptedProvider):
+    """Provider that raises the moment it is CALLED: the missing-AWS-credentials shape.
+
+    The one failure a request-free pre-flight cannot catch. boto3 resolves credentials by walking
+    a chain that reaches the instance-metadata endpoint over the network, and builds a Bedrock
+    client with no credentials at all, so the entry looks fine until a cell is spent on it.
+    """
+
+    def complete(
+        self,
+        system: str,
+        messages: list[Message],
+        *,
+        temperature: float = 0.7,
+        max_tokens: int = 8192,
+    ) -> Completion:
+        raise RuntimeError("NoCredentialsError: Unable to locate credentials")
+
+
 def _pool() -> ModelPool:
     return ModelPool(
         models=[
@@ -249,6 +268,78 @@ def test_broken_progress_callback_does_not_abort_the_sweep() -> None:
     assert len(seen) == 4  # every cell still reported
     assert len(matrix.outcomes) == 4
     assert all(o.reward == pytest.approx(0.8) for o in matrix.outcomes)
+
+
+def test_cells_run_candidate_minor_so_no_candidate_gets_a_cell_ahead() -> None:
+    # The order invariant the blast radius rests on: scenario, then episode, then candidate.
+    # Safe to pin because the sweep runs frozen, so no cell's predictions reach another cell.
+    order: list[tuple[str, int, str]] = []
+    evaluate_pool(
+        lambda: _FakeEnv(EpisodeScore(reward=0.8, success=True, critique="fine")),
+        _pool(),
+        _SCENARIOS,
+        episodes_per_scenario=2,
+        provider_factory=_ScriptedProvider,
+        on_outcome=lambda o: order.append((o.scenario_id, o.episode, o.model)),
+    )
+    assert order == [
+        ("trace-1", 0, "candidate-a"),
+        ("trace-1", 0, "candidate-b"),
+        ("trace-1", 1, "candidate-a"),
+        ("trace-1", 1, "candidate-b"),
+        ("trace-2", 0, "candidate-a"),
+        ("trace-2", 0, "candidate-b"),
+        ("trace-2", 1, "candidate-a"),
+        ("trace-2", 1, "candidate-b"),
+    ]
+
+
+def test_a_later_broken_candidate_surfaces_after_one_cell_per_candidate() -> None:
+    """The blast radius of a backend that can only fail once it is CALLED.
+
+    `candidate-c` is the Bedrock-with-no-credentials case: nothing local can see it, so it costs
+    a cell. What must be bounded is how many cells the OTHER candidates burn before anyone
+    watching `on_outcome` learns about it. Candidate-minor order makes that one cell each, and it
+    does not depend on the grid: with candidate-major order the same pool hid the failure until
+    cell 9 of 12, and any larger `--scenarios` would hide it for longer still.
+    """
+    pool = ModelPool(
+        models=[
+            *_pool().models,
+            PoolEntry(
+                name="candidate-c",
+                kind=ProviderKind.BEDROCK,
+                model="us.anthropic.claude-opus-4-8",
+                input_per_mtok=15.0,
+                output_per_mtok=75.0,
+            ),
+        ]
+    )
+    scenarios = [Scenario(task=f"task {i}", provenance=[f"trace-{i}"]) for i in range(4)]
+
+    def _factory(entry: PoolEntry) -> _ScriptedProvider:
+        if entry.name == "candidate-c":
+            return _UnusableBackendProvider(entry)
+        return _ScriptedProvider(entry)
+
+    order: list[str] = []
+    matrix = evaluate_pool(
+        lambda: _FakeEnv(EpisodeScore(reward=0.8, success=True, critique="fine")),
+        pool,
+        scenarios,
+        provider_factory=_factory,
+        on_outcome=lambda o: order.append(o.model),
+    )
+
+    # Two cells ran before the broken candidate reported: one per earlier candidate.
+    assert order.index("candidate-c") == 2
+    # The sweep still completes, so the working candidates keep the evidence they were paid for
+    # and the broken one's cells carry the diagnosis on every row.
+    assert len(matrix.outcomes) == 12  # 3 candidates x 4 scenarios x 1 episode
+    broken = [o for o in matrix.outcomes if o.model == "candidate-c"]
+    assert len(broken) == 4
+    assert all(not o.scored and "NoCredentialsError" in (o.error or "") for o in broken)
+    assert all(o.scored for o in matrix.outcomes if o.model != "candidate-c")
 
 
 def test_wrong_typed_score_yields_unscored_row_with_reason() -> None:

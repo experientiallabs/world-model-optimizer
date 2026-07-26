@@ -979,9 +979,11 @@ def _patch_seams(
             candidate's cells come back unscored while the others are scored.
         throttled_episodes: Per-model cycle of throttled flags over each scenario's episodes:
             `{"pricey-1": (False, True, True)}` keeps episode 0 and loses episodes 1 and 2 of EVERY
-            scenario. `evaluate_pool` builds one provider per episode in scenario-major order, so
-            the cycle position is the episode index within the scenario. This is how a candidate
-            comes back with the same scenarios as the others but FEWER scored episodes on them.
+            scenario. `evaluate_pool` builds one provider per cell and a candidate meets its own
+            cells scenario by scenario, episode by episode (whatever the other candidates are
+            doing between them), so counting THIS model's constructions gives the episode index
+            within the scenario. This is how a candidate comes back with the same scenarios as
+            the others but FEWER scored episodes on them.
         judge_fails_on: Scenario tasks whose episode SCORING raises, for every candidate: the
             whole pool loses those scenarios together.
         real_kinds: Provider kinds to construct for real instead of faking, so a test can exercise
@@ -1184,6 +1186,29 @@ def test_route_sweep_withholds_the_fit_handoff_on_uneven_scored_coverage(
     assert "--allow-uneven-coverage" in flat
     # A real sweep, not an aborted one: every cell ran (the cells are the paid evidence).
     assert len(seams.world_model.tasks) == 6
+
+
+def test_route_sweep_calls_out_a_first_cell_failure_while_the_rest_can_still_be_saved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The residual the pre-flight cannot close: a bedrock candidate's missing AWS credentials are
+    # only knowable over the wire (measured: boto3 reaches the instance-metadata endpoint and
+    # builds a client with no credentials at all), so that entry passes the pre-flight and dies at
+    # its FIRST CELL. `pricey` stands in for it. What must not happen is the operator learning
+    # only after `cheap` has run the whole scenario set: cells run candidate-minor, so the failure
+    # is cell 2 of 8 and is named there, with six cells of spend still recoverable by Ctrl-C.
+    _patch_seams(monkeypatch, throttled_models=frozenset({"pricey-1"}))
+    root = _project(tmp_path, traces=_corpus())
+    _out, result = _sweep(tmp_path, root, "support", "--scenarios", "4", "--yes")
+    assert result.exit_code == 1, result.output  # uneven coverage, so no fit handoff either
+    flat = _flat(result.output)
+    assert "theFIRSTcellofpriceyfailed" in flat
+    assert "ratelimitexceeded(429)" in flat  # what broke, quoted from the cell itself
+    assert _says(result.output, "stop with Ctrl-C, fix its pool entry, and sweep again")
+    # Before the third cell ever ran, which is the whole point of the ordering.
+    assert flat.index("theFIRSTcellofpriceyfailed") < flat.index("[3/8]")
+    # Once per candidate, not once per lost cell: pricey loses all four and is called out once.
+    assert flat.count("theFIRSTcellofpriceyfailed") == 1
 
 
 def test_route_sweep_allow_uneven_coverage_hands_off_and_still_states_the_bias(
@@ -1828,6 +1853,8 @@ def test_route_sweep_states_what_the_preflight_cannot_know_before_the_first_cell
     assert result.exit_code == 0, result.output
     assert _says(result.output, "opus-bedrock (kind=bedrock): AWS credentials")
     assert _says(result.output, "the pre-flight makes no request")
+    # ... and WHEN it would land, so the note is a bound rather than an open-ended caveat.
+    assert _says(result.output, "lands in the first 1 cell(s) of the sweep")
     assert seams.world_model.tasks == ["task tr-010"]  # the sweep did run
 
 

@@ -173,7 +173,12 @@ def sweep(
     SDK and resolves credentials locally. So a candidate that could never be called is a usage
     error at the boundary, not a mid-sweep abort with earlier candidates already paid for. Two
     things stay first-cell failures because seeing them needs a request (bedrock AWS credentials,
-    tinker service reachability); the pre-flight names them per entry when the pool has one.
+    tinker service reachability); the pre-flight names them per entry when the pool has one. The
+    sweep then bounds what one of those costs before it is SEEN: cells run candidate-minor, so
+    every candidate's first cell runs before any candidate's second, a first-cell failure lands
+    in the first N cells of an N-candidate pool, and the command calls it out there. Nothing is
+    aborted (a single throttle is not a dead backend, and the paid cells carry the diagnosis), so
+    stopping is the operator's call: Ctrl-C, fix the entry, sweep again.
 
     Fit-readiness is a coverage contract, not a nonzero count. A cell goes unscored when its
     episode errored (provider throttle, agent crash, judge failure), both fitters SKIP unscored
@@ -273,6 +278,7 @@ def sweep(
         f"scenario(s) of [bold]{escape(model_dir.name)}[/bold], {episodes} episode(s) each…"
     )
     done = itertools.count(1)
+    started: set[str] = set()
 
     def _on_outcome(outcome: ScenarioOutcome) -> None:
         reward = "unscored" if outcome.reward is None else f"{outcome.reward:.2f}"
@@ -281,6 +287,20 @@ def sweep(
             f"ep{outcome.episode}: reward={reward} ${outcome.cost_usd:.5f} "
             f"steps={outcome.steps}"
         )
+        first_cell = outcome.model not in started
+        started.add(outcome.model)
+        if first_cell and outcome.error is not None:
+            # `evaluate_pool` runs candidate-minor, so this line is the EARLIEST a failure that
+            # only shows up when a backend is called (the `_DEFERRED_RISK` cases) can be reported,
+            # and it is early enough to be worth acting on. Distinct from the coverage table's
+            # closing note, which explains an all-zero row after the bill is already spent.
+            _console.print(
+                f"  [yellow]warning[/yellow] the FIRST cell of {escape(outcome.model)} failed: "
+                f"{escape(outcome.error)}\n"
+                "    the sweep keeps going (one throttled call costs one cell), but if the cause "
+                "is permanent every remaining cell of this candidate is lost too: stop with "
+                "Ctrl-C, fix its pool entry, and sweep again"
+            )
 
     # Frozen for the whole sweep (the `wmo.evals.closed_loop` precedent): without it a
     # candidate's PREDICTED steps enter the shared retrieval buffer and become demos for the next
@@ -371,7 +391,9 @@ def _check_pool_backends(pool: ModelPool) -> None:
     which would spend money inside a pre-flight whose whole job is to run before any spend is
     authorized, and would make the cost estimate printed next understate what the command had
     already spent. Some backends therefore keep a residual gap (`_DEFERRED_RISK`), and this prints
-    it per entry rather than leaving the operator to discover it mid-sweep.
+    it per entry rather than leaving the operator to discover it mid-sweep, together with WHEN it
+    would land: `evaluate_pool` runs candidate-minor, so a first-cell failure is reported within
+    the first `len(pool.models)` cells whatever `--scenarios` and `--episodes` are.
 
     Every prepared provider is discarded: `evaluate_pool` still builds its own per cell, so
     per-cell provider state (the tinker provider's per-episode prompt history) is unchanged.
@@ -412,6 +434,12 @@ def _check_pool_backends(pool: ModelPool) -> None:
             _console.print(
                 f"  {escape(entry.name)} (kind={entry.kind.value}): {_DEFERRED_RISK[entry.kind]}"
             )
+        _console.print(
+            "  every candidate runs its first cell before any candidate runs its second, so a "
+            f"failure like that lands in the first {len(pool.models)} cell(s) of the sweep and is "
+            "called out there; the sweep does not abort, so stop it yourself if the cause looks "
+            "permanent"
+        )
 
 
 class _CandidateCoverage(BaseModel):

@@ -5,6 +5,10 @@ Each (candidate model, scenario, episode) cell runs one `run_episode` with the c
 `OutcomeMatrix` the routing optimizer fits on and the improvement report cites.
 
 Measurement notes:
+- Cells run candidate-MINOR (scenario, then episode, then candidate), so every candidate runs its
+  Nth cell before any candidate runs its (N+1)th. The order is ours to choose only because the
+  caller freezes the world model (see `evaluate_pool`), and this is the choice that bounds what a
+  backend which can only fail once it is CALLED costs before anyone sees it fail.
 - Latency is measured per POLICY CALL (the candidate's own completions), not per episode: episode
   wall time is dominated by the world model's simulation latency, which production traffic never
   pays, so quoting it would flatter nobody honestly.
@@ -167,12 +171,30 @@ def evaluate_pool(
     and never abort the sweep. `on_outcome` fires after each cell for progress display; a
     callback that raises is logged and ignored, since a broken progress pipe must not throw away
     the cells already paid for.
+
+    Cells run candidate-MINOR: scenario, then episode, then candidate. Every candidate therefore
+    runs its Nth cell before any candidate runs its (N+1)th, which is what bounds a backend that
+    can only fail once it is CALLED. Bedrock with no AWS credentials is the measured example
+    (boto3 walks a credential chain that reaches the instance-metadata endpoint over the network
+    and builds a client with no credentials at all, so no request-free pre-flight can see it):
+    that candidate now surfaces through `on_outcome` after one cell per earlier candidate,
+    instead of after every earlier candidate has run every one of its cells. Its own remaining
+    cells still run, because one throttled call is not a dead backend and the paid cells are the
+    diagnosis either way; a caller that wants to stop watches `on_outcome`.
+
+    ORDER SAFETY: which order to run cells in is only ours to choose while the environment cannot
+    LEARN between them. `wmo optimize route sweep` wraps this whole call in
+    `world_model.frozen()`, which suspends index enrichment and knowledge writes, so no cell's
+    predicted steps become another cell's retrieved demos and the matrix is the same whatever
+    order produced it. Against an enriching env the scores are order-dependent either way, and
+    this order changes which cells feed which: freeze the model, or open its sessions with
+    `enrich=False`.
     """
     outcomes: list[ScenarioOutcome] = []
-    for entry in pool.models:
-        for scenario in scenarios:
-            sid = scenario_id(scenario)
-            for episode in range(episodes_per_scenario):
+    for scenario in scenarios:
+        sid = scenario_id(scenario)
+        for episode in range(episodes_per_scenario):
+            for entry in pool.models:
                 timed = _TimedProvider(provider_factory(entry))
                 agent = LLMAgent(timed, temperature=agent_temperature, tools_hint=tools_hint)
                 env = env_factory()

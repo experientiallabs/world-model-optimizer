@@ -180,6 +180,66 @@ def test_proposer_materializes_history_stages_seed_and_returns_one_candidate(
     assert json.loads((slot_dir / "status.json").read_text(encoding="utf-8"))["valid"] is True
 
 
+def test_materialized_history_carries_telemetry_into_report_manifest_and_request(
+    tmp_path: Path,
+) -> None:
+    """Per-task telemetry lands in report.json cells, the candidate aggregate lands in both
+    report.json and the manifest beside the harness caps, and REQUEST.md tells the proposer to
+    use it."""
+    trial = tmp_path / "harbor" / "wmh-tele" / "t1__trial"
+    (trial / "agent").mkdir(parents=True)
+    (trial / "agent" / "wmh-run.json").write_text('{"steps": []}', encoding="utf-8")
+    tree = _tree("seed")
+    doc = tree.to_doc("candidate-0000")
+    report = ScoreReport(
+        doc_hash=doc.doc_hash,
+        request=ScoreRequest(task_ids=("t1",), attempts=1),
+        reward_mode="positive-binary",
+        cells=(
+            ScoreCell(
+                task_id="t1",
+                attempt=1,
+                reward=1.0,
+                passed=True,
+                artifact_dir=str(trial),
+                turns=20,
+                calls=20,
+                input_tokens=8000,
+                output_tokens=300,
+                stop_reason="max_turns",
+                hit_turn_cap=True,
+                hit_timeout=False,
+            ),
+        ),
+    )
+    seed = EvaluatedCandidate("candidate-0000", tree, report)
+    project = _FakeProject([_tree("improved")])
+
+    _proposer([project], tmp_path / "run").propose((seed,), slot=1)
+
+    report_json = json.loads(project.files["history/candidate-0000/report.json"])
+    [cell] = report_json["cells"]
+    assert cell["turns"] == 20
+    assert cell["output_tokens"] == 300
+    assert cell["stop_reason"] == "max_turns"
+    assert cell["hit_turn_cap"] is True
+    # The candidate-level aggregate sits beside the harness's own caps for direct comparison.
+    telemetry = report_json["telemetry"]
+    assert telemetry["n_with_telemetry"] == 1
+    assert telemetry["turn_cap_hit_rate"] == 1.0
+    assert telemetry["output_tokens_p90"] == 300
+    assert telemetry["max_turns"] == doc.max_turns()
+    assert telemetry["max_output_tokens"] == doc.max_output_tokens()
+    manifest = json.loads(project.files["history/manifest.json"])
+    assert manifest["candidates"][0]["telemetry"] == telemetry
+    # The prompt tells the proposer these fields exist and how to read them.
+    request = project.run_calls[0].instruction
+    assert "telemetry" in request
+    assert "turn_cap_hit_rate" in request
+    assert "output_tokens_p90" in request
+    assert "max_output_tokens" in request
+
+
 def test_missing_submit_consumes_the_slot_with_persisted_evidence(tmp_path: Path) -> None:
     project = _FakeProject([_tree("improved")])
     project.emit_submit = False

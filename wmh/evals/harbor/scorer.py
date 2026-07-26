@@ -22,6 +22,7 @@ Two operational behaviors matter most here:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
 import shutil
@@ -31,7 +32,7 @@ from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol, Self
+from typing import Literal, Protocol, Self, TypedDict
 
 from harbor import Job
 from harbor.models.agent.name import AgentName
@@ -51,6 +52,7 @@ from wmh.evals.harbor.e2b_template_policy import WMH_HARBOR_E2B_ENVIRONMENT_IMPO
 from wmh.evals.harbor.tasks import resolve_harbor_tasks
 from wmh.harness.doc import HarnessDoc
 from wmh.harness.e2b_sandbox import resolve_e2b_template
+from wmh.harness.project_proposer import TRIAL_AGENT_DIR, WMH_RUN_FILENAME
 from wmh.harness.runtime import (
     DEFAULT_EVAL_EPISODE_TIMEOUT_S,
     HarnessSearchCancelled,
@@ -433,19 +435,23 @@ class HarborScorer:
         if wrong_counts:
             raise ValueError(f"harbor task matrix is incomplete: counts={wrong_counts}")
 
+        max_turns = doc.max_turns()
         cells: list[ScoreCell] = []
         for task_id in self._task_ids:
             trials = sorted(grouped[task_id], key=lambda trial: trial.trial_name)
             for attempt, trial in enumerate(trials, 1):
                 reward = _official_reward(trial, reward_key=self._reward_key)
+                trial_dir = run.job_dir / trial.trial_name
+                telemetry = _trial_telemetry(trial, trial_dir, max_turns=max_turns)
                 cells.append(
                     ScoreCell(
                         task_id=task_id,
                         attempt=attempt,
                         reward=reward,
                         passed=reward_passed(reward, self._reward_mode),
-                        artifact_dir=str(run.job_dir / trial.trial_name),
+                        artifact_dir=str(trial_dir),
                         note=_trial_note(trial),
+                        **telemetry,
                     )
                 )
         return ScoreReport(
@@ -655,3 +661,86 @@ def _official_reward(trial: TrialResult, *, reward_key: str) -> float:
 def _trial_note(trial: TrialResult) -> str:
     exception = trial.exception_info
     return "completed" if exception is None else f"completed with {exception.exception_type}"
+
+
+# Stop-reason markers a WMH transcript writes when the episode was cut short by a timeout: the
+# harbor agent-timeout cancellation marker and the max-turns sentinel are both interesting to the
+# proposer. See wmh/evals/harbor/agent.py (_CANCELLED_STOP_REASON) and StopReason.
+_TIMEOUT_STOP_REASON_SUBSTRINGS = ("timeout", "cancelled")
+# Exception types that mean the WMH episode itself timed out (harbor's agent timeout), distinct
+# from the verifier-outcome exceptions scored 0 above.
+_TIMEOUT_EXCEPTIONS = frozenset({"AgentTimeoutError", "TimeoutError"})
+
+
+class _TrialTelemetry(TypedDict):
+    """The optional per-episode telemetry fields projected onto one ScoreCell."""
+
+    turns: int | None
+    calls: int | None
+    input_tokens: int | None
+    output_tokens: int | None
+    stop_reason: str
+    hit_turn_cap: bool
+    hit_timeout: bool
+
+
+def _trial_telemetry(trial: TrialResult, trial_dir: Path, *, max_turns: int) -> _TrialTelemetry:
+    """Best-effort per-episode token telemetry from the trial's WMH transcript.
+
+    Non-fatal by contract: a missing, absent, or unparseable wmh-run.json (or one without
+    worker_usage) leaves every field defaulted and never raises, so a broken transcript cannot
+    break scoring. Reading it is the only new I/O in the projection, and it is cheap relative to
+    the harbor job that produced it.
+    """
+    telemetry: _TrialTelemetry = {
+        "turns": None,
+        "calls": None,
+        "input_tokens": None,
+        "output_tokens": None,
+        "stop_reason": "",
+        "hit_turn_cap": False,
+        "hit_timeout": False,
+    }
+    transcript_path = trial_dir / TRIAL_AGENT_DIR / WMH_RUN_FILENAME
+    try:
+        raw = json.loads(transcript_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        # No transcript, or unreadable/invalid JSON: leave defaults and mark a timeout from the
+        # trial exception alone, so a cancelled episode with a lost transcript still reports it.
+        telemetry["hit_timeout"] = _exception_is_timeout(trial)
+        return telemetry
+    if not isinstance(raw, dict):
+        telemetry["hit_timeout"] = _exception_is_timeout(trial)
+        return telemetry
+
+    turns = _as_optional_int(raw.get("turns"))
+    telemetry["turns"] = turns
+    stop_reason = raw.get("stop_reason")
+    telemetry["stop_reason"] = stop_reason if isinstance(stop_reason, str) else ""
+    usage = raw.get("worker_usage")
+    if isinstance(usage, dict):
+        telemetry["calls"] = _as_optional_int(usage.get("calls"))
+        telemetry["input_tokens"] = _as_optional_int(usage.get("input_tokens"))
+        telemetry["output_tokens"] = _as_optional_int(usage.get("output_tokens"))
+    telemetry["hit_turn_cap"] = turns is not None and turns >= max_turns
+    telemetry["hit_timeout"] = _stop_reason_is_timeout(telemetry["stop_reason"]) or (
+        _exception_is_timeout(trial)
+    )
+    return telemetry
+
+
+def _as_optional_int(value: object) -> int | None:
+    """Coerce a transcript field to a nonnegative int, or None when it is not one."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _stop_reason_is_timeout(stop_reason: str) -> bool:
+    lowered = stop_reason.lower()
+    return any(marker in lowered for marker in _TIMEOUT_STOP_REASON_SUBSTRINGS)
+
+
+def _exception_is_timeout(trial: TrialResult) -> bool:
+    exception = trial.exception_info
+    return exception is not None and exception.exception_type in _TIMEOUT_EXCEPTIONS

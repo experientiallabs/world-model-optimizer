@@ -49,8 +49,13 @@ PROPOSALS_DIR = "proposals"
 DEFAULT_CANDIDATE_HISTORY_BYTES = 256 * 1024 * 1024
 # Per-file cap before head/tail truncation (transcripts keep both ends plus a marker).
 DEFAULT_HISTORY_FILE_BYTES = 2 * 1024 * 1024
-_WMH_RUN_FILENAME = "wmh-run.json"
-_TRIAL_AGENT_DIR = "agent"
+# The harbor trial layout the proposer and the scorer both read: the WMH transcript lives at
+# `<trial>/<TRIAL_AGENT_DIR>/<WMH_RUN_FILENAME>`. Shared (not duplicated) so telemetry extraction
+# in the scorer and evidence materialization here can never drift onto divergent literals.
+TRIAL_AGENT_DIR = "agent"
+WMH_RUN_FILENAME = "wmh-run.json"
+_WMH_RUN_FILENAME = WMH_RUN_FILENAME
+_TRIAL_AGENT_DIR = TRIAL_AGENT_DIR
 _TRIAL_VERIFIER_DIR = "verifier"
 
 
@@ -284,9 +289,17 @@ class ProjectCandidateProposer:
                         "passed": cell.passed,
                         "note": cell.note,
                         "trial_dir": trial_dir,
+                        "turns": cell.turns,
+                        "calls": cell.calls,
+                        "input_tokens": cell.input_tokens,
+                        "output_tokens": cell.output_tokens,
+                        "stop_reason": cell.stop_reason,
+                        "hit_turn_cap": cell.hit_turn_cap,
+                        "hit_timeout": cell.hit_timeout,
                     }
                 )
                 budget = self._copy_trial_evidence(project, trial_dir, cell, budget)
+            telemetry = _candidate_telemetry(evaluated)
             project.write_text(
                 f"{directory}/report.json",
                 _json(
@@ -296,6 +309,7 @@ class ProjectCandidateProposer:
                         "pass_rate": report.pass_rate,
                         "reward_mode": report.reward_mode,
                         "attempts": report.request.attempts,
+                        "telemetry": telemetry,
                         "cells": cells,
                     }
                 ),
@@ -309,6 +323,7 @@ class ProjectCandidateProposer:
                         task_id: sum(1 for cell in cells_ if cell.passed) / len(cells_)
                         for task_id, cells_ in report.by_task().items()
                     },
+                    "telemetry": telemetry,
                     "source_dir": f"{directory}/source",
                     "report": f"{directory}/report.json",
                     "trials_dir": f"{directory}/trials",
@@ -526,6 +541,17 @@ transcript for that trial; `verifier/` holds the verifier's own output). Earlier
 traces, including failed ones, remain under `{PROPOSALS_DIR}/`. {previous_trace} Use the full
 population as evidence.
 
+Each candidate's `manifest.json` entry and its `history/<candidate>/report.json` carry per-task
+token telemetry (turns, calls, input/output tokens, stop_reason, hit_turn_cap, hit_timeout) and a
+candidate-level `telemetry` aggregate (`turn_cap_hit_rate`, `timeout_rate`, token medians,
+`output_tokens_p90`) beside the harness's own `max_turns` and `max_output_tokens` caps. Use it to
+decide which settings actually change behavior: a high `turn_cap_hit_rate` means episodes are
+running out of turns, so raising `max_turns` can help; an `output_tokens_p90` far below
+`max_output_tokens` means that cap is not the bottleneck, so leave it alone; a high
+`input_tokens_median` with a rising `timeout_rate` means context is bloating, so trim or manage
+context rather than only adding turns. Telemetry is absent (`n_with_telemetry` is 0 or a field is
+null) for trials whose transcript was missing or unparseable; treat those as no signal.
+
 Your only candidate output is this directory:
 `{stage_dir}`
 
@@ -553,6 +579,31 @@ for a repair.
 
 This turn's immutable request and trace are stored under `{PROPOSALS_DIR}/slot-{slot:04d}/`.
 """
+
+
+def _candidate_telemetry(evaluated: EvaluatedCandidate) -> dict[str, JsonValue]:
+    """The candidate's token-telemetry aggregate paired with the caps it should be compared to.
+
+    Pairing `output_tokens_p90`/`turn_cap_hit_rate` with the harness's own `max_output_tokens`
+    and `max_turns` lets the proposer read straight off one block whether a cap is binding: an
+    output p90 far below max_output_tokens means that cap is not the bottleneck, while a high
+    turn-cap-hit-rate means raising max_turns can move behavior. Deriving the caps reparses the
+    candidate source; a malformed doc is not this feedback's job to surface, so fall back to the
+    summary alone (the caps also live in each candidate's materialized config.toml).
+    """
+    summary = dict(evaluated.report.telemetry_summary())
+    try:
+        doc = evaluated.candidate
+        summary["max_turns"] = doc.max_turns()
+        summary["max_output_tokens"] = doc.max_output_tokens()
+    except (TypeError, ValueError):
+        logger.warning(
+            "could not derive caps for candidate %s telemetry; the summary omits them "
+            "(caps still live in the candidate's config.toml)",
+            evaluated.candidate_id,
+            exc_info=True,
+        )
+    return summary
 
 
 def _json(value: JsonValue) -> str:

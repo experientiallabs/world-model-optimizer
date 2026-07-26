@@ -14,10 +14,10 @@ passed iff its raw reward is strictly positive; `raw` counts it passed iff the r
 from __future__ import annotations
 
 from collections.abc import Callable
-from statistics import fmean
+from statistics import fmean, median
 from typing import Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 from wmh.core.text import validate_durable_text
 from wmh.harness.doc import HarnessDoc
@@ -33,6 +33,14 @@ def reward_passed(reward: float, mode: RewardMode) -> bool:
     if mode == "raw":
         return reward == 1.0
     return reward > 0.0
+
+
+def _p90(values: list[int]) -> int:
+    """The 90th-percentile value by nearest-rank (deterministic, no interpolation)."""
+    ordered = sorted(values)
+    # Nearest-rank: rank ceil(0.9 * n), 1-indexed, clamped into the sample.
+    rank = -(-9 * len(ordered) // 10)  # ceil(0.9 * n) via ceil-division
+    return ordered[min(max(rank, 1), len(ordered)) - 1]
 
 
 class ScoreRequest(BaseModel):
@@ -80,6 +88,20 @@ class ScoreCell(BaseModel):
     # A short diagnostic, e.g. "completed with AgentTimeoutError". A trial that failed but still
     # produced a verifier reward is a candidate outcome, and the note says why it looks that way.
     note: str = Field(default="", max_length=MAX_CELL_NOTE_CHARS)
+    # Optional per-episode token telemetry lifted from the trial's WMH transcript. All fields are
+    # best-effort and default when no transcript exists or it cannot be parsed, so every existing
+    # construction and the `.score`/`.pass_rate` contract stay unchanged. The proposer reads these
+    # to tell which harness settings (turn cap, output cap, context size) actually change behavior.
+    turns: int | None = None
+    calls: int | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    # The episode's stop reason (e.g. "submitted", "max_turns", "cancelled-by-harbor-timeout").
+    stop_reason: str = Field(default="", max_length=MAX_CELL_NOTE_CHARS)
+    # True when the episode reached the scored doc's turn cap (a lever raising max_turns can move).
+    hit_turn_cap: bool = False
+    # True when the episode was cancelled by a harbor agent timeout or carried a timeout exception.
+    hit_timeout: bool = False
 
     @field_validator("attempt", mode="before")
     @classmethod
@@ -146,6 +168,32 @@ class ScoreReport(BaseModel):
         return {
             task_id: tuple(cell for cell in self.cells if cell.task_id == task_id)
             for task_id in self.request.task_ids
+        }
+
+    def telemetry_summary(self) -> dict[str, JsonValue]:
+        """Candidate-level token telemetry aggregated over cells that carry it.
+
+        Deterministic and pure: it only reads the cells' populated telemetry fields (a cell with
+        `turns is None` contributed no transcript and is skipped). Returns
+        `{"n_with_telemetry": 0}` when no cell has telemetry, so a caller can always distinguish
+        "no signal" from a real aggregate rather than guessing from an empty dict. This is the
+        "impossible to miss" signal the proposer reads to decide which harness caps are binding:
+        a high `turn_cap_hit_rate` means raising max_turns will help, while an `output_tokens_p90`
+        far below the harness's max_output_tokens means that cap is not the bottleneck.
+        """
+        cells = [cell for cell in self.cells if cell.turns is not None]
+        n = len(cells)
+        if n == 0:
+            return {"n_with_telemetry": 0}
+        input_tokens = [cell.input_tokens for cell in cells if cell.input_tokens is not None]
+        output_tokens = [cell.output_tokens for cell in cells if cell.output_tokens is not None]
+        return {
+            "n_with_telemetry": n,
+            "turn_cap_hit_rate": fmean(1.0 if cell.hit_turn_cap else 0.0 for cell in cells),
+            "timeout_rate": fmean(1.0 if cell.hit_timeout else 0.0 for cell in cells),
+            "input_tokens_median": median(input_tokens) if input_tokens else None,
+            "output_tokens_median": median(output_tokens) if output_tokens else None,
+            "output_tokens_p90": _p90(output_tokens) if output_tokens else None,
         }
 
 

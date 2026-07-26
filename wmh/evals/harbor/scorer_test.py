@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import subprocess
 import sys
 import threading
@@ -99,10 +100,17 @@ def _trial(
 
 
 class _Runner:
-    """Materializes trial dirs under the candidate's deterministic job dir, like harbor."""
+    """Materializes trial dirs under the candidate's deterministic job dir, like harbor.
 
-    def __init__(self, trials: list[TrialResult]) -> None:
+    `transcripts` maps a trial name to the exact `agent/wmh-run.json` bytes harbor would have
+    written for that episode; unlisted trials get no transcript (the common no-telemetry case).
+    """
+
+    def __init__(
+        self, trials: list[TrialResult], *, transcripts: dict[str, str] | None = None
+    ) -> None:
         self.trials = trials
+        self.transcripts = transcripts or {}
         self.configs: list[JobConfig] = []
 
     def run(
@@ -118,6 +126,11 @@ class _Runner:
             trial_dir = job_dir / trial.trial_name
             trial_dir.mkdir(parents=True, exist_ok=True)
             (trial_dir / "result.json").write_text(trial.model_dump_json(), encoding="utf-8")
+            transcript = self.transcripts.get(trial.trial_name)
+            if transcript is not None:
+                agent_dir = trial_dir / "agent"
+                agent_dir.mkdir(parents=True, exist_ok=True)
+                (agent_dir / "wmh-run.json").write_text(transcript, encoding="utf-8")
         now = datetime.now(UTC)
         result = JobResult(
             id=_JOB_ID,
@@ -138,8 +151,9 @@ def _scorer(
     attempts: int = 1,
     reward_mode: RewardMode = "raw",
     agent_concurrency: int | None = None,
+    transcripts: dict[str, str] | None = None,
 ) -> tuple[HarborScorer, _Runner]:
-    runner = _Runner(trials)
+    runner = _Runner(trials, transcripts=transcripts)
     scorer = HarborScorer(
         job_template=_job_template(tmp_path),
         tasks=_tasks(tmp_path, task_ids),
@@ -253,6 +267,110 @@ def test_positive_binary_mode_passes_on_any_positive_reward_and_keeps_raw_values
     assert cell.reward == 0.25  # raw reward untouched
     assert cell.passed is True
     assert report.score == 0.5
+
+
+def _trial_name(task_id: str, attempt: int) -> str:
+    return f"{task_id}__{_SUFFIXES[attempt - 1]}"
+
+
+def test_scorer_populates_telemetry_from_the_wmh_transcript(tmp_path: Path) -> None:
+    """Turns/calls/tokens/stop_reason lift from agent/wmh-run.json; hit_turn_cap fires when the
+    episode reached the scored doc's cap and hit_timeout on a harbor-timeout stop_reason."""
+    candidate = HarnessDoc.baseline("candidate")  # baseline max_turns == 20
+    trials = [
+        _trial(tmp_path, "task-a", 1, reward=1.0),
+        _trial(tmp_path, "task-b", 1, reward=0.0, exception="AgentTimeoutError"),
+    ]
+    transcripts = {
+        # A clean submitted episode well under the turn cap.
+        _trial_name("task-a", 1): json.dumps(
+            {
+                "task_id": "task-a",
+                "stop_reason": "submitted",
+                "turns": 7,
+                "worker_usage": {"input_tokens": 1200, "output_tokens": 340, "calls": 7},
+            }
+        ),
+        # A timed-out partial episode that reached the turn cap.
+        _trial_name("task-b", 1): json.dumps(
+            {
+                "task_id": "task-b",
+                "stop_reason": "cancelled-by-harbor-timeout",
+                "turns": 20,
+                "partial": True,
+                "worker_usage": {"input_tokens": 9000, "output_tokens": 512, "calls": 20},
+            }
+        ),
+    }
+    scorer, _runner = _scorer(tmp_path, trials, transcripts=transcripts)
+
+    report = scorer.score(candidate)
+
+    clean = report.by_task()["task-a"][0]
+    assert clean.turns == 7
+    assert clean.calls == 7
+    assert clean.input_tokens == 1200
+    assert clean.output_tokens == 340
+    assert clean.stop_reason == "submitted"
+    assert clean.hit_turn_cap is False
+    assert clean.hit_timeout is False
+
+    timed_out = report.by_task()["task-b"][0]
+    assert timed_out.turns == 20
+    assert timed_out.hit_turn_cap is True  # turns >= baseline max_turns (20)
+    assert timed_out.hit_timeout is True  # cancelled-by-harbor-timeout stop_reason
+    assert timed_out.input_tokens == 9000
+
+    # The candidate-level aggregate is now computable straight off the report.
+    summary = report.telemetry_summary()
+    assert summary["n_with_telemetry"] == 2
+    assert summary["turn_cap_hit_rate"] == pytest.approx(0.5)
+    assert summary["timeout_rate"] == pytest.approx(0.5)
+
+
+def test_missing_or_unparseable_transcript_is_non_fatal_and_defaults_telemetry(
+    tmp_path: Path,
+) -> None:
+    """A missing/unparseable wmh-run.json must never break scoring: the cell scores normally with
+    every telemetry field defaulted (turns None, flags False), and the aggregate is empty."""
+    candidate = HarnessDoc.baseline("candidate")
+    trials = [
+        _trial(tmp_path, "task-a", 1, reward=1.0),  # no transcript at all
+        _trial(tmp_path, "task-b", 1, reward=0.0),  # unparseable transcript
+    ]
+    transcripts = {_trial_name("task-b", 1): "{not valid json"}
+    scorer, _runner = _scorer(tmp_path, trials, transcripts=transcripts)
+
+    report = scorer.score(candidate)  # must not raise
+
+    assert report.score == pytest.approx(0.5)  # scoring unaffected
+    for cell in report.cells:
+        assert cell.turns is None
+        assert cell.calls is None
+        assert cell.input_tokens is None
+        assert cell.output_tokens is None
+        assert cell.stop_reason == ""
+        assert cell.hit_turn_cap is False
+        assert cell.hit_timeout is False
+    assert report.telemetry_summary() == {"n_with_telemetry": 0}
+
+
+def test_timeout_exception_marks_hit_timeout_even_without_a_transcript(tmp_path: Path) -> None:
+    """A cancelled episode whose transcript was lost still reports hit_timeout from the trial
+    exception alone, so timeout pressure is not silently dropped."""
+    candidate = HarnessDoc.baseline("candidate")
+    trials = [
+        _trial(tmp_path, "task-a", 1, reward=0.0, exception="AgentTimeoutError"),
+        _trial(tmp_path, "task-b", 1, reward=1.0),
+    ]
+    scorer, _runner = _scorer(tmp_path, trials)  # no transcripts written
+
+    report = scorer.score(candidate)
+
+    timed_out = report.by_task()["task-a"][0]
+    assert timed_out.turns is None  # no transcript, so no turn/token telemetry
+    assert timed_out.hit_timeout is True  # inferred from the AgentTimeoutError exception
+    assert report.by_task()["task-b"][0].hit_timeout is False
 
 
 def test_entry_prunes_only_unscoreable_trial_dirs(tmp_path: Path) -> None:

@@ -71,6 +71,112 @@ Track prerequisite discovered: the tracker-side cost path (wmh/tracking/pricing.
 no cache tiers and cache writes are captured nowhere (the pool/serving path is correct).
 C3 item 0; no savings number ships before it lands.
 
+## Joint (compression x routing) policy: C2 pre-registration (2026-07-25, updated 2026-07-26)
+
+Full pre-registration with all thresholds: wmh-compression-data/findings/c2.md
+(registered before any measurement; no bar weakens after results, only reported
+against). C2 designs now and runs through C1's acceptance benchmark when it lands.
+
+Central design decision: C2's live spend buys, per corpus, one COMPRESSION-AUGMENTED
+outcome matrix (cells = scenario x model x method x aggressiveness, 2 episodes/cell,
+captured via the acceptance benchmark's CompressingProvider entry point). Once dense,
+every joint-policy question is offline lookup, the routing program's matrix trick
+extended by a compression axis: interaction curves are row reads, the guarded
+per-cluster aggressiveness sweep replays by lookup, joint-vs-independent is
+joint-argmax vs composed-argmax on the same cells, and the ordering ablation only
+needs live episodes where the routing decision or aggressiveness actually differs.
+Budget scales with models x arms x scenarios, not with the number of questions.
+
+The four pre-registered questions, each paired-by-seed (5 seeds) vs BOTH baselines
+(B1 = fable-5 alone uncompressed, the serving contract's fallback; B2 = the served knn
+champion of #259 at aggressiveness 0), power rule 3+ seeds AND 30+ test scenarios:
+
+1. INTERACTION (do cheap models degrade faster?): 4 models spanning strength and price
+   across 2 families (fable-5, sonnet-5, gpt-5.4-mini, glm-5.2; pilot runs 3) x
+   aggressiveness {0, low, mid, high} on the ACHIEVED-token-ratio axis x the best
+   surviving method per family, on financebench-s80 + one verbatim-critical-ish corpus.
+   Divergence claim needs the cheap-tier slope steeper on 4/5 seeds beyond its seed
+   spread AND a joint-vs-independent policy-value gap clearing its spread; otherwise
+   the finding IS the parallel-curves simplification (joint degenerates to independent
+   choices). Kill bar aligned with C1: loses to truncation at matched achieved ratio =
+   dead in that corpus.
+2. ORDERING (compress-then-route vs route-then-compress): the served router embeds the
+   request, so compression can shift the neighborhood. Round 0 is offline and near
+   free: routing-decision churn per (method, aggressiveness) = % of requests whose
+   routed model flips when knn_decision sees compressed text, plus churn direction
+   (cheaper vs pricier), novelty-floor trip-rate change (the floor quantile was
+   calibrated on raw self-similarities), and a bank-refit-on-compressed-text variant.
+   Recommendation to beat stays compress-then-route; route-then-compress wins only by
+   beating it paired on 4/5 seeds at equal or lower cost.
+3. PER-CLUSTER AGGRESSIVENESS, guarded like routing: clusters = the knn bank's
+   neighborhoods (no new clustering). Deviating from aggressiveness 0 requires paired
+   per-neighbor fit-side evidence clearing a non-inferiority z-test on the routed
+   model (tol in {0, judge-noise floor}; risk-coverage curve per #259's floor-q
+   methodology); the fallback IS uncompressed, mirroring the fable contract. Mechanism
+   claim, thresholds registered: >= 90% of ex-ante verbatim-critical requests get
+   aggressiveness 0 WITHOUT hand rules while >= 30% of headroom requests get > 0; if
+   either fails, hand risk rules keyed to the long-tail categories are the fallback
+   design, stated as such.
+4. CACHE BREAK-EVEN: with cache reads ~0.1x and writes ~1.25x, the hit-rate crossover
+   is rho_cross(r) = (1.25 - 1/r) / 1.15, i.e. ~0.65 at r=2 and ~0.91 at r=5, so the
+   rule is expected segment-scoped, never global. Deliverable: the serving decision
+   rule (candidate to beat: compress turn-local segments only when an incumbent
+   conversation exists; full compression only on cold conversations with projected
+   reuse below crossover), validated on conversation streams replayed from real
+   transcripts through a per-model prefix-cache simulator with #248's affinity
+   fingerprints. Zero live episodes (caching does not touch accuracy). Labeled a
+   pinned-meter projection until C3's pricing cache tiers land; nothing ships before.
+
+C1 round-0 consequences folded in (2026-07-26): the C2 grid draws only from bar-1
+survivors (fixed-threshold variants, head-truncate, dedup-keep-first,
+per-turn-truncate-at-append, json-minify); percentile-selection and rolling-mask
+methods enter only as segment-scoped arms under Q4's rule, never on cacheable
+prefixes. Hosted arm cut per Silen's ruling: the ordering/churn grid is
+open-source-only. Controls match ACHIEVED token ratio per corpus (C1 caveat 6).
+Q4's replay streams inherit C1's caveat 5: stored transcripts carry replies without
+environment observations, so simulated savings understate tool-log mass; the rule's
+thresholds get restated on live-episode transcripts once the acceptance benchmark
+produces them.
+
+Live budget envelope (master approval gates every round): pilot = 3 models x (best
+method x 3 levels + 2 matched-ratio controls) x financebench-s80 x 2 episodes, approx
+$265; worst-case C2 total approx $1,600, shrinking with every C1 kill. Open questions
+to Silen (Q-A model subset, Q-B verbatim corpus: tau-bench-s80 recommended over
+swe-25, Q-C reuse stored s80 matrices as the aggressiveness-0 arm gated on a
+10-scenario recapture probe, Q-D derive the break-even rule now vs after C3) are in
+findings/c2.md with recommendations and steelmen.
+
+### C2 round 0 results (2026-07-26, offline legs, ~$3 embeddings, no wm serve spend)
+
+Q4 CACHE BREAK-EVEN (replay of C1's 120 audit conversations through a prefix-cache
+cost model, C1's measured ratio/churn per method, C3's tiers): within-conversation
+prefix share on OUR transcripts is 0.72-0.87 (first first-party number); full
+recompression with any churny method is a measured NET LOSS on cached providers (17
+of 25 cells above 1.0x, up to 2.65x the input cost of not compressing, every cell
+consistent with the bound churn < (c_r/(c_w-c_r))(1/r - 1)); turn-local commit heals
+all of them below 1.0x; append-stable compression multiplies both cache tiers by r,
+so the literature's compress-OR-cache dichotomy dissolves for stable compressors.
+SERVING RULE proposed: scope by measured append churn, never by conversation state;
+churn-zero methods compress everything, churn>0 methods compress turn-local only.
+The pre-registered candidate rule (cold-vs-incumbent) is BEATEN and retired.
+
+Q2 ORDERING round 0 (churn of the served #259 champion under compressed queries,
+5 seeds; ours9 full power, s80 rows candidates): 20-30% of ours9 decisions change at
+mid aggressiveness, and the mechanism is ABSTENTION, not misrouting: the novelty
+floor (calibrated on raw self-similarities) trips 10-13x more often and route-away
+collapses (0.58 -> 0.18-0.48; tau 0.41 -> 0.00 at high), so naive compress-then-route
+silently turns routing off and pays +11-41% routing-channel cost at flat-to-negative
+accuracy (matrix-lookup value; execution channel awaits the live grid). Refitting
+bank + floor on the SAME compressed representation restores floor trips and cost with
+accuracy within noise at low/mid aggressiveness (exception, full power: selective-
+context-absolute loses 0/5 on ours9 even refit). Random removal churns like the
+learned methods at matched ratio. Verdict: the ordering question's real content is
+REPRESENTATION CONSISTENCY: the compression config becomes part of the routing
+artifact's version (bank fitted under (X, a) serves only behind (X, a)); D-COMPRESS
+seam requirement proposed to master. Full detail: findings/c2.md; 781 run records in
+runs/c2.jsonl; scripts c2_churn_variants.py / c2_churn_measure.py /
+c2_cache_breakeven.py on this branch.
+
 ## Verdicts
 
 ### Round 0: the append-stability audit (C1, 2026-07-25, $0, no API calls)

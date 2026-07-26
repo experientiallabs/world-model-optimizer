@@ -19,7 +19,11 @@ from wmh.harness import project_proposer
 from wmh.harness.doc import HarnessDoc
 from wmh.harness.live_session import SessionEvent
 from wmh.harness.population import CandidateProposalError, EvaluatedCandidate
-from wmh.harness.project_proposer import ProjectCandidateProposer
+from wmh.harness.project_proposer import (
+    DEFAULT_CANDIDATE_HISTORY_BYTES,
+    DEFAULT_HISTORY_FILE_BYTES,
+    ProjectCandidateProposer,
+)
 from wmh.harness.runtime import TokenUsage
 from wmh.harness.scoring import ScoreCell, ScoreReport, ScoreRequest
 from wmh.harness.source_tree import HarnessSourceFile, HarnessSourceTree
@@ -126,14 +130,19 @@ def _seed_with_trial(tmp_path: Path) -> EvaluatedCandidate:
 
 
 def _proposer(
-    projects: list[_FakeProject], run_dir: Path, **kwargs: int
+    projects: list[_FakeProject],
+    run_dir: Path,
+    *,
+    max_candidate_history_bytes: int = DEFAULT_CANDIDATE_HISTORY_BYTES,
+    max_history_file_bytes: int = DEFAULT_HISTORY_FILE_BYTES,
 ) -> ProjectCandidateProposer:
     return ProjectCandidateProposer(
         optimizer_agent(),
         _Provider(),
         project_factory=lambda: projects.pop(0),
         run_dir=run_dir,
-        **kwargs,
+        max_candidate_history_bytes=max_candidate_history_bytes,
+        max_history_file_bytes=max_history_file_bytes,
     )
 
 
@@ -178,6 +187,70 @@ def test_proposer_materializes_history_stages_seed_and_returns_one_candidate(
     assert (slot_dir / "REQUEST.md").is_file()
     assert (slot_dir / "source" / "SYSTEM.md").read_text(encoding="utf-8") == "improved"
     assert json.loads((slot_dir / "status.json").read_text(encoding="utf-8"))["valid"] is True
+
+
+def test_directive_appears_in_the_request_and_on_event_forwards(tmp_path: Path) -> None:
+    candidate = _tree("improved")
+    project = _FakeProject([candidate])
+    seed = _seed_with_trial(tmp_path)
+    run_dir = tmp_path / "run"
+    forwarded: list[SessionEvent] = []
+    proposer = ProjectCandidateProposer(
+        optimizer_agent(),
+        _Provider(),
+        project_factory=lambda: project,
+        run_dir=run_dir,
+        directive="the agent should have access to my GitHub",
+        on_event=forwarded.append,
+    )
+
+    proposer.propose((seed,), slot=1)
+
+    request = project.run_calls[0].instruction
+    assert "The user directing this optimization gave the following feedback" in request
+    assert "the agent should have access to my GitHub" in request
+    # The wrapped sink forwards the same events the project emitted to the CLI callback.
+    assert [event.kind for event in forwarded] == ["submit"]
+
+
+def test_on_event_sink_error_never_aborts_the_proposal(tmp_path: Path) -> None:
+    project = _FakeProject([_tree("improved")])
+    seed = _seed_with_trial(tmp_path)
+
+    def boom(_event: SessionEvent) -> None:
+        raise RuntimeError("sink is broken")
+
+    proposer = ProjectCandidateProposer(
+        optimizer_agent(),
+        _Provider(),
+        project_factory=lambda: project,
+        run_dir=tmp_path / "run",
+        on_event=boom,
+    )
+
+    proposal = proposer.propose((seed,), slot=1)
+    assert proposal.candidate_id == "candidate-0001"
+
+
+def test_directive_validation_rejects_oversized_and_non_durable_text(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="exceeds"):
+        ProjectCandidateProposer(
+            optimizer_agent(),
+            _Provider(),
+            project_factory=lambda: _FakeProject([]),
+            run_dir=tmp_path / "run",
+            directive="x" * 20_001,
+        )
+
+
+def test_no_directive_leaves_the_request_free_of_the_feedback_block(tmp_path: Path) -> None:
+    project = _FakeProject([_tree("improved")])
+    seed = _seed_with_trial(tmp_path)
+
+    _proposer([project], tmp_path / "run").propose((seed,), slot=1)
+
+    request = project.run_calls[0].instruction
+    assert "The user directing this optimization" not in request
 
 
 def test_missing_submit_consumes_the_slot_with_persisted_evidence(tmp_path: Path) -> None:

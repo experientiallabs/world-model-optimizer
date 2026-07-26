@@ -387,6 +387,46 @@ def test_load_picks_up_knowledge_dir_and_flags(tmp_path: Path) -> None:
     assert '"reasoning"' in user
 
 
+def test_load_knowledge_dir_override_renders_from_the_temp_dir(tmp_path: Path) -> None:
+    # The bundle's own knowledge/ is empty; a per-run override dir seeds a fact the caller
+    # controls, and that fact (not the bundle) is what renders into the env prompt.
+    root = tmp_path / ".wmh"
+    save_config(
+        HarnessConfig(serve_provider=ProviderKind.BEDROCK, reasoning=True, knowledge=True),
+        root=root,
+    )
+    override = tmp_path / "run-knowledge"
+    KnowledgeBase(override).write_file("foo.md", "- override fact: seeded per run")
+    provider = FakeProvider('{"reasoning": "r", "output": "ok", "is_error": false}')
+
+    wm = WorldModel.load(str(root), provider, knowledge_dir=override)
+
+    assert wm.knowledge is not None
+    assert "foo.md" in wm.knowledge.files()
+    session = wm.new_session(task="t")
+    wm.step(session.id, Action(kind=ActionKind.TOOL_CALL, name="f", arguments={}))
+    assert "override fact: seeded per run" in (provider.last_user or "")
+
+
+def test_load_knowledge_dir_none_uses_the_artifacts_own_dir(tmp_path: Path) -> None:
+    # None override: the artifact's own knowledge/ is used unchanged.
+    root = tmp_path / ".wmh"
+    save_config(
+        HarnessConfig(serve_provider=ProviderKind.BEDROCK, reasoning=True, knowledge=True),
+        root=root,
+    )
+    KnowledgeBase(ArtifactPaths(root).knowledge).write_file("rules.md", "- gate: auth first")
+    provider = FakeProvider('{"reasoning": "r", "output": "ok", "is_error": false}')
+
+    wm = WorldModel.load(str(root), provider, knowledge_dir=None)
+
+    assert wm.knowledge is not None
+    assert wm.knowledge.directory == ArtifactPaths(root).knowledge
+    session = wm.new_session(task="t")
+    wm.step(session.id, Action(kind=ActionKind.TOOL_CALL, name="f", arguments={}))
+    assert "gate: auth first" in (provider.last_user or "")
+
+
 def test_plain_load_stays_pure_rag_even_with_a_knowledge_dir(tmp_path: Path) -> None:
     # "You either just run it, or you run it with --max-fidelity": a knowledge/ dir alone must
     # not change plain-run behavior — only explicit config flags or max_fidelity activate it.

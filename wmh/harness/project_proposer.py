@@ -28,6 +28,7 @@ from wmh.agents.project import (
     AgentProjectRun,
     ProjectBashResult,
 )
+from wmh.core.text import validate_durable_text
 from wmh.harness.doc import HarnessDoc
 from wmh.harness.live_session import SessionEvent
 from wmh.harness.population import (
@@ -45,6 +46,8 @@ logger = logging.getLogger(__name__)
 
 CANDIDATE_STAGE_DIR = "candidate"
 PROPOSALS_DIR = "proposals"
+# Upper bound on a feedback directive threaded into every proposal request.
+MAX_DIRECTIVE_CHARS = 20_000
 # Per-candidate budget for materialized raw trial evidence; breaches truncate, never halt.
 DEFAULT_CANDIDATE_HISTORY_BYTES = 256 * 1024 * 1024
 # Per-file cap before head/tail truncation (transcripts keep both ends plus a marker).
@@ -98,6 +101,8 @@ class ProjectCandidateProposer:
         *,
         project_factory: Callable[[], CandidateProject],
         run_dir: str | Path,
+        directive: str = "",
+        on_event: Callable[[SessionEvent], None] | None = None,
         max_source_files: int = DEFAULT_SOURCE_TREE_MAX_FILES,
         max_source_bytes: int = DEFAULT_SOURCE_TREE_MAX_BYTES,
         max_candidate_history_bytes: int = DEFAULT_CANDIDATE_HISTORY_BYTES,
@@ -111,10 +116,16 @@ class ProjectCandidateProposer:
         ):
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
                 raise ValueError(f"{field} must be a positive integer")
+        if directive:
+            validate_durable_text(directive, field="proposal directive")
+            if len(directive) > MAX_DIRECTIVE_CHARS:
+                raise ValueError(f"proposal directive exceeds {MAX_DIRECTIVE_CHARS} characters")
         self._agent = agent
         self._provider = provider
         self._project_factory = project_factory
         self._run_dir = Path(run_dir)
+        self._directive = directive
+        self._on_event = on_event
         self._max_source_files = max_source_files
         self._max_source_bytes = max_source_bytes
         self._max_candidate_history_bytes = max_candidate_history_bytes
@@ -178,19 +189,29 @@ class ProjectCandidateProposer:
                 stage_dir=f"{project.workspace}/{CANDIDATE_STAGE_DIR}",
                 slot=slot,
                 population_count=len(population),
+                directive=self._directive,
             )
             (slot_dir / "REQUEST.md").write_text(request, encoding="utf-8")
             project.write_text(f"{PROPOSALS_DIR}/slot-{slot:04d}/REQUEST.md", request)
             _check_cancelled(should_cancel)
 
             events: list[SessionEvent] = []
+
+            def sink(event: SessionEvent) -> None:
+                events.append(event)
+                if self._on_event is not None:
+                    try:
+                        self._on_event(event)
+                    except Exception:  # noqa: BLE001 - a sink error must never abort the proposal
+                        logger.warning("proposer on_event sink raised", exc_info=True)
+
             run_error: str | None = None
             try:
                 project.run(
                     self._agent,
                     self._provider,
                     request,
-                    on_event=events.append,
+                    on_event=sink,
                     should_cancel=should_cancel,
                     writable_files=(),
                     retry_recoverable=False,
@@ -510,12 +531,19 @@ def _proposal_request(
     stage_dir: str,
     slot: int,
     population_count: int,
+    directive: str = "",
 ) -> str:
     previous_trace = (
         f"The most recent proposal-turn trace is `{PROPOSALS_DIR}/slot-{slot - 1:04d}/`; "
         "failed turns keep their captured source and errors in the same layout."
         if slot > 1
         else "There is no earlier proposal turn in this project."
+    )
+    directive_block = (
+        "The user directing this optimization gave the following feedback. Treat it as the "
+        f"primary objective of this candidate:\n\n{directive}\n\n"
+        if directive
+        else ""
     )
     return f"""Produce exactly one complete harness candidate: {candidate_id}.
 
@@ -526,7 +554,7 @@ transcript for that trial; `verifier/` holds the verifier's own output). Earlier
 traces, including failed ones, remain under `{PROPOSALS_DIR}/`. {previous_trace} Use the full
 population as evidence.
 
-Your only candidate output is this directory:
+{directive_block}Your only candidate output is this directory:
 `{stage_dir}`
 
 The host initialized it with a complete, freely editable copy of the fixed first evaluated seed at

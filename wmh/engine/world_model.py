@@ -101,6 +101,7 @@ class WorldModel:
         telemetry_root: str | Path | None = None,
         reward_provider: Provider | None = None,
         max_fidelity: bool = False,
+        knowledge_dir: str | Path | None = None,
     ) -> WorldModel:
         """Construct from a built `.wmh/` artifact (optimized prompt + indexed replay buffer).
 
@@ -114,6 +115,14 @@ class WorldModel:
         (config.toml's `reasoning`/`knowledge`/`verify`/`grounder`). `max_fidelity=True` turns on
         the online extras: the build-measured winner from `auto_fidelity.json` when the artifact
         has one (high/max-tier builds), otherwise every extra the artifact can support.
+
+        `knowledge_dir` overrides where the knowledge base reads and writes: when set (and
+        knowledge is enabled), the KB is built from `knowledge_dir` instead of the artifact's own
+        `knowledge/`, leaving the (often read-only, shared) bundle untouched. Callers seed a
+        per-run temp dir and point at it; None keeps the default artifact path. It only takes
+        effect when the artifact enables knowledge (config's `knowledge` flag, or `max_fidelity`):
+        a plain RAG load stays pure RAG, so a seeded file in `knowledge_dir` is not rendered unless
+        the model was built with knowledge on.
         """
         config = load_config(artifact_dir)
         paths = ArtifactPaths(artifact_dir)
@@ -150,8 +159,9 @@ class WorldModel:
             else:
                 # No measured winner (low/medium builds): all the extras the artifact supports.
                 reasoning, verify = True, True
-                knowledge_on = paths.knowledge.is_dir()
+                knowledge_on = _knowledge_dir(paths, knowledge_dir).is_dir()
                 grounder_kind = "fetch" if grounder_kind == "none" else grounder_kind
+        effective_knowledge_dir = _knowledge_dir(paths, knowledge_dir)
         return cls(
             provider,
             retriever,
@@ -160,8 +170,8 @@ class WorldModel:
             telemetry_root=telemetry_root or _default_telemetry_root(artifact_dir),
             reward_provider=reward_provider,
             knowledge=(
-                KnowledgeBase(paths.knowledge)
-                if knowledge_on and paths.knowledge.is_dir()
+                KnowledgeBase(effective_knowledge_dir)
+                if knowledge_on and effective_knowledge_dir.is_dir()
                 else None
             ),
             reasoning=reasoning,
@@ -559,6 +569,11 @@ class WorldModel:
 
 def _user_message(text: str) -> Message:
     return Message(role="user", content=text)
+
+
+def _knowledge_dir(paths: ArtifactPaths, override: str | Path | None) -> Path:
+    """The effective knowledge directory: the caller's override when given, else the artifact's."""
+    return Path(override) if override is not None else paths.knowledge
 
 
 def _default_telemetry_root(artifact_dir: str | Path) -> Path:

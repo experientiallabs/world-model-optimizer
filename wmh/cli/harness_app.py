@@ -28,6 +28,7 @@ from rich.table import Table
 from wmh.agents.default import default_agent
 from wmh.agents.optimizer import optimizer_agent
 from wmh.agents.project import AgentProject
+from wmh.cli.harness_improve import improve_harness_command
 from wmh.cli.model_roles import resolve_opt_in_model_provider, resolve_required_model_config
 from wmh.config import ARTIFACT_DIR, WorldModelStore
 from wmh.config.store import validate_name
@@ -73,6 +74,10 @@ harness_app = typer.Typer(
     no_args_is_help=True,
 )
 _console = Console()
+
+# Feedback-directed one-step improvement lives in its own module; mount it as `wmh harness
+# improve` here so the harness app stays the single mount point for harness subcommands.
+harness_app.command("improve")(improve_harness_command)
 
 
 @harness_app.command("list")

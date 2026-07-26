@@ -35,6 +35,24 @@ def test_world_model_new_session_works() -> None:
     assert WorldModel.get_session(wm, session.id) is session
 
 
+def test_new_session_seed_state_is_isolated() -> None:
+    """AGENTS.md Rule 10: Mutating the session state must not leak back into the original seed."""
+    wm = WorldModel.__new__(WorldModel)
+    wm._telemetry_root = Path(".wmh")
+    wm._sessions = {}
+    wm._trackers = {}
+    
+    seed = EnvState(scratchpad="original")
+    session = WorldModel.new_session(wm, task="hi", seed_state=seed)
+    
+    # Mutate the session state directly (simulating _update_state)
+    session.state.scratchpad += " + mutated"
+    
+    # Original seed must be unchanged
+    assert seed.scratchpad == "original"
+    assert session.state.scratchpad == "original + mutated"
+
+
 class FakeProvider:
     """Returns a canned world-model JSON completion; captures the last prompt for assertions."""
 

@@ -183,7 +183,10 @@ class WorldModel:
         required for evaluation rollouts, whose PREDICTED observations must not become demos for
         later rollouts (order-dependent, self-reinforcing scores otherwise)."""
         session = Session(
-            id=uuid.uuid4().hex, task=task, state=seed_state or EnvState(), enrich=enrich
+            id=uuid.uuid4().hex,
+            task=task,
+            state=seed_state.model_copy(deep=True) if seed_state else EnvState(),
+            enrich=enrich
         )
         self._sessions[session.id] = session
         tracker = RunTracker(run_id=session.id, kind="serve")

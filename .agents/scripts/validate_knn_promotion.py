@@ -1,14 +1,15 @@
 """Validation gate for the kNN policy promotion: reproduce the champion through wmo code.
 
 Chat R1 measured `knn-statz05-oai` with a research script
-(`.agents/scripts/r1_retrieval_ablations.py` on the routing/r1 worktree): +1.04 accuracy points
+(`.agents/scripts/r1_retrieval_ablations.py`): +1.04 accuracy points
 over the best single model at -27% cost on routerbench-ours9, 5 of 5 split seeds. This script
 re-runs that measurement through the PRODUCTION path only: `wmo.optimize.knn.fit_knn_policy`
 writes a real .npz sidecar, and `wmo.optimize.routing.evaluate_policy` replays the policy through
 the same `knn_decision` serving calls. If the numbers move, the promotion changed the algorithm.
 
-Split identity is proven, not assumed: the stratified 70/30 split is reimplemented here (the
-research helper lives on the feat/routing-research branch, not on main) and every seed's fit/test
+Split identity is proven, not assumed: the stratified 70/30 split is reimplemented here rather
+than imported from `wmo.research.routerbench`, so a bug in the research helper cannot hide
+itself, and every seed's fit/test
 sizes and best-single baseline accuracy are checked against the recorded runs in
 `<routing-data>/runs/r1.jsonl`. Query embeddings come from R1's cached text-embedding-3-large
 vectors, so no text is re-embedded.
@@ -26,7 +27,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import random
 import statistics
 import sys
@@ -39,38 +39,17 @@ from wmo.optimize.knn import best_single_on_fit, fit_knn_policy
 from wmo.optimize.outcomes import OutcomeMatrix
 from wmo.optimize.policy import KNN_BANK_FILENAME, EmbedderSpec, select_model
 from wmo.optimize.routing import evaluate_policy
+from wmo.research.routing_corpus import routing_data
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 FAILURES: list[str] = []
 
 logger = logging.getLogger("validate-knn")
 
-ENV_ROUTING_DATA = "WMO_ROUTING_DATA"
-# The corpus is untracked research data, so it defaults to the gitignored .wmo/ artifact root of
-# whatever checkout this script runs from; ENV_ROUTING_DATA moves it anywhere else.
-DEFAULT_ROUTING_DATA = Path(__file__).resolve().parents[2] / ".wmo" / "routing-data"
 SEEDS = [0, 1, 2, 3, 4]
 # The champion's measured result, as recorded in runs/r1.jsonl (variant r1-knn-statz05-oai).
 CHAMPION_DELTA = 0.0104
 DELTA_TOLERANCE = 0.003
-
-
-def routing_data() -> Path:
-    """Root of the routing research corpus, holding `runs/`, `matrices/`, and `cache/`.
-
-    Raises:
-        SystemExit: if the corpus is not where the environment says it is, naming the
-            directory that is missing and the variable that redirects the lookup.
-    """
-    override = os.environ.get(ENV_ROUTING_DATA)
-    root = Path(override).expanduser() if override else DEFAULT_ROUTING_DATA
-    if not root.is_dir():
-        raise SystemExit(
-            f"routing corpus not found at {root}. It is multi-GB research data that git does "
-            f"not carry: set {ENV_ROUTING_DATA} to the directory holding runs/, matrices/, and "
-            "cache/, or place the corpus at that default path."
-        )
-    return root
 
 
 def stratified_split(

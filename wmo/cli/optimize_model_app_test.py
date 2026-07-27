@@ -35,6 +35,7 @@ from wmo.optimize.pipeline import (
 from wmo.optimize.policy import POLICY_FILENAME, RoutingPolicy
 from wmo.optimize.report import ImprovementReport
 from wmo.optimize.reward import EpisodeScore
+from wmo.optimize.sweep import SweepPlan
 from wmo.providers.base import (
     Completion,
     Message,
@@ -551,13 +552,26 @@ def test_the_plan_table_prices_the_sweep_and_labels_the_rest(
     root = _project(tmp_path)
     answer = _Answer(False)
     monkeypatch.setattr(optimize_module, "Confirm", answer)
-    monkeypatch.setattr(optimize_module, "_console", Console(width=240, force_terminal=True))
+    sweep_plans: list[str] = []
+    render_stage_plan = optimize_module._stage_plan_text
+
+    def record_stage_plan(
+        stage: Stage, *, plan: SweepPlan, cost_quality: float, fallback: str | None, anchor: str
+    ) -> str:
+        text = render_stage_plan(
+            stage, plan=plan, cost_quality=cost_quality, fallback=fallback, anchor=anchor
+        )
+        if stage is Stage.SWEEP:
+            sweep_plans.append(text)
+        return text
+
+    monkeypatch.setattr(optimize_module, "_stage_plan_text", record_stage_plan)
     result = _run(tmp_path, root)
     flat = _flat(result.output)
     # 3 scenarios x 1 episode x 4 calls = 12 calls; cheap = 12 x (2000 + 250x2)/1e6 = $0.03,
     # pricey = 10x that, so the projected total is $0.33.
     assert "~$0.33" in flat
-    assert "2candidate(s)x3scenario(s)x1episode(s)" in flat
+    assert sweep_plans == ["2 candidate(s) x 3 scenario(s) x 1 episode(s)"]
     # The free stages say free rather than showing a fabricated number, and the estimate names
     # itself a projection with its assumption spelled out.
     assert _says(result.output, "knn (guarded, fallback best single on the sweep)")

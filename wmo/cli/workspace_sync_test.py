@@ -235,7 +235,7 @@ def test_sync_never_conflicts_a_path_that_converged(tmp_path: Path) -> None:
     (tmp_path / "same.txt").write_text("B", encoding="utf-8")
     initial = snapshot_workspace(tmp_path)
     (tmp_path / "same.txt").write_text("A", encoding="utf-8")
-    final = _archive({"same.txt": (b"A", 0o644)})
+    final = _archive({"same.txt": (b"A", initial.files["same.txt"].mode)})
 
     result = sync_workspace(tmp_path, initial, final, protected_paths=frozenset({"same.txt"}))
 

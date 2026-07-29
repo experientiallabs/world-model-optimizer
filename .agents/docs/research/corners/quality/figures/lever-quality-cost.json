@@ -1,0 +1,51 @@
+{
+  "rows": [
+    {
+      "lever": "distill (cycle 1, unpromoted)",
+      "baseline": "student base (Qwen3.5-9B)",
+      "delta": {
+        "mean_delta": -0.06666666666666668,
+        "ci_low": -0.16666666666666669,
+        "ci_high": 0.03333333333333333,
+        "n_pairs": 20,
+        "n_up": 2,
+        "n_down": 5,
+        "n_tied": 13,
+        "sign_test_p": 0.453125,
+        "within_noise_floor": false,
+        "noise_floor": 0.02,
+        "verdict": "no_effect",
+        "scenario_deltas": {
+          "airline/0": 0.0,
+          "airline/12": 0.0,
+          "airline/22": 0.0,
+          "airline/4": 0.0,
+          "airline/40": 0.0,
+          "airline/44": 0.0,
+          "airline/6": 0.0,
+          "retail/100": 0.0,
+          "retail/102": 0.0,
+          "retail/33": -0.6666666666666666,
+          "retail/52": -0.33333333333333337,
+          "retail/8": 0.3333333333333333,
+          "retail/86": 0.0,
+          "retail/88": 0.0,
+          "retail/92": 0.33333333333333337,
+          "telecom/[mms_issue]break_apn_mms_setting|user_abroad_roaming_disabled_off[PERSONA:Hard]": 0.0,
+          "telecom/[mms_issue]break_app_both_permissions|unseat_sim_card[PERSONA:Hard]": 0.0,
+          "telecom/[mobile_data_issue]airplane_mode_on|data_usage_exceeded[PERSONA:Easy]": -0.3333333333333333,
+          "telecom/[mobile_data_issue]bad_vpn|user_abroad_roaming_disabled_on[PERSONA:None]": -0.33333333333333337,
+          "telecom/[service_issue]break_apn_settings|lock_sim_card_pin|overdue_bill_suspension[PERSONA:Easy]": -0.33333333333333337
+        }
+      },
+      "provenance": "real_episode",
+      "judge": "tau2 reward (7/20 holdout tasks include tau2's NL-assertion judge)",
+      "cost_note": "per-arm $ not recorded in cycle-1 rows",
+      "latency_note": "p50 episode wall 82s -> 91s"
+    }
+  ],
+  "pending": [
+    "truncate and +compaction levers: identity arm matrix still merging",
+    "+routing lever: identity matrix + the master's policy fits"
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "points": [
+    {
+      "stage": "student base",
+      "series": "distill-only",
+      "mean_reward": 0.7166666666666667,
+      "ci_low": 0.5666666666666667,
+      "ci_high": 0.85,
+      "n_scenarios": 20,
+      "n_episodes": 60,
+      "provenance": "real_episode",
+      "judge": "tau2 reward (7/20 holdout tasks include tau2's NL-assertion judge)",
+      "note": "",
+      "cost_note": "per-arm $ not recorded in cycle-1 rows",
+      "latency_note": "p50 episode 82s wall (not model-time)"
+    },
+    {
+      "stage": "cycle 1",
+      "series": "distill-only",
+      "mean_reward": 0.65,
+      "ci_low": 0.5,
+      "ci_high": 0.8,
+      "n_scenarios": 20,
+      "n_episodes": 60,
+      "provenance": "real_episode",
+      "judge": "tau2 reward (7/20 holdout tasks include tau2's NL-assertion judge)",
+      "note": "not promoted (gate refused: no teacher headroom)",
+      "cost_note": "per-arm $ not recorded in cycle-1 rows",
+      "latency_note": "p50 episode 91s wall (not model-time)"
+    }
+  ],
+  "references": [
+    {
+      "name": "teacher Qwen3.6-27B 0.733",
+      "mean_reward": 0.7333333333333333,
+      "provenance": "real_episode",
+      "judge": "tau2 reward (7/20 holdout tasks include tau2's NL-assertion judge)"
+    }
+  ],
+  "stages": [
+    "student base",
+    "cycle 1"
+  ],
+  "pending": {
+    "wm_simulated": [
+      "all WM series + fable-5 anchor: identity arm matrix still merging"
+    ],
+    "real_episode": [
+      "+routing / +compaction real legs: run after the master's canonical-pins runner fix"
+    ]
+  },
+  "sources": [
+    "cycle-1 episode-rows.jsonl (180 rows) in /Users/silen/Desktop/Projects/world-model-harness/.wmo/distill-runs/tau2-cycle1"
+  ]
+}

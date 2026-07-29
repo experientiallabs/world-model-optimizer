@@ -135,7 +135,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 IDENTITY_ARM = "identity"
 TRUNCATE_ARM = "truncate"
 ENDPOINT_ARM = "llmlingua2-endpoint"
-ALL_ARMS = (IDENTITY_ARM, TRUNCATE_ARM, ENDPOINT_ARM)
+# C2 round 3: segment-SCOPED arms (compress tool observations only, never dialogue or the
+# task; wmo.optimize.compression_scoped). The scoped truncate control shares the whole-context
+# calibration's dial: both scoped arms compress the SAME observation spans, so matching inner
+# dials matches their achieved ratios on those spans; the per-episode ACHIEVED keep is recorded
+# either way and the match is verified post-hoc at the compression track's 0.05 tolerance.
+SCOPED_ENDPOINT_ARM = "scoped-llmlingua2-endpoint"
+SCOPED_TRUNCATE_ARM = "scoped-truncate"
+ALL_ARMS = (IDENTITY_ARM, TRUNCATE_ARM, ENDPOINT_ARM, SCOPED_ENDPOINT_ARM, SCOPED_TRUNCATE_ARM)
 
 DEFAULT_MODEL_DIR = REPO_ROOT / ".wmo" / "models" / "tau-bench"
 DEFAULT_POOL = REPO_ROOT / ".wmo" / "pool.toml"
@@ -700,6 +707,13 @@ def arm_compression(
         return None
     if arm == ENDPOINT_ARM:
         return endpoint_compression()
+    if arm == SCOPED_ENDPOINT_ARM:
+        inner = endpoint_compression()  # the reachability check applies to the scoped arm too
+        return CompressionConfig(
+            compressor_id=SCOPED_ENDPOINT_ARM,
+            compressor_version=get_compressor(SCOPED_ENDPOINT_ARM).version,
+            aggressiveness=inner.aggressiveness,
+        )
     existing = state.calibration()
     if existing is None:
         sample = calibration_sample(config, train_split, adapter)
@@ -731,9 +745,10 @@ def arm_compression(
             existing.chosen_achieved_ratio,
             existing.endpoint_achieved_ratio,
         )
+    chosen_arm = SCOPED_TRUNCATE_ARM if arm == SCOPED_TRUNCATE_ARM else TRUNCATE_ARM
     return CompressionConfig(
-        compressor_id=TRUNCATE_ARM,
-        compressor_version=get_compressor(TRUNCATE_ARM).version,
+        compressor_id=chosen_arm,
+        compressor_version=get_compressor(chosen_arm).version,
         aggressiveness=existing.chosen_aggressiveness,
     )
 

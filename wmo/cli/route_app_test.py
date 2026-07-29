@@ -3072,3 +3072,253 @@ def test_route_student_help_keeps_the_pool_table_name() -> None:
     result = runner.invoke(app, ["optimize", "route", "student", "--help"])
     assert result.exit_code == 0, result.output
     assert "[[model]]" in _flat(result.output)
+
+
+# ---------------------------------------------------------------------------
+# fit-compaction (C2 round 2: per-cluster compression from measured arms).
+# ---------------------------------------------------------------------------
+
+_COMPACTION_TRUNCATE = CompressionConfig(
+    compressor_id="truncate", compressor_version="1", aggressiveness=0.2
+)
+
+
+def _compaction_grid(
+    tmp_path: Path, *, arm_cost: float = 0.005
+) -> tuple[Path, Path]:
+    """An off matrix with headroom in its SQL half, and an arm that claims it.
+
+    Two lexically distant scenario groups (so the hashing embedder clusters them apart),
+    2 models x 2 episodes: 12 paired cells per cluster, clearing the min-pairs default. The
+    arm lifts the SQL group at lower cost (a genuine per-cluster win under the registered
+    gate, which demands POSITIVE paired evidence) and wrecks the prose group (the quality
+    gate must hold that cluster at None).
+    """
+    pool = [
+        PoolEntry(
+            name="a", kind=ProviderKind.OPENAI, model="a", input_per_mtok=1.0, output_per_mtok=1.0
+        ),
+        PoolEntry(
+            name="b", kind=ProviderKind.OPENAI, model="b", input_per_mtok=1.0, output_per_mtok=1.0
+        ),
+    ]
+    groups = {
+        "sql": "SELECT revenue balance sheet fiscal audit dividend capital table",
+        "prose": "write a warm poem about rivers meadows sunsets and quiet mornings",
+    }
+    arm_id, arm_version, arm_aggressiveness = _arm(_COMPACTION_TRUNCATE)
+
+    def rows(*, arm: bool) -> list[ScenarioOutcome]:
+        out = []
+        for group, text in groups.items():
+            for index in range(6):
+                for model in ("a", "b"):
+                    for episode in range(2):
+                        if arm:
+                            reward = 1.0 if group == "sql" else 0.0
+                        else:
+                            reward = 1.0 if (group == "prose" or index < 3) else 0.0
+                        out.append(
+                            ScenarioOutcome(
+                                scenario_id=f"{group}-{index}",
+                                task=f"{text} variant {index}",
+                                model=model,
+                                episode=episode,
+                                reward=reward,
+                                success=reward >= 1.0,
+                                cost_usd=arm_cost if arm else 0.01,
+                                compressor_id=arm_id if arm else "",
+                                compressor_version=arm_version if arm else "",
+                                aggressiveness=arm_aggressiveness if arm else 0.0,
+                            )
+                        )
+        return out
+
+    off_path = tmp_path / "off.json"
+    arm_path = tmp_path / "arm.json"
+    OutcomeMatrix(pool=pool, outcomes=rows(arm=False)).save(off_path)
+    OutcomeMatrix(pool=pool, outcomes=rows(arm=True)).save(arm_path)
+    return off_path, arm_path
+
+
+def test_fit_compaction_stamps_the_winning_cluster_only(tmp_path: Path) -> None:
+    off_path, arm_path = _compaction_grid(tmp_path)
+    policy_file = tmp_path / "policy.json"
+    result = runner.invoke(
+        app,
+        [
+            "optimize",
+            "route",
+            "fit-compaction",
+            str(off_path),
+            "--arm",
+            str(arm_path),
+            "--kind",
+            "rank",
+            "--clusters",
+            "2",
+            "--out",
+            str(policy_file),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "A/A bar clean" in result.output
+    policy = RoutingPolicy.load(policy_file)
+    assert policy.compression is None and policy.fit_compression is None  # raw-routed
+    configs = [c.compression for c in policy.clusters]
+    assert sum(1 for c in configs if c is not None) == 1
+    stamped = next(c for c in configs if c is not None)
+    assert same_compression(stamped, _COMPACTION_TRUNCATE)
+    assert policy_file.with_suffix(".compaction-evidence.json").exists()
+
+
+def test_fit_compaction_control_win_is_an_investigation_gate(tmp_path: Path) -> None:
+    off_path, arm_path = _compaction_grid(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "optimize",
+            "route",
+            "fit-compaction",
+            str(off_path),
+            "--control",
+            str(arm_path),
+            "--kind",
+            "rank",
+            "--clusters",
+            "2",
+            "--out",
+            str(tmp_path / "policy.json"),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "INVESTIGATION GATE" in result.output
+
+
+def test_fit_compaction_knn_writes_a_sidecar_overlay(tmp_path: Path) -> None:
+    from wmo.optimize.compaction_fit import CompactionArtifact, compaction_path_for
+
+    off_path, arm_path = _compaction_grid(tmp_path)
+    policy_file = tmp_path / "policy.json"
+    result = runner.invoke(
+        app,
+        [
+            "optimize",
+            "route",
+            "fit-compaction",
+            str(off_path),
+            "--arm",
+            str(arm_path),
+            "--kind",
+            "knn",
+            "--clusters",
+            "2",
+            "--out",
+            str(policy_file),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    policy = RoutingPolicy.load(policy_file)
+    assert policy.kind == "knn" and not policy.clusters  # routing untouched
+    sidecar = CompactionArtifact.model_validate_json(
+        compaction_path_for(policy_file).read_text()
+    )
+    assert sum(1 for c in sidecar.clusters if c.compression is not None) == 1
+
+
+def test_fit_compaction_rejected_run_leaves_no_mountable_artifact(tmp_path: Path) -> None:
+    # The investigation gate must not leave a policy or sidecar behind (a rejected fit that
+    # still writes its outputs hands the rejected result to whatever consumes the directory
+    # next); only the evidence file, which IS the investigation record, may exist.
+    from wmo.optimize.compaction_fit import compaction_path_for
+
+    off_path, arm_path = _compaction_grid(tmp_path)
+    for kind in ("rank", "knn"):
+        out_dir = tmp_path / kind
+        out_dir.mkdir()
+        policy_file = out_dir / "policy.json"
+        result = runner.invoke(
+            app,
+            [
+                "optimize",
+                "route",
+                "fit-compaction",
+                str(off_path),
+                "--control",
+                str(arm_path),
+                "--kind",
+                kind,
+                "--clusters",
+                "2",
+                "--out",
+                str(policy_file),
+            ],
+        )
+        assert result.exit_code == 1
+        assert not policy_file.exists()
+        assert not compaction_path_for(policy_file).exists()
+        assert policy_file.with_suffix(".compaction-evidence.json").exists()
+
+
+def test_fit_compaction_aa_kill_bar_fires_and_writes_nothing(tmp_path: Path) -> None:
+    # M5: the A/A bar's FIRING path. An off arm with a systematic episode-parity effect
+    # (episode 1 wins where episode 0 fails, in one lexical group) must trip the bar, exit
+    # nonzero, and leave NO artifact of any kind behind, evidence included: the fit never ran.
+    from wmo.optimize.compaction_fit import compaction_path_for
+
+    pool = [
+        PoolEntry(
+            name="a", kind=ProviderKind.OPENAI, model="a", input_per_mtok=1.0, output_per_mtok=1.0
+        ),
+        PoolEntry(
+            name="b", kind=ProviderKind.OPENAI, model="b", input_per_mtok=1.0, output_per_mtok=1.0
+        ),
+    ]
+    groups = {
+        "sql": "SELECT revenue balance sheet fiscal audit dividend capital table",
+        "prose": "write a warm poem about rivers meadows sunsets and quiet mornings",
+    }
+    rows = []
+    for group, text_ in groups.items():
+        for index in range(6):
+            for model in ("a", "b"):
+                for episode in range(2):
+                    reward = 1.0 if (group == "prose" or episode == 1 or index < 2) else 0.0
+                    rows.append(
+                        ScenarioOutcome(
+                            scenario_id=f"{group}-{index}",
+                            task=f"{text_} variant {index}",
+                            model=model,
+                            episode=episode,
+                            reward=reward,
+                            success=reward >= 1.0,
+                            cost_usd=0.01,
+                        )
+                    )
+    off_path = tmp_path / "off-aa.json"  # its own name: _compaction_grid writes off.json
+    OutcomeMatrix(pool=pool, outcomes=rows).save(off_path)
+    _dummy, arm_path = _compaction_grid(tmp_path)
+    policy_file = tmp_path / "policy.json"
+    result = runner.invoke(
+        app,
+        [
+            "optimize",
+            "route",
+            "fit-compaction",
+            str(off_path),
+            "--arm",
+            str(arm_path),
+            "--kind",
+            "rank",
+            "--clusters",
+            "2",
+            "--out",
+            str(policy_file),
+            "--allow-uneven-coverage",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "A/A kill bar failed" in result.output
+    assert not policy_file.exists()
+    assert not compaction_path_for(policy_file).exists()
+    assert not policy_file.with_suffix(".compaction-evidence.json").exists()

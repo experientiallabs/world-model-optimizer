@@ -10,6 +10,7 @@ its `Optimizer` protocol and return `OptimizeResult`s whose `ArtifactRef`s say w
 # the serving runtime, reach this package, so a policy naming that id resolves on either path
 # without the caller registering anything by hand.
 from wmo.optimize import compression_endpoint as compression_endpoint  # noqa: F401
+from wmo.optimize import compression_scoped as compression_scoped  # noqa: F401
 from wmo.optimize.base import ArtifactRef, OptimizeMetrics, Optimizer, OptimizeResult
 from wmo.optimize.gepa import GEPAOptimizer
 from wmo.optimize.judge import Judge, JudgeResult, RubricJudge

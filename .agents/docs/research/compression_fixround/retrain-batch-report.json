@@ -1,0 +1,54 @@
+{
+  "server_sha256": "f24135667510150eeb01bcca295f478e272ec4b247042f458191a5929a3c7deb",
+  "stability": {
+    "financebench/gpt55-full": {
+      "deterministic": true,
+      "batch_invariant": true,
+      "threshold": 0.1367,
+      "n_windows": 60
+    },
+    "financebench/opus5-full": {
+      "deterministic": true,
+      "batch_invariant": true,
+      "threshold": 0.9062,
+      "n_windows": 60
+    },
+    "swe-bench/gpt55-full": {
+      "deterministic": true,
+      "batch_invariant": true,
+      "threshold": 0.7734,
+      "n_windows": 36
+    },
+    "swe-bench/opus5-full": {
+      "deterministic": true,
+      "batch_invariant": true,
+      "threshold": 0.9531,
+      "n_windows": 36
+    },
+    "tau-bench/gpt55-full": {
+      "deterministic": true,
+      "batch_invariant": true,
+      "threshold": 0.9995,
+      "n_windows": 38
+    },
+    "tau-bench/opus5-full": {
+      "deterministic": true,
+      "batch_invariant": true,
+      "threshold": 0.998,
+      "n_windows": 38
+    },
+    "terminal-tasks/gpt55-full": {
+      "deterministic": true,
+      "batch_invariant": true,
+      "threshold": 0.8086,
+      "n_windows": 37
+    },
+    "terminal-tasks/opus5-full": {
+      "deterministic": true,
+      "batch_invariant": true,
+      "threshold": 0.9062,
+      "n_windows": 37
+    }
+  },
+  "cross_eval": {}
+}

@@ -45,3 +45,4 @@ settings.toml
 
 # wandb run directories (local mirrors of what is already on the server)
 wandb/
+.agents/scripts/adapted-*/

@@ -1,0 +1,40 @@
+{
+  "corpus": "terminal-tasks",
+  "target_keep": 0.65,
+  "n_holdout": 37,
+  "scorers": {
+    "stock": {
+      "achieved_keep": 0.6515,
+      "teacher_keep_recall": 0.7173,
+      "teacher_drop_agreement": 0.3908,
+      "retention": {
+        "numeric": 1.0,
+        "identifier": 0.9785,
+        "entity": 0.9524
+      },
+      "threshold_at_matched_keep": 0.1897
+    },
+    "lora": {
+      "achieved_keep": 0.6501,
+      "teacher_keep_recall": 0.7193,
+      "teacher_drop_agreement": 0.3975,
+      "retention": {
+        "numeric": 1.0,
+        "identifier": 0.9785,
+        "entity": 0.9429
+      },
+      "threshold_at_matched_keep": 0.3734
+    },
+    "full": {
+      "achieved_keep": 0.6501,
+      "teacher_keep_recall": 0.7388,
+      "teacher_drop_agreement": 0.4393,
+      "retention": {
+        "numeric": 1.0,
+        "identifier": 0.9892,
+        "entity": 0.8952
+      },
+      "threshold_at_matched_keep": 0.4645
+    }
+  }
+}

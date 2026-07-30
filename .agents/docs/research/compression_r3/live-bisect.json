@@ -1,0 +1,42 @@
+{
+  "target_keep_live": 0.6591,
+  "server_sha256": "f24135667510150eeb01bcca295f478e272ec4b247042f458191a5929a3c7deb",
+  "n_segments": 391,
+  "scorers": {
+    "adapted-financebench-full-aggressive": {
+      "matched_threshold": 0.1387,
+      "achieved_live_keep": 0.6608,
+      "deterministic": true,
+      "batch_invariant": true,
+      "model_fingerprint": "be777594b74f00f5"
+    },
+    "adapted-financebench-full-aggressive-keep40": {
+      "matched_threshold": 0.668,
+      "achieved_live_keep": 0.6584,
+      "deterministic": true,
+      "batch_invariant": true,
+      "model_fingerprint": "7c3fc4bede5ca435"
+    },
+    "adapted-financebench-full-aggressive-keep55": {
+      "matched_threshold": 0.7676,
+      "achieved_live_keep": 0.6591,
+      "deterministic": true,
+      "batch_invariant": true,
+      "model_fingerprint": "8d17449f3256c8c5"
+    },
+    "adapted-financebench-full-aggressive-keep70": {
+      "matched_threshold": 0.8145,
+      "achieved_live_keep": 0.658,
+      "deterministic": true,
+      "batch_invariant": true,
+      "model_fingerprint": "76a999c468f5f445"
+    },
+    "adapted-financebench-full-composition": {
+      "matched_threshold": 0.9287,
+      "achieved_live_keep": 0.6608,
+      "deterministic": true,
+      "batch_invariant": true,
+      "model_fingerprint": "30fad0a5bd62f67b"
+    }
+  }
+}

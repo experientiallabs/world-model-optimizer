@@ -1,0 +1,53 @@
+{
+  "corpus": "swe-bench",
+  "target_keep": 0.65,
+  "coordinates": "canonical-subword (server.compress)",
+  "server_path": "/nvme/work/c1-bench/server.py",
+  "server_sha256": "f24135667510150eeb01bcca295f478e272ec4b247042f458191a5929a3c7deb",
+  "labels_suffix": "aggressive-opus-5",
+  "n_holdout_windows": 25,
+  "scorers": {
+    "stock": {
+      "achieved_keep_subword": 0.6478,
+      "achieved_keep_word": 0.5792,
+      "teacher_keep_recall": 0.6557,
+      "teacher_drop_agreement": 0.3669,
+      "retention": {
+        "numeric": 0.6746,
+        "identifier": 0.8153,
+        "entity": 0.6338
+      },
+      "align_failures": 0,
+      "matched_threshold": 0.6094,
+      "model_fingerprint": "9a9d3f98bfb65abc"
+    },
+    "gpt55-full": {
+      "achieved_keep_subword": 0.6495,
+      "achieved_keep_word": 0.507,
+      "teacher_keep_recall": 0.6271,
+      "teacher_drop_agreement": 0.4146,
+      "retention": {
+        "numeric": 0.8612,
+        "identifier": 0.7949,
+        "entity": 0.5455
+      },
+      "align_failures": 0,
+      "matched_threshold": 0.7656,
+      "model_fingerprint": "f996dd48312407f0"
+    },
+    "opus5-full": {
+      "achieved_keep_subword": 0.6546,
+      "achieved_keep_word": 0.4585,
+      "teacher_keep_recall": 0.5807,
+      "teacher_drop_agreement": 0.4006,
+      "retention": {
+        "numeric": 0.8995,
+        "identifier": 0.8204,
+        "entity": 0.5143
+      },
+      "align_failures": 0,
+      "matched_threshold": 0.9375,
+      "model_fingerprint": "42d35c6f01cd5d9d"
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "corpus": "financebench",
+  "target_keep": 0.65,
+  "coordinates": "canonical-subword (server.compress)",
+  "server_path": "/mnt/c1/server.py",
+  "server_sha256": "f24135667510150eeb01bcca295f478e272ec4b247042f458191a5929a3c7deb",
+  "labels_suffix": "aggressive",
+  "n_holdout_windows": 67,
+  "scorers": {
+    "stock": {
+      "achieved_keep_subword": 0.6528,
+      "achieved_keep_word": 0.5603,
+      "teacher_keep_recall": 0.6087,
+      "teacher_drop_agreement": 0.6348,
+      "retention": {
+        "numeric": 0.7948,
+        "identifier": 0.6089,
+        "entity": 0.7296
+      },
+      "align_failures": 0,
+      "matched_threshold": 0.6719,
+      "model_fingerprint": "9a9d3f98bfb65abc"
+    },
+    "champion": {
+      "achieved_keep_subword": 0.6484,
+      "achieved_keep_word": 0.6113,
+      "teacher_keep_recall": 0.8778,
+      "teacher_drop_agreement": 0.871,
+      "retention": {
+        "numeric": 0.5652,
+        "identifier": 0.6694,
+        "entity": 0.6713
+      },
+      "align_failures": 0,
+      "matched_threshold": 0.1367,
+      "model_fingerprint": "1820a0d9850d8c56"
+    },
+    "retrain": {
+      "achieved_keep_subword": 0.6467,
+      "achieved_keep_word": 0.582,
+      "teacher_keep_recall": 0.8271,
+      "teacher_drop_agreement": 0.8303,
+      "retention": {
+        "numeric": 0.6,
+        "identifier": 0.6855,
+        "entity": 0.6364
+      },
+      "align_failures": 0,
+      "matched_threshold": 0.1562,
+      "model_fingerprint": "be777594b74f00f5"
+    }
+  }
+}

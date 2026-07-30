@@ -1,0 +1,53 @@
+{
+  "corpus": "financebench",
+  "target_keep": 0.65,
+  "coordinates": "canonical-subword (server.compress)",
+  "server_path": "/nvme/work/c1-bench/server.py",
+  "server_sha256": "f24135667510150eeb01bcca295f478e272ec4b247042f458191a5929a3c7deb",
+  "labels_suffix": "aggressive-opus-5",
+  "n_holdout_windows": 65,
+  "scorers": {
+    "stock": {
+      "achieved_keep_subword": 0.6528,
+      "achieved_keep_word": 0.5902,
+      "teacher_keep_recall": 0.6683,
+      "teacher_drop_agreement": 0.3253,
+      "retention": {
+        "numeric": 0.7941,
+        "identifier": 0.5833,
+        "entity": 0.7507
+      },
+      "align_failures": 0,
+      "matched_threshold": 0.6934,
+      "model_fingerprint": "9a9d3f98bfb65abc"
+    },
+    "gpt55-full": {
+      "achieved_keep_subword": 0.6498,
+      "achieved_keep_word": 0.5974,
+      "teacher_keep_recall": 0.6094,
+      "teacher_drop_agreement": 0.1913,
+      "retention": {
+        "numeric": 0.551,
+        "identifier": 0.7451,
+        "entity": 0.6658
+      },
+      "align_failures": 0,
+      "matched_threshold": 0.1875,
+      "model_fingerprint": "1820a0d9850d8c56"
+    },
+    "opus5-full": {
+      "achieved_keep_subword": 0.6498,
+      "achieved_keep_word": 0.4501,
+      "teacher_keep_recall": 0.5313,
+      "teacher_drop_agreement": 0.2895,
+      "retention": {
+        "numeric": 0.8776,
+        "identifier": 0.6863,
+        "entity": 0.5332
+      },
+      "align_failures": 0,
+      "matched_threshold": 0.9375,
+      "model_fingerprint": "922dceca0a40e644"
+    }
+  }
+}

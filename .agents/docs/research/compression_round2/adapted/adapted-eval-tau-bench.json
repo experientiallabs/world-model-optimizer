@@ -1,0 +1,40 @@
+{
+  "corpus": "tau-bench",
+  "target_keep": 0.65,
+  "n_holdout": 38,
+  "scorers": {
+    "stock": {
+      "achieved_keep": 0.6518,
+      "teacher_keep_recall": 0.9078,
+      "teacher_drop_agreement": 0.8951,
+      "retention": {
+        "numeric": 1.0,
+        "identifier": 0.9043,
+        "entity": 0.6786
+      },
+      "threshold_at_matched_keep": 0.389
+    },
+    "lora": {
+      "achieved_keep": 0.6502,
+      "teacher_keep_recall": 1.0,
+      "teacher_drop_agreement": 1.0,
+      "retention": {
+        "numeric": 1.0,
+        "identifier": 0.8849,
+        "entity": 0.7143
+      },
+      "threshold_at_matched_keep": 0.2366
+    },
+    "full": {
+      "achieved_keep": 0.6502,
+      "teacher_keep_recall": 1.0,
+      "teacher_drop_agreement": 1.0,
+      "retention": {
+        "numeric": 1.0,
+        "identifier": 0.9209,
+        "entity": 0.7429
+      },
+      "threshold_at_matched_keep": 0.0694
+    }
+  }
+}

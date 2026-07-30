@@ -1,0 +1,39 @@
+{
+  "corpus": "swe-bench",
+  "target_keep": 0.65,
+  "coordinates": "canonical-subword (server.compress)",
+  "server_path": "/nvme/work/c1-bench/server.py",
+  "server_sha256": "f24135667510150eeb01bcca295f478e272ec4b247042f458191a5929a3c7deb",
+  "labels_suffix": "aggressive",
+  "n_holdout_windows": 36,
+  "scorers": {
+    "stock": {
+      "achieved_keep_subword": 0.6461,
+      "achieved_keep_word": 0.5683,
+      "teacher_keep_recall": 0.6688,
+      "teacher_drop_agreement": 0.5709,
+      "retention": {
+        "numeric": 0.6803,
+        "identifier": 0.7768,
+        "entity": 0.6357
+      },
+      "align_failures": 0,
+      "matched_threshold": 0.6172,
+      "model_fingerprint": "9a9d3f98bfb65abc"
+    },
+    "full": {
+      "achieved_keep_subword": 0.6502,
+      "achieved_keep_word": 0.4976,
+      "teacher_keep_recall": 0.6976,
+      "teacher_drop_agreement": 0.6633,
+      "retention": {
+        "numeric": 0.8435,
+        "identifier": 0.7854,
+        "entity": 0.5381
+      },
+      "align_failures": 0,
+      "matched_threshold": 0.7734,
+      "model_fingerprint": "f996dd48312407f0"
+    }
+  }
+}

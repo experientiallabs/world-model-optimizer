@@ -1,0 +1,40 @@
+{
+  "corpus": "financebench",
+  "target_keep": 0.65,
+  "n_holdout": 67,
+  "scorers": {
+    "stock": {
+      "achieved_keep": 0.6508,
+      "teacher_keep_recall": 0.706,
+      "teacher_drop_agreement": 0.6545,
+      "retention": {
+        "numeric": 0.9078,
+        "identifier": 0.754,
+        "entity": 0.8019
+      },
+      "threshold_at_matched_keep": 0.5219
+    },
+    "lora": {
+      "achieved_keep": 0.6504,
+      "teacher_keep_recall": 0.852,
+      "teacher_drop_agreement": 0.8262,
+      "retention": {
+        "numeric": 0.6557,
+        "identifier": 0.754,
+        "entity": 0.7436
+      },
+      "threshold_at_matched_keep": 0.2544
+    },
+    "full": {
+      "achieved_keep": 0.6504,
+      "teacher_keep_recall": 0.8975,
+      "teacher_drop_agreement": 0.8797,
+      "retention": {
+        "numeric": 0.5948,
+        "identifier": 0.6774,
+        "entity": 0.7063
+      },
+      "threshold_at_matched_keep": 0.1192
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "corpus": "swe-bench",
+  "target_keep": 0.65,
+  "n_holdout": 36,
+  "scorers": {
+    "stock": {
+      "achieved_keep": 0.6501,
+      "teacher_keep_recall": 0.7087,
+      "teacher_drop_agreement": 0.5344,
+      "retention": {
+        "numeric": 0.6905,
+        "identifier": 0.7974,
+        "entity": 0.718
+      },
+      "threshold_at_matched_keep": 0.6399
+    },
+    "lora": {
+      "achieved_keep": 0.6501,
+      "teacher_keep_recall": 0.7192,
+      "teacher_drop_agreement": 0.5512,
+      "retention": {
+        "numeric": 0.6769,
+        "identifier": 0.7747,
+        "entity": 0.6692
+      },
+      "threshold_at_matched_keep": 0.7003
+    },
+    "full": {
+      "achieved_keep": 0.6501,
+      "teacher_keep_recall": 0.7984,
+      "teacher_drop_agreement": 0.6777,
+      "retention": {
+        "numeric": 0.9116,
+        "identifier": 0.8628,
+        "entity": 0.7027
+      },
+      "threshold_at_matched_keep": 0.7519
+    }
+  }
+}

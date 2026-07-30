@@ -36,6 +36,7 @@ from wmo.config import (
 from wmo.core.types import Action, ActionKind, Observation, Step, Trace
 from wmo.engine.build import DEFAULT_TRAIN_SPLIT, split_traces, split_traces_3way
 from wmo.engine.eval_suites import EvalSuiteConfig
+from wmo.hub import CorpusSpec
 from wmo.ingest import VendorPull
 from wmo.providers.base import (
     Completion,
@@ -3329,6 +3330,20 @@ def test_download_all_offline_skips_the_unpublished_and_still_succeeds(  # noqa:
     # subset, and it says what it dropped.
     import urllib.error
 
+    # Registered here rather than borrowed from the shipped registry: this used to lean on a
+    # real unpublished corpus, so retiring that corpus tripped the guard below instead of
+    # silently passing.
+    monkeypatch.setitem(
+        cli_app_module.CORPORA,
+        "never-pushed",
+        CorpusSpec(
+            benchmark="never-pushed",
+            published=False,
+            license_id="mit",
+            upstream="synthetic fixture",
+            description="A registered bundle whose Hub push never landed.",
+        ),
+    )
     unpublished = sorted(n for n, spec in cli_app_module.CORPORA.items() if not spec.published)
     assert unpublished, "this test is meaningless once every registered corpus is published"
     fetched: list[str] = []

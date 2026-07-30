@@ -1,5 +1,0 @@
-title = "kimi-gui-control default replay"
-description = "Open-loop reconstruction fidelity over the bundled Kimi-K2.6 screenpipe GUI-control trace corpus (macOS Accessibility API + shell)."
-files = ["../traces.otel.jsonl"]
-sample_turns = "all"
-seed = 0

@@ -15,6 +15,7 @@ from environment_capture import hub
 from environment_capture.hub import (
     CORPORA,
     CorpusRepoUnavailable,
+    CorpusSpec,
     candidate_repo_ids,
     downloadable_benchmarks,
     fetch_corpus,
@@ -231,9 +232,26 @@ def test_fetch_unknown_benchmark_names_the_available_ones(data_root: Path) -> No
         fetch_corpus("nope")
 
 
-def test_unknown_benchmark_never_offers_an_unpublished_name(data_root: Path) -> None:
+def test_unknown_benchmark_never_offers_an_unpublished_name(
+    data_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # Offering a name the Hub can only answer 401 for sends the user down a dead end, so the
     # "available:" list is the published subset, not the whole registry.
+    #
+    # The unpublished entry is registered here rather than borrowed from the shipped registry.
+    # It used to be a real corpus, so retiring that corpus turned this test into a no-op via its
+    # own "meaningless" guard - the guard fired, which is exactly what it was for.
+    monkeypatch.setitem(
+        CORPORA,
+        "never-pushed",
+        CorpusSpec(
+            benchmark="never-pushed",
+            published=False,
+            license_id="mit",
+            upstream="synthetic fixture",
+            description="A registered bundle whose Hub push never landed.",
+        ),
+    )
     unpublished = sorted(name for name, spec in CORPORA.items() if not spec.published)
     assert unpublished, "this test is meaningless once every registered corpus is published"
     with pytest.raises(ValueError) as caught:
@@ -248,12 +266,26 @@ def test_fetch_of_an_unpublished_benchmark_fails_offline_and_says_why(
 ) -> None:
     # No Hub round trip at all: a registered-but-unpushed bundle is knowable locally, so the
     # user gets the reason instead of a 401 they cannot act on.
+    #
+    # The unpublished entry is synthetic. It used to be a real registered benchmark, which made
+    # the test hostage to that bundle's fate: retiring it would have deleted the coverage.
+    # Registering one here keeps the behaviour pinned whether or not any shipped corpus is
+    # currently unpublished.
+    unpublished = CorpusSpec(
+        benchmark="never-pushed",
+        published=False,
+        license_id="mit",
+        upstream="synthetic fixture",
+        description="A registered bundle whose Hub push never landed.",
+    )
+    monkeypatch.setitem(CORPORA, unpublished.benchmark, unpublished)
+
     def explode(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("must not touch the Hub for an unpublished benchmark")
 
     monkeypatch.setattr(hub, "_resolve_repo", explode)
     with pytest.raises(ValueError, match="has not been published to the Hub yet"):
-        fetch_corpus("kimi-gui-control")
+        fetch_corpus(unpublished.benchmark)
 
 
 def test_stream_to_is_atomic(tmp_path: Path) -> None:

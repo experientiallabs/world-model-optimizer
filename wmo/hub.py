@@ -180,19 +180,6 @@ CORPORA: dict[str, CorpusSpec] = {
                 "exploration and repo edits inside per-instance Docker images."
             ),
         ),
-        CorpusSpec(
-            benchmark="kimi-gui-control",
-            # Captured but never pushed: both candidate repo ids 401. Until the push lands,
-            # listing it as downloadable is a dead end, so reads hide it.
-            published=False,
-            license_id="mit",
-            upstream="mediar-ai/screenpipe gui-control (MIT); trajectories captured with "
-            "Kimi-K2.6 via Azure AI Foundry",
-            description=(
-                "Computer-use agent runs driving macOS GUI apps through the Accessibility API "
-                "plus a shell: real tool calls and the accessibility-tree/command outputs they saw."
-            ),
-        ),
     )
 }
 

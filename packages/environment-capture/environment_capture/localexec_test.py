@@ -40,6 +40,32 @@ def test_timeout_returns_error_result(tmp_path: Path) -> None:
         env.close()
 
 
+def test_timeout_kills_orphaned_child_processes(tmp_path: Path) -> None:
+    """A command that times out must not leave orphaned child processes running in the background."""
+    env = LocalBashEnv(workspace=tmp_path, timeout_s=1)
+    script = tmp_path / "spin.py"
+    script.write_text(
+        "import time\n"
+        "while True:\n"
+        "    with open('ping.txt', 'a') as f: f.write('x\\n')\n"
+        "    time.sleep(0.1)\n"
+    )
+    try:
+        result = env.execute("python spin.py")
+        assert result.returncode != 0
+        assert "timed out" in result.output
+        
+        # Verify the background process is dead by checking if ping.txt stops growing.
+        import time
+        ping_file = tmp_path / "ping.txt"
+        size_before = ping_file.stat().st_size if ping_file.exists() else 0
+        time.sleep(0.4)
+        size_after = ping_file.stat().st_size if ping_file.exists() else 0
+        assert size_before == size_after, "Background process is still running and writing to file!"
+    finally:
+        env.close()
+
+
 def test_state_does_not_leak_between_commands(tmp_path: Path) -> None:
     (tmp_path / "sub").mkdir()
     env = LocalBashEnv(workspace=tmp_path)

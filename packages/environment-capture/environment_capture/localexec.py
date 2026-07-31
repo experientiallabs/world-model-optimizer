@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
@@ -91,24 +92,39 @@ class LocalBashEnv:
         if self.contain and command_targets_host(command):
             return ExecResult(output=_BLOCKED_MESSAGE, returncode=1)
         try:
-            completed = subprocess.run(
+            kwargs = {}
+            if os.name == "posix":
+                kwargs["start_new_session"] = True
+                
+            process = subprocess.Popen(
                 ["bash", "-c", command],
                 cwd=self.workspace,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 errors="replace",  # binary output becomes a real observation, not a crash
-                timeout=self.timeout_s,
                 env=_scrubbed_env(),  # never expose the capture process's provider credentials
+                **kwargs
             )
+            stdout, stderr = process.communicate(timeout=self.timeout_s)
+            returncode = process.returncode
         except subprocess.TimeoutExpired:
+            if os.name == "posix":
+                os.killpg(process.pid, signal.SIGKILL)
+            else:
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)], capture_output=True)
+            try:
+                process.communicate(timeout=1)
+            except subprocess.TimeoutExpired:
+                pass
             return ExecResult(
                 output=f"command timed out after {self.timeout_s}s",
                 returncode=_TIMEOUT_RETURNCODE,
             )
-        output = completed.stdout
-        if completed.stderr:
-            output = f"{output}{completed.stderr}" if output else completed.stderr
-        return ExecResult(output=output.rstrip("\n"), returncode=completed.returncode)
+        output = stdout
+        if stderr:
+            output = f"{output}{stderr}" if output else stderr
+        return ExecResult(output=output.rstrip("\n"), returncode=returncode)
 
     def close(self) -> None:
         if self._cleanup:

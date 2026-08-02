@@ -177,16 +177,27 @@ def pareto_curve(
 
     if policy is not None:
         shared = embedder or _replay_embedder(policy)
-        for dial in dials:
+        variants: list[tuple[float | None, RoutingPolicy]]
+        if policy.kind == "linear":
+            variants = [(None, policy)]
+        else:
+            variants = [(dial, apply_cost_quality(policy, dial)) for dial in dials]
+        for dial, variant in variants:
             rows = rows_for_policy(
-                matrix, apply_cost_quality(policy, dial), ids=ids, embedder=shared
+                matrix, variant, ids=ids, embedder=shared
             )
             mix: dict[str, int] = {}
             for sid in ids:
                 for chosen in {row.model for row in rows if row.scenario_id == sid}:
                     mix[chosen] = mix.get(chosen, 0) + 1
+            point_id = "routed" if dial is None else f"routed@{dial:g}"
+            label = "routed" if dial is None else f"routed (dial {dial:g})"
             point = _point(
-                f"routed@{dial:g}", "routed", f"routed (dial {dial:g})", rows, completion
+                point_id,
+                "routed",
+                label,
+                rows,
+                completion,
             )
             if point is not None:
                 points.append(point.model_copy(update={"dial": dial, "mix": mix}))
@@ -360,7 +371,11 @@ def _recommended(points: list[ParetoPoint], policy: RoutingPolicy | None) -> str
     placeable.
     """
     if policy is not None:
-        balanced = next((p for p in points if p.kind == "routed" and p.dial == 0.25), None)
+        balanced_dial = None if policy.kind == "linear" else 0.25
+        balanced = next(
+            (p for p in points if p.kind == "routed" and p.dial == balanced_dial),
+            None,
+        )
         if (
             balanced is not None
             and balanced.cost_per_completed_task_usd is not None

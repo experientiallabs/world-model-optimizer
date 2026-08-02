@@ -18,15 +18,21 @@ def _outcome(
         scenario_id=scenario_id,
         task="do the thing",
         model=model,
+        benchmark="terminal-bench-2",
         episode=episode,
+        attempt_number=episode + 1,
         reward=reward,
         success=reward >= 0.5,
         critique="ok",
         steps=3,
+        tool_calls=3,
         stop_reason="agent_done",
         usage=TokenUsage(input_tokens=100, output_tokens=50),
         cost_usd=0.01,
         call_seconds=[0.2, 0.3, 0.25],
+        wall_seconds=12.5,
+        completion_status="scored",
+        artifact_dir="/artifacts/cell",
         replies=["{}", "{}", '{"done": true}'],
     )
 
@@ -79,6 +85,19 @@ def test_matrix_round_trips_through_json(tmp_path: Path) -> None:
     matrix.save(path)
     loaded = OutcomeMatrix.load(path)
     assert loaded == matrix
+
+
+def test_estimated_usage_provenance_round_trips(tmp_path: Path) -> None:
+    matrix = _matrix()
+    matrix.outcomes[0].usage_accounting = "estimated"
+    matrix.outcomes[0].usage_estimate_method = "trace-char-prefix-4k-overhead-v1"
+    path = tmp_path / "outcomes.json"
+
+    matrix.save(path)
+    loaded = OutcomeMatrix.load(path)
+
+    assert loaded.outcomes[0].usage_accounting == "estimated"
+    assert loaded.outcomes[0].usage_estimate_method == "trace-char-prefix-4k-overhead-v1"
 
 
 def test_mean_reward_unknown_model_errors() -> None:

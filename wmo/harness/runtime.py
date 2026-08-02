@@ -220,7 +220,18 @@ class TokenUsage(BaseModel):
 
     input_tokens: int = 0
     output_tokens: int = 0
+    cached_input_tokens: int = 0
+    cache_write_input_tokens: int = 0
+    reasoning_tokens: int = 0
     calls: int = 0
+    call_seconds: list[float] = Field(default_factory=list)
+    # Per-call counters preserve pricing boundaries that aggregate episode totals cannot.
+    # OpenAI long-context rates, for example, are selected by one request's prompt width rather
+    # than by the sum over an agent episode. Empty on legacy/runtime paths that only meter totals.
+    call_input_tokens: list[int] = Field(default_factory=list)
+    call_output_tokens: list[int] = Field(default_factory=list)
+    call_cached_input_tokens: list[int] = Field(default_factory=list)
+    call_cache_write_input_tokens: list[int] = Field(default_factory=list)
 
 
 def combine_usage(parts: Iterable[TokenUsage | None]) -> TokenUsage | None:
@@ -231,7 +242,19 @@ def combine_usage(parts: Iterable[TokenUsage | None]) -> TokenUsage | None:
     return TokenUsage(
         input_tokens=sum(p.input_tokens for p in reported),
         output_tokens=sum(p.output_tokens for p in reported),
+        cached_input_tokens=sum(p.cached_input_tokens for p in reported),
+        cache_write_input_tokens=sum(p.cache_write_input_tokens for p in reported),
+        reasoning_tokens=sum(p.reasoning_tokens for p in reported),
         calls=sum(p.calls for p in reported),
+        call_seconds=[seconds for p in reported for seconds in p.call_seconds],
+        call_input_tokens=[tokens for p in reported for tokens in p.call_input_tokens],
+        call_output_tokens=[tokens for p in reported for tokens in p.call_output_tokens],
+        call_cached_input_tokens=[
+            tokens for p in reported for tokens in p.call_cached_input_tokens
+        ],
+        call_cache_write_input_tokens=[
+            tokens for p in reported for tokens in p.call_cache_write_input_tokens
+        ],
     )
 
 
@@ -239,6 +262,7 @@ class RunResult(BaseModel):
     """The outcome of one rollout: the transcript, why it stopped, and any answer."""
 
     task_id: str
+    instruction: str = ""
     steps: list[Step] = Field(default_factory=list)
     stop_reason: StopReason
     answer: str = ""

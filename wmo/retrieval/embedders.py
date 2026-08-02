@@ -19,7 +19,12 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from wmo.providers.base import EmbedderKind
+from wmo.providers.base import (
+    EmbedderKind,
+    EmbeddingResult,
+    TokenUsage,
+    UsageReportingEmbedder,
+)
 
 if TYPE_CHECKING:
     from wmo.config import HarnessConfig
@@ -103,3 +108,36 @@ class BatchedEmbedder:
         for start in range(0, len(texts), self._batch):
             vectors.extend(self._embedder.embed(texts[start : start + self._batch]))
         return vectors
+
+    def embed_with_usage(self, texts: list[str]) -> EmbeddingResult:
+        """Chunk provider embeddings while preserving billable usage across chunks."""
+        if not isinstance(self._embedder, UsageReportingEmbedder):
+            return EmbeddingResult(
+                vectors=self.embed(texts),
+                model="unmetered-embedder",
+            )
+        vectors: list[list[float]] = []
+        total = TokenUsage()
+        model: str | None = None
+        for start in range(0, len(texts), self._batch):
+            result = self._embedder.embed_with_usage(texts[start : start + self._batch])
+            if model is not None and result.model != model:
+                raise ValueError(
+                    f"one batched embedding call changed model from {model} to {result.model}"
+                )
+            model = result.model
+            vectors.extend(result.vectors)
+            total = TokenUsage(
+                input_tokens=total.input_tokens + result.usage.input_tokens,
+                output_tokens=total.output_tokens + result.usage.output_tokens,
+                cached_input_tokens=(total.cached_input_tokens + result.usage.cached_input_tokens),
+                cache_write_input_tokens=(
+                    total.cache_write_input_tokens + result.usage.cache_write_input_tokens
+                ),
+                reasoning_tokens=total.reasoning_tokens + result.usage.reasoning_tokens,
+            )
+        return EmbeddingResult(
+            vectors=vectors,
+            usage=total,
+            model=model or "unmetered-embedder",
+        )

@@ -1524,7 +1524,10 @@ def test_an_unknown_embedder_lists_the_real_ones(
     root = _project(tmp_path)
     result = _run(tmp_path, root, "--yes", "--embedder", "word2vec")
     assert result.exit_code != 0
-    assert _says(result.output, "unknown embedder 'word2vec'; use auto, hashing or azure")
+    assert _says(
+        result.output,
+        "unknown embedder 'word2vec'; use auto, hashing, openai or azure",
+    )
 
 
 def test_auto_takes_the_semantic_embedder_when_the_resource_is_configured(

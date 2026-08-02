@@ -42,7 +42,7 @@ from wmo.harness.runtime import (
 )
 from wmo.harness.skills import SkillLibrary
 from wmo.harness.tools import READ_SKILL, ToolSpec
-from wmo.providers.base import ContextWindowProvider, ToolCallingProvider
+from wmo.providers.base import ContextWindowProvider, ToolCallingProvider, structured_token_usage
 
 logger = logging.getLogger(__name__)
 
@@ -551,6 +551,8 @@ class RunnerLink:
     def _llm_response(self, episode_id: str, frame: JsonObject, usage: TokenUsage) -> JsonObject:
         req_id = frame.get("req_id")
         body = frame.get("openai_body")
+        started = time.perf_counter()
+        usage.calls += 1
         try:
             # The runner owns message/tool serialization, while HarnessDoc owns sampling policy.
             # Override any runner default at the final host boundary before the real model call.
@@ -559,10 +561,16 @@ class RunnerLink:
             request = ChatRequest.model_validate(request_body)
             completion = self._worker_fn(request)
             # Meter the worker leg from the provider's structured response.
-            usage.calls += 1
-            reported = completion.token_usage()
+            reported = structured_token_usage(completion)
             usage.input_tokens += reported.input_tokens
             usage.output_tokens += reported.output_tokens
+            usage.cached_input_tokens += reported.cached_input_tokens
+            usage.cache_write_input_tokens += reported.cache_write_input_tokens
+            usage.reasoning_tokens += reported.reasoning_tokens
+            usage.call_input_tokens.append(reported.input_tokens)
+            usage.call_output_tokens.append(reported.output_tokens)
+            usage.call_cached_input_tokens.append(reported.cached_input_tokens)
+            usage.call_cache_write_input_tokens.append(reported.cache_write_input_tokens)
             response: JsonObject = {
                 "type": "llm_response",
                 "episode_id": episode_id,
@@ -588,6 +596,8 @@ class RunnerLink:
                 "req_id": req_id,
                 "error": str(exc),
             }
+        finally:
+            usage.call_seconds.append(time.perf_counter() - started)
         return response
 
     @staticmethod

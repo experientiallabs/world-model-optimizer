@@ -2,7 +2,7 @@
 
 An endpoint = {world model, policy, evidence, URL}; this module is the policy leg.
 
-WHICH KIND THE PRODUCT USES, because the three below are not peers:
+WHICH KIND THE PRODUCT USES, because the four below are not peers:
 
 - `knn` is THE learned router. `wmo optimize model` fits nothing else (it pins
   `kind="knn"`), so every optimized endpoint serves a knn policy.
@@ -18,8 +18,12 @@ WHICH KIND THE PRODUCT USES, because the three below are not peers:
   manually installed rank artifact through `rank_decision`, so read this as unfitted by the
   product rather than unservable. It is also the only kind with clusters, which is why a
   request log's cluster columns are empty for everything the product serves.
+- `linear` is an offline-fitted, pre-inference router for workloads where model or reasoning
+  effort is the dominant axis. It predicts the weak and strong arm rewards from one deterministic
+  request embedding and serves the strong arm only when their predicted uplift clears a frozen
+  threshold. The artifact stores plain numeric weights, never a pickle or executable estimator.
 
-The three kinds:
+The four kinds:
 
 - `static`: every request goes to `default_model`. Valid without any optimizer run, so an
   endpoint serves from day one and the improvement report has an honest "before" state.
@@ -39,6 +43,9 @@ The three kinds:
   model absent from ALL of the mixed clusters (`1 / default_rank`); a model ranked in one and
   absent from another simply collects nothing from the latter, it is not charged a default rank
   there. This matches the reference.
+- `linear`: a two-head potential-outcome router. Both heads score the same normalized request
+  vector; their clipped strong-minus-weak difference is compared with `linear_threshold`.
+  This adds no inference call when paired with the deterministic hashing embedder.
 
 The FIT that produces rank policies lives in `wmo.optimize.routing`; this module pins the
 artifact schema and the serve-time selection so serving, reports, and the platform stay stable
@@ -52,6 +59,7 @@ forfeits warm cache reads and pays cold writes; until the fitter learns a real s
 
 from __future__ import annotations
 
+import math
 import os
 import threading
 from dataclasses import dataclass
@@ -70,10 +78,16 @@ from wmo.optimize.compression import (
     same_compression,
     servable_compressor,
 )
-from wmo.providers.base import Embedder, ProviderConfig, ProviderKind
+from wmo.providers.base import (
+    Embedder,
+    ProviderConfig,
+    ProviderKind,
+    UsageReportingEmbedder,
+)
 from wmo.providers.pool import PoolEntry
 from wmo.providers.registry import get_provider
 from wmo.retrieval.embedders import BatchedEmbedder, HashingEmbedder
+from wmo.tracking.pricing import cost_usd
 
 POLICY_VERSION = 2
 POLICY_FILENAME = "policy.json"
@@ -142,12 +156,12 @@ class EmbedderSpec(BaseModel):
     """How to reproduce the policy's embedding function at serve time.
 
     `hashing` is deterministic, offline, and credential-free, so a policy file is fully
-    self-contained. `azure` uses an Azure embedding deployment (per-entry credential
-    conventions matching the model pool: `api_key_env` names the env var); the fitter records
-    whichever the fit actually used, and serving reconstructs the identical function.
+    self-contained. `openai` uses a direct OpenAI embedding model, and `azure` uses an Azure
+    embedding deployment. Both use the model-pool credential convention where `api_key_env`
+    names the key variable. The fitter records the exact backend and serving reconstructs it.
     """
 
-    kind: Literal["hashing", "azure"] = "hashing"
+    kind: Literal["hashing", "openai", "azure"] = "hashing"
     # gt=0 because a zero-width embedding is not a smaller embedding, it is no embedding: it
     # would reach the provider as `dimensions=0` and build a bank of empty rows.
     dim: int = Field(default=512, gt=0)
@@ -160,6 +174,8 @@ class EmbedderSpec(BaseModel):
     def _validate_backend(self) -> EmbedderSpec:
         if self.kind == "azure" and not (self.deployment and self.endpoint):
             raise ValueError("an azure embedder spec needs deployment and endpoint")
+        if self.kind == "openai" and not self.deployment:
+            raise ValueError("an openai embedder spec needs an embedding model")
         return self
 
     def build(self) -> Embedder:
@@ -175,12 +191,12 @@ class EmbedderSpec(BaseModel):
                 )
         provider = get_provider(
             ProviderConfig(
-                kind=ProviderKind.AZURE_OPENAI,
+                kind=(ProviderKind.OPENAI if self.kind == "openai" else ProviderKind.AZURE_OPENAI),
                 model=self.deployment or "",
                 embed_model=self.deployment,
                 embed_dim=self.dim,
-                endpoint=self.endpoint,
-                api_version="2024-10-21",
+                endpoint=self.endpoint if self.kind == "azure" else None,
+                api_version="2024-10-21" if self.kind == "azure" else None,
             ),
             api_key=api_key,
         )
@@ -198,7 +214,11 @@ def embedder_provenance(spec: EmbedderSpec) -> str:
     left out on purpose: renaming it does not move a single vector.
     """
     tag = f"{spec.kind}-{spec.dim}"
-    return tag if spec.kind == "hashing" else f"{tag}/{spec.deployment}@{spec.endpoint}"
+    if spec.kind == "hashing":
+        return tag
+    if spec.kind == "openai":
+        return f"{tag}/{spec.deployment}"
+    return f"{tag}/{spec.deployment}@{spec.endpoint}"
 
 
 @dataclass(frozen=True)
@@ -365,6 +385,7 @@ class RoutingDecision(BaseModel):
     # because it is per-request state, not part of the decision's shape: it must not appear in a
     # log row, a report, or a comparison between two decisions.
     _query_embedding: np.ndarray | None = PrivateAttr(default=None)
+    _router_cost_usd: float = PrivateAttr(default=0.0)
 
     def attach_query_embedding(self, vector: np.ndarray) -> None:
         """Record the vector this decision was made from (see `_query_embedding`)."""
@@ -374,12 +395,20 @@ class RoutingDecision(BaseModel):
         """The vector this decision was made from, when one was embedded for it."""
         return self._query_embedding
 
+    def attach_router_cost(self, value: float) -> None:
+        """Record the semantic embedder's billable cost for this one decision."""
+        self._router_cost_usd = value
+
+    def router_cost_usd(self) -> float:
+        """The routing decision's own provider cost, zero for offline embedders."""
+        return self._router_cost_usd
+
 
 class RoutingPolicy(BaseModel):
     """The persisted policy artifact (see module docstring)."""
 
     version: int = POLICY_VERSION
-    kind: Literal["static", "rank", "knn"]
+    kind: Literal["static", "rank", "knn", "linear"]
     default_model: str  # the static answer; also the fallback for degenerate rank inputs
     pool: list[PoolEntry]  # snapshot of the roster this policy was defined over
     embedder: EmbedderSpec = Field(default_factory=EmbedderSpec)
@@ -488,6 +517,18 @@ class RoutingPolicy(BaseModel):
     # re-applying any dial setting to any policy of this kind lands on the same knobs.
     cost_quality: float | None = Field(default=None, ge=0.0, le=1.0)
 
+    # Linear potential-outcome policies only. The two reward heads share `embedder`; serving
+    # normalizes the request vector, clips both predictions to [0, 1], and routes to the strong
+    # arm when predicted strong minus predicted weak reaches the frozen threshold. Plain JSON
+    # arrays keep the policy auditable and avoid loading an executable estimator artifact.
+    linear_weak_model: str | None = None
+    linear_strong_model: str | None = None
+    linear_weak_weights: list[float] = Field(default_factory=list)
+    linear_strong_weights: list[float] = Field(default_factory=list)
+    linear_weak_bias: float = 0.0
+    linear_strong_bias: float = 0.0
+    linear_threshold: float = 0.0
+
     # Set by `save`/`load` so a relative `knn_bank_path` resolves against the policy file, and
     # the lazily loaded bank. Private: not part of the artifact.
     _source_dir: Path | None = PrivateAttr(default=None)
@@ -548,6 +589,39 @@ class RoutingPolicy(BaseModel):
                         f"cluster {cluster.cluster_id} centroid has dim "
                         f"{len(cluster.centroid)}, embedder dim is {self.embedder.dim}"
                     )
+        if self.kind == "linear":
+            if self.linear_weak_model is None or self.linear_strong_model is None:
+                raise ValueError("a linear policy needs weak and strong model names")
+            if self.linear_weak_model == self.linear_strong_model:
+                raise ValueError("a linear policy needs distinct weak and strong models")
+            unknown = [
+                name
+                for name in (self.linear_weak_model, self.linear_strong_model)
+                if name not in names
+            ]
+            if unknown:
+                raise ValueError(
+                    f"linear policy models {unknown} are not in the policy pool "
+                    f"(available: {sorted(names)})"
+                )
+            for label, weights in (
+                ("weak", self.linear_weak_weights),
+                ("strong", self.linear_strong_weights),
+            ):
+                if len(weights) != self.embedder.dim:
+                    raise ValueError(
+                        f"linear {label} head has {len(weights)} weights, "
+                        f"embedder dim is {self.embedder.dim}"
+                    )
+                if not all(math.isfinite(value) for value in weights):
+                    raise ValueError(f"linear {label} head weights must all be finite")
+            scalars = (
+                self.linear_weak_bias,
+                self.linear_strong_bias,
+                self.linear_threshold,
+            )
+            if not all(math.isfinite(value) for value in scalars):
+                raise ValueError("linear policy biases and threshold must all be finite")
         return self
 
     def _check_compression(self) -> None:
@@ -734,7 +808,14 @@ def select_model(
     if policy.kind == "static":
         return RoutingDecision(model=policy.default_model, reason="static policy")
 
-    query = np.asarray((embedder or policy.embedder.build()).embed([text])[0])
+    resolved_embedder = embedder or policy.embedder.build()
+    router_cost = 0.0
+    if isinstance(resolved_embedder, UsageReportingEmbedder):
+        embedded = resolved_embedder.embed_with_usage([text])
+        query = np.asarray(embedded.vectors[0])
+        router_cost = cost_usd(embedded.model, embedded.usage)
+    else:
+        query = np.asarray(resolved_embedder.embed([text])[0])
     if policy.kind == "knn":
         credit = cache_credit_usd(policy, incumbent, conversation_chars) if cache_aware_knn else 0.0
         decision = knn_decision(
@@ -743,14 +824,60 @@ def select_model(
             incumbent=incumbent if cache_aware_knn else None,
             cache_credit=credit,
         )
+    elif policy.kind == "linear":
+        decision = linear_decision(policy, query)
     else:
         decision = rank_decision(policy, query)
-    # Normalized separately rather than by normalizing `query` first: both decision functions do
+    # Normalized separately rather than by normalizing `query` first: all decision functions do
     # their own normalization in their own precision, and pre-normalizing here would perturb the
     # champion's numerical path for the sake of a logging side effect.
     norm = float(np.linalg.norm(query))
     decision.attach_query_embedding(query / norm if norm > 0.0 else query)
+    decision.attach_router_cost(router_cost)
     return decision
+
+
+def linear_decision(policy: RoutingPolicy, query: np.ndarray) -> RoutingDecision:
+    """Route between two arms using frozen linear potential-outcome heads."""
+    if policy.kind != "linear":
+        raise ValueError(f"linear_decision needs a linear policy, got kind='{policy.kind}'")
+    if policy.linear_weak_model is None or policy.linear_strong_model is None:
+        raise ValueError("linear policy has no weak or strong model")
+
+    vector = np.asarray(query, dtype=np.float64)
+    norm = float(np.linalg.norm(vector))
+    if norm == 0.0:
+        return RoutingDecision(
+            model=policy.default_model,
+            reason=f"linear router: empty embedding, serving fallback {policy.default_model}",
+        )
+    vector = vector / norm
+    weak = float(
+        np.clip(
+            np.dot(np.asarray(policy.linear_weak_weights, dtype=np.float64), vector)
+            + policy.linear_weak_bias,
+            0.0,
+            1.0,
+        )
+    )
+    strong = float(
+        np.clip(
+            np.dot(np.asarray(policy.linear_strong_weights, dtype=np.float64), vector)
+            + policy.linear_strong_bias,
+            0.0,
+            1.0,
+        )
+    )
+    uplift = strong - weak
+    use_strong = uplift >= policy.linear_threshold
+    model = policy.linear_strong_model if use_strong else policy.linear_weak_model
+    return RoutingDecision(
+        model=model,
+        reason=(
+            f"linear router: predicted uplift {uplift:.4f} "
+            f"{'>=' if use_strong else '<'} threshold {policy.linear_threshold:.4f}"
+        ),
+    )
 
 
 def rank_decision(policy: RoutingPolicy, query: np.ndarray) -> RoutingDecision:
@@ -1159,8 +1286,8 @@ def resolve_embedder(
         ValueError: An unknown `--embedder`, or an explicit azure spec missing a flag.
             `route fit` re-raises these as `typer.BadParameter`.
     """
-    if choice not in ("auto", "hashing", "azure"):
-        raise ValueError(f"unknown embedder '{choice}'; use auto, hashing or azure")
+    if choice not in ("auto", "hashing", "openai", "azure"):
+        raise ValueError(f"unknown embedder '{choice}'; use auto, hashing, openai or azure")
 
     if choice == "auto":
         present = all(os.environ.get(name) for name in AZURE_EMBEDDER_ENV)
@@ -1185,6 +1312,36 @@ def resolve_embedder(
     if choice == "hashing":
         spec = EmbedderSpec(dim=HASHING_EMBEDDER_DIM if dim is None else dim)
         return spec, f"embedder: hashing-{spec.dim} (explicit). {HASHING_DOWNGRADE_NOTICE}"
+
+    if choice == "openai":
+        if not deployment:
+            raise ValueError(
+                "--embedder openai needs --deployment naming the embedding model "
+                "(for example text-embedding-3-large)"
+            )
+        if endpoint:
+            raise ValueError(
+                "--embedder openai uses the direct OpenAI endpoint; drop --endpoint or use "
+                "--embedder azure"
+            )
+        native, recognized = _native_dim(deployment)
+        spec = EmbedderSpec(
+            kind="openai",
+            dim=native if dim is None else dim,
+            deployment=deployment,
+            api_key_env=api_key_env or "OPENAI_API_KEY",
+        )
+        width = (
+            f"{spec.dim}d as asked"
+            if dim is not None
+            else f"{spec.dim}d native"
+            if recognized
+            else f"{spec.dim}d assumed"
+        )
+        return spec, (
+            f"embedder: openai {deployment} ({width}) (explicit). "
+            "This calls the OpenAI embedding API and is billed to that account."
+        )
 
     if not (deployment and endpoint):
         # EmbedderSpec would reject this too, but only after the matrix has been read; say which
@@ -1266,6 +1423,12 @@ def _probe_failure(spec: EmbedderSpec, detail: str) -> str:
     """What to tell an operator whose embedder does not work, in the vocabulary they typed."""
     if spec.kind == "hashing":
         return f"the hashing embedder failed to embed a probe text: {detail}"
+    if spec.kind == "openai":
+        return (
+            f"OpenAI embedding model '{spec.deployment}' could not embed a probe text: "
+            f"{detail}. Check {spec.api_key_env or 'OPENAI_API_KEY'}, use a current embedding "
+            "model, or fit with --embedder hashing."
+        )
     return (
         f"embedding deployment '{spec.deployment}' at {spec.endpoint} could not embed a probe "
         f"text: {detail}. That resource may serve chat models without hosting an embedding "

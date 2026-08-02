@@ -86,7 +86,13 @@ def _tools() -> list:
 
 
 def _completion(
-    content: str = "ok", *, input_tokens: int = 0, output_tokens: int = 0
+    content: str = "ok",
+    *,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    cached_input_tokens: int = 0,
+    cache_write_input_tokens: int = 0,
+    reasoning_tokens: int = 0,
 ) -> ChatResponse:
     return ChatResponse.model_validate(
         {
@@ -99,6 +105,11 @@ def _completion(
             "usage": {
                 "prompt_tokens": input_tokens,
                 "completion_tokens": output_tokens,
+                "prompt_tokens_details": {
+                    "cached_tokens": cached_input_tokens,
+                    "cache_write_tokens": cache_write_input_tokens,
+                },
+                "completion_tokens_details": {"reasoning_tokens": reasoning_tokens},
             },
         }
     )
@@ -625,7 +636,19 @@ def test_doc_runtime_dispatches_runner_link_under_pi_transport_link() -> None:
 
 def test_worker_usage_accumulates_across_llm_requests() -> None:
     """Each answered llm_request adds its completion usage to RunResult.worker_usage."""
-    replies = iter([_completion("a", input_tokens=100, output_tokens=7), _completion("b")])
+    replies = iter(
+        [
+            _completion(
+                "a",
+                input_tokens=100,
+                output_tokens=7,
+                cached_input_tokens=40,
+                cache_write_input_tokens=10,
+                reasoning_tokens=3,
+            ),
+            _completion("b"),
+        ]
+    )
     script = [
         {"type": "llm_request", "req_id": 1, "openai_body": {}},
         {"type": "llm_request", "req_id": 2, "openai_body": {}},
@@ -639,6 +662,15 @@ def test_worker_usage_accumulates_across_llm_requests() -> None:
     assert result.worker_usage.calls == 2
     assert result.worker_usage.input_tokens == 100
     assert result.worker_usage.output_tokens == 7
+    assert result.worker_usage.cached_input_tokens == 40
+    assert result.worker_usage.cache_write_input_tokens == 10
+    assert result.worker_usage.reasoning_tokens == 3
+    assert len(result.worker_usage.call_seconds) == 2
+    assert all(seconds >= 0 for seconds in result.worker_usage.call_seconds)
+    assert result.worker_usage.call_input_tokens == [100, 0]
+    assert result.worker_usage.call_output_tokens == [7, 0]
+    assert result.worker_usage.call_cached_input_tokens == [40, 0]
+    assert result.worker_usage.call_cache_write_input_tokens == [10, 0]
     # No llm_request at all -> usage stays None (not zero: the runtime reported nothing).
     quiet = RunnerLink(
         _FakeChannel([{"type": "done", "reason": "submit", "answer": "ok"}]),

@@ -628,7 +628,27 @@ class AgentProject:
         if session is not None:
             self._retired_worker_usage.input_tokens += session.worker_usage.input_tokens
             self._retired_worker_usage.output_tokens += session.worker_usage.output_tokens
+            self._retired_worker_usage.cached_input_tokens += (
+                session.worker_usage.cached_input_tokens
+            )
+            self._retired_worker_usage.cache_write_input_tokens += (
+                session.worker_usage.cache_write_input_tokens
+            )
+            self._retired_worker_usage.reasoning_tokens += session.worker_usage.reasoning_tokens
             self._retired_worker_usage.calls += session.worker_usage.calls
+            self._retired_worker_usage.call_seconds.extend(session.worker_usage.call_seconds)
+            self._retired_worker_usage.call_input_tokens.extend(
+                session.worker_usage.call_input_tokens
+            )
+            self._retired_worker_usage.call_output_tokens.extend(
+                session.worker_usage.call_output_tokens
+            )
+            self._retired_worker_usage.call_cached_input_tokens.extend(
+                session.worker_usage.call_cached_input_tokens
+            )
+            self._retired_worker_usage.call_cache_write_input_tokens.extend(
+                session.worker_usage.call_cache_write_input_tokens
+            )
         close = getattr(channel, "close", None)
         if callable(close):
             with contextlib.suppress(Exception):
@@ -658,7 +678,37 @@ class AgentProject:
         return TokenUsage(
             input_tokens=self._retired_worker_usage.input_tokens + current.input_tokens,
             output_tokens=self._retired_worker_usage.output_tokens + current.output_tokens,
+            cached_input_tokens=(
+                self._retired_worker_usage.cached_input_tokens + current.cached_input_tokens
+            ),
+            cache_write_input_tokens=(
+                self._retired_worker_usage.cache_write_input_tokens
+                + current.cache_write_input_tokens
+            ),
+            reasoning_tokens=(
+                self._retired_worker_usage.reasoning_tokens + current.reasoning_tokens
+            ),
             calls=self._retired_worker_usage.calls + current.calls,
+            call_seconds=[
+                *self._retired_worker_usage.call_seconds,
+                *current.call_seconds,
+            ],
+            call_input_tokens=[
+                *self._retired_worker_usage.call_input_tokens,
+                *current.call_input_tokens,
+            ],
+            call_output_tokens=[
+                *self._retired_worker_usage.call_output_tokens,
+                *current.call_output_tokens,
+            ],
+            call_cached_input_tokens=[
+                *self._retired_worker_usage.call_cached_input_tokens,
+                *current.call_cached_input_tokens,
+            ],
+            call_cache_write_input_tokens=[
+                *self._retired_worker_usage.call_cache_write_input_tokens,
+                *current.call_cache_write_input_tokens,
+            ],
         )
 
     def close(self) -> None:
@@ -884,7 +934,19 @@ def _usage_delta(after: TokenUsage, before: TokenUsage) -> TokenUsage:
     return TokenUsage(
         input_tokens=after.input_tokens - before.input_tokens,
         output_tokens=after.output_tokens - before.output_tokens,
+        cached_input_tokens=after.cached_input_tokens - before.cached_input_tokens,
+        cache_write_input_tokens=(after.cache_write_input_tokens - before.cache_write_input_tokens),
+        reasoning_tokens=after.reasoning_tokens - before.reasoning_tokens,
         calls=after.calls - before.calls,
+        call_seconds=after.call_seconds[len(before.call_seconds) :],
+        call_input_tokens=after.call_input_tokens[len(before.call_input_tokens) :],
+        call_output_tokens=after.call_output_tokens[len(before.call_output_tokens) :],
+        call_cached_input_tokens=after.call_cached_input_tokens[
+            len(before.call_cached_input_tokens) :
+        ],
+        call_cache_write_input_tokens=after.call_cache_write_input_tokens[
+            len(before.call_cache_write_input_tokens) :
+        ],
     )
 
 

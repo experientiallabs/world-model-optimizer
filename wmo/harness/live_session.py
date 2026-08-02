@@ -41,6 +41,7 @@ sides, so eval episodes are unaffected):
 from __future__ import annotations
 
 import queue
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -53,7 +54,7 @@ from wmo.core.types import JsonObject
 from wmo.harness.runner_link import Channel, TokenUsage, WorkerFn, params_schema
 from wmo.harness.runtime import DEFAULT_MAX_OUTPUT_TOKENS
 from wmo.harness.tools import READ_SKILL, SUBMIT, ToolSpec
-from wmo.providers.base import ToolCallingProvider
+from wmo.providers.base import ToolCallingProvider, structured_token_usage
 
 # The action budget a single user turn may spend before the runner is told to stop — the live
 # analogue of `HostEpisode.max_env_actions`, so a champion optimized under that pressure behaves
@@ -352,6 +353,8 @@ class LiveSession:
                 {"type": "llm_response", "req_id": req_id, "error": "no worker configured"}
             )
             return
+        started = time.perf_counter()
+        self.worker_usage.calls += 1
         try:
             request_body = dict(body) if isinstance(body, dict) else {}
             request_body["temperature"] = self._temperature
@@ -365,6 +368,8 @@ class LiveSession:
         except Exception as exc:  # noqa: BLE001 - report to the runner, never crash the host
             self._emit("error", {"message": f"worker LLM error: {exc}"})
             self._safe_send({"type": "llm_response", "req_id": req_id, "error": str(exc)})
+        finally:
+            self.worker_usage.call_seconds.append(time.perf_counter() - started)
 
     def _answer_tool(self, frame: JsonObject) -> None:
         req_id = frame.get("req_id")
@@ -463,10 +468,16 @@ class LiveSession:
             self._emit("assistant_message", {"text": text})
 
     def _meter(self, completion: ChatResponse) -> None:
-        self.worker_usage.calls += 1
-        reported = completion.token_usage()
+        reported = structured_token_usage(completion)
         self.worker_usage.input_tokens += reported.input_tokens
         self.worker_usage.output_tokens += reported.output_tokens
+        self.worker_usage.cached_input_tokens += reported.cached_input_tokens
+        self.worker_usage.cache_write_input_tokens += reported.cache_write_input_tokens
+        self.worker_usage.reasoning_tokens += reported.reasoning_tokens
+        self.worker_usage.call_input_tokens.append(reported.input_tokens)
+        self.worker_usage.call_output_tokens.append(reported.output_tokens)
+        self.worker_usage.call_cached_input_tokens.append(reported.cached_input_tokens)
+        self.worker_usage.call_cache_write_input_tokens.append(reported.cache_write_input_tokens)
 
     def _tool_specs(self) -> list[JsonObject]:
         return [

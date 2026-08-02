@@ -23,6 +23,7 @@ from wmo.providers.base import (
     ChatRequest,
     ChatResponse,
     Completion,
+    EmbeddingResult,
     Message,
     ProviderConfig,
     StreamChunk,
@@ -155,9 +156,12 @@ class OpenAIProvider:
         )
 
     def embed(self, texts: list[str]) -> list[list[float]]:
+        return self.embed_with_usage(texts).vectors
+
+    def embed_with_usage(self, texts: list[str]) -> EmbeddingResult:
         if self.config.embed_model is None:
             raise ValueError("OpenAIProvider.embed requires config.embed_model to be set.")
-        return _openai_common.embed(
+        return _openai_common.embed_with_usage(
             self._get_client().embeddings, self.config.embed_model, texts, self.config.embed_dim
         )
 

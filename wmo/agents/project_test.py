@@ -1031,6 +1031,8 @@ def test_project_counts_worker_usage_from_failed_and_recovered_attempts() -> Non
     assert result.worker_usage.calls == 2
     assert result.worker_usage.input_tokens == 10
     assert result.worker_usage.output_tokens == 14
+    assert result.worker_usage.call_input_tokens == [5, 5]
+    assert result.worker_usage.call_output_tokens == [7, 7]
 
 
 def test_project_replaces_owned_sandbox_and_restores_files_after_disconnect() -> None:

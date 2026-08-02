@@ -18,10 +18,10 @@ distinctive c-TF-IDF terms when the ids carry no prefix; see `wmo.optimize.clust
 reference has no labels. Cost plays NO part in fitting, exactly like the reference; the cost-aware
 variant (Avengers-Pro's alpha) is the first planned variation AFTER replication is validated.
 
-`evaluate_policy` replays a policy of ANY kind (static, rank, knn) over a matrix through the same
-decision code serving uses, so benchmark numbers measure the deployed selection path, not a
-reimplementation. The kNN family's fit lives in `wmo.optimize.knn`, which explains why it is a
-separate module rather than another mode here.
+`evaluate_policy` replays a policy of ANY kind (static, rank, knn, linear) over a matrix through
+the same decision code serving uses, so benchmark numbers measure the deployed selection path,
+not a reimplementation. The kNN family's fit lives in `wmo.optimize.knn`, which explains why it
+is a separate module rather than another mode here.
 """
 
 from __future__ import annotations
@@ -45,6 +45,7 @@ from wmo.optimize.policy import (
     RoutingDecision,
     RoutingPolicy,
     knn_decision,
+    linear_decision,
     rank_decision,
 )
 
@@ -364,7 +365,12 @@ def route_scenarios(
             sid: RoutingDecision(model=policy.default_model, reason="static policy")
             for sid in wanted
         }
-    decide = knn_decision if policy.kind == "knn" else rank_decision
+    if policy.kind == "knn":
+        decide = knn_decision
+    elif policy.kind == "linear":
+        decide = linear_decision
+    else:
+        decide = rank_decision
     built = embedder or policy.embedder.build()
     embeddings = np.asarray(built.embed([scenario_tasks[sid] for sid in wanted]))
     return {sid: decide(policy, embeddings[index]) for index, sid in enumerate(wanted)}

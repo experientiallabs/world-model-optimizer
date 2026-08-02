@@ -76,15 +76,31 @@ class ScenarioOutcome(BaseModel):
     scenario_id: str
     task: str
     model: str  # pool entry name (the stable handle policy artifacts key on)
+    benchmark: str = ""
     episode: int = 0
+    attempt_number: int = 1
     reward: float | None = None
     success: bool = False
     critique: str = ""
     steps: int = 0
+    tool_calls: int = 0
     stop_reason: str = ""
     usage: TokenUsage = TokenUsage()
     cost_usd: float = 0.0  # candidate-side cost, priced by ITS pool entry
     call_seconds: list[float] = []  # wall seconds per policy call (env time excluded)
+    # Per-call token counts retain request-level pricing boundaries. Empty on legacy matrices.
+    call_input_tokens: list[int] = []
+    call_output_tokens: list[int] = []
+    call_cached_input_tokens: list[int] = []
+    call_cache_write_input_tokens: list[int] = []
+    # Provider counters are preferred. Experiment runners may preserve a gradeable official
+    # result with a clearly labeled trace-derived estimate when exact counters are unavailable.
+    usage_accounting: str = "exact"
+    usage_estimate_method: str = ""
+    wall_seconds: float = 0.0
+    completion_status: str = ""
+    failure_class: str = ""
+    artifact_dir: str = ""
     # Raw completion texts per call: the future distillation feed (stored, never used by v1
     # fitting). Reasoning models that emit thought before the JSON action keep it here.
     replies: list[str] = []

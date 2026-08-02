@@ -175,6 +175,7 @@ def test_provider_config_maps_backend_knobs() -> None:
         deployment="gpt-5.5",
         endpoint="https://google-sheets.openai.azure.com",
         api_version="2024-10-21",
+        reasoning_effort="high",
     )
     config = entry.provider_config()
     assert config.kind is ProviderKind.AZURE_OPENAI
@@ -182,6 +183,54 @@ def test_provider_config_maps_backend_knobs() -> None:
     assert config.deployment == "gpt-5.5"
     assert config.endpoint == "https://google-sheets.openai.azure.com"
     assert config.api_version == "2024-10-21"
+    assert config.reasoning_effort == "high"
+
+
+def test_provider_config_resolves_endpoint_and_deployment_env_without_serializing_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("WMO_TEST_ENDPOINT", "https://example.openai.azure.com")
+    monkeypatch.setenv("WMO_TEST_DEPLOYMENT", "private-deployment")
+    entry = PoolEntry(
+        name="gpt",
+        kind=ProviderKind.AZURE_OPENAI,
+        model="gpt-5.5",
+        endpoint_env="WMO_TEST_ENDPOINT",
+        deployment_env="WMO_TEST_DEPLOYMENT",
+    )
+
+    config = entry.provider_config()
+
+    assert config.endpoint == "https://example.openai.azure.com"
+    assert config.deployment == "private-deployment"
+    dumped = entry.model_dump_json()
+    assert "private-deployment" not in dumped
+    assert "https://example.openai.azure.com" not in dumped
+
+
+def test_env_backed_endpoint_and_deployment_are_required_at_config_time() -> None:
+    entry = PoolEntry(
+        name="gpt",
+        kind=ProviderKind.AZURE_OPENAI,
+        model="gpt-5.5",
+        endpoint_env="WMO_MISSING_ENDPOINT",
+        deployment_env="WMO_MISSING_DEPLOYMENT",
+    )
+
+    with pytest.raises(ValueError, match="WMO_MISSING_ENDPOINT"):
+        entry.provider_config()
+
+
+def test_pool_rejects_literal_and_env_reference_for_the_same_backend_field() -> None:
+    with pytest.raises(ValidationError, match="endpoint or endpoint_env"):
+        PoolEntry(
+            name="gpt",
+            kind=ProviderKind.AZURE_OPENAI,
+            model="gpt-5.5",
+            endpoint="https://example.openai.azure.com",
+            endpoint_env="WMO_TEST_ENDPOINT",
+            deployment="deployment",
+        )
 
 
 def test_pool_provider_requires_named_env_key(
@@ -348,6 +397,25 @@ def test_cost_usd_is_cache_adjusted() -> None:
     usage = TokenUsage(input_tokens=1_000_000, output_tokens=0, cached_input_tokens=400_000)
     # 600k fresh @ $10/M + 400k cached @ $1/M = $6.40 - never the $10 list price.
     assert entry.cost_usd(usage) == pytest.approx(6.4)
+
+
+def test_call_cost_usd_applies_openai_long_context_tier_to_explicit_prices() -> None:
+    entry = PoolEntry(
+        name="gpt55",
+        kind=ProviderKind.OPENAI_RESPONSES,
+        model="gpt-5.5-2026-04-23",
+        model_type="gpt-5.5",
+        input_per_mtok=5.0,
+        output_per_mtok=30.0,
+        cached_input_per_mtok=0.5,
+    )
+    usage = TokenUsage(
+        input_tokens=300_000,
+        output_tokens=10_000,
+        cached_input_tokens=100_000,
+    )
+    assert entry.cost_usd(usage) == pytest.approx(1.35)
+    assert entry.call_cost_usd(usage) == pytest.approx(2.55)
 
 
 def test_cost_usd_without_cache_price_bills_cached_tokens_at_full_rate() -> None:
@@ -1263,6 +1331,18 @@ def test_pool_entry_threads_reasoning_effort_into_the_provider_config() -> None:
     )
 
 
+def test_pool_entry_preserves_openai_xhigh_reasoning_effort() -> None:
+    entry = PoolEntry(
+        name="gpt-5.4@xhigh",
+        kind=ProviderKind.OPENAI,
+        model="gpt-5.4",
+        reasoning_effort="xhigh",
+    )
+
+    assert entry.provider_config().reasoning_effort == "xhigh"
+    assert entry.model_dump()["reasoning_effort"] == "xhigh"
+
+
 def test_reasoning_effort_validates_at_load_not_first_request() -> None:
     """A bad effort value or a Bedrock effort entry must fail when the pool loads."""
     with pytest.raises(ValidationError, match="reasoning_effort"):
@@ -1281,4 +1361,11 @@ def test_reasoning_effort_validates_at_load_not_first_request() -> None:
             kind=ProviderKind.BEDROCK,
             model="us.anthropic.claude-opus-4-8",
             reasoning_effort="max",
+        )
+    with pytest.raises(ValidationError, match="supports effort through max"):
+        PoolEntry(
+            name="sonnet-5@xhigh",
+            kind=ProviderKind.ANTHROPIC,
+            model="claude-sonnet-5",
+            reasoning_effort="xhigh",
         )

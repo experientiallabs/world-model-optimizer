@@ -323,6 +323,29 @@ def test_evaluate_policy_scores_the_decisions_route_scenarios_returns() -> None:
     assert result.scenarios == len(decisions)
 
 
+def test_route_scenarios_replays_linear_policy_through_shared_decision() -> None:
+    matrix = _matrix()
+    spec = EmbedderSpec(dim=64)
+    query = spec.build().embed([_SQL_TASKS[0]])[0]
+    policy = RoutingPolicy(
+        kind="linear",
+        default_model="prose-model",
+        pool=_entries(),
+        embedder=spec,
+        linear_weak_model="prose-model",
+        linear_strong_model="sql-model",
+        linear_weak_weights=[0.0] * spec.dim,
+        linear_strong_weights=query,
+        linear_threshold=0.99,
+    )
+    scenario_id = "sql:0"
+    decision = route_scenarios(policy, matrix, [scenario_id])[scenario_id]
+    result = evaluate_policy(policy, matrix, [scenario_id])
+    assert decision.model == "sql-model"
+    assert result.accuracy == 1.0
+    assert result.model_mix == {"sql-model": 1.0}
+
+
 def test_route_scenarios_rejects_repeated_ids() -> None:
     matrix = _matrix()
     policy = RoutingPolicy(kind="static", default_model="sql-model", pool=_entries())

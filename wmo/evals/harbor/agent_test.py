@@ -210,6 +210,7 @@ def test_agent_runs_the_exact_candidate_on_the_dedicated_executor_and_persists_i
         "turns": 3,
     }
     trace = json.loads((tmp_path / "wmo-run.json").read_text())
+    assert trace["instruction"] == "solve it"
     assert trace["answer"] == "done"
     assert trace["stop_reason"] == "submitted"
 
@@ -393,7 +394,19 @@ def test_harbor_timeout_cancellation_still_persists_the_partial_transcript(
     assert trace["partial"] is True
     assert trace["stop_reason"] == "cancelled-by-harbor-timeout"
     assert [step["action"]["name"] for step in trace["steps"]] == ["bash"]
-    assert trace["worker_usage"] == {"input_tokens": 5, "output_tokens": 2, "calls": 1}
+    assert trace["worker_usage"] == {
+        "input_tokens": 5,
+        "output_tokens": 2,
+        "cached_input_tokens": 0,
+        "cache_write_input_tokens": 0,
+        "reasoning_tokens": 0,
+        "calls": 1,
+        "call_seconds": [],
+        "call_input_tokens": [],
+        "call_output_tokens": [],
+        "call_cached_input_tokens": [],
+        "call_cache_write_input_tokens": [],
+    }
     assert "RuntimeCancelled" in trace["error"]
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from socket import socket
 from typing import cast
@@ -118,6 +119,57 @@ def test_worker_request_uses_document_temperature() -> None:
         {"messages": [], "temperature": 1.75}
     )
     assert request.temperature == 0.35
+
+
+def test_worker_completion_usage_keeps_exact_per_call_counters() -> None:
+    ep = _episode(_Env())
+    completion = ChatResponse.model_validate(
+        {
+            "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 20,
+                "prompt_tokens_details": {
+                    "cached_tokens": 40,
+                    "cache_write_tokens": 10,
+                },
+                "completion_tokens_details": {"reasoning_tokens": 7},
+            },
+        }
+    )
+
+    ep.record_worker_completion(completion, 0.25)
+
+    assert ep.worker_usage.model_dump(mode="json") == {
+        "input_tokens": 100,
+        "output_tokens": 20,
+        "cached_input_tokens": 40,
+        "cache_write_input_tokens": 10,
+        "reasoning_tokens": 7,
+        "calls": 1,
+        "call_seconds": [0.25],
+        "call_input_tokens": [100],
+        "call_output_tokens": [20],
+        "call_cached_input_tokens": [40],
+        "call_cache_write_input_tokens": [10],
+    }
+
+
+def test_error_result_keeps_partial_worker_usage() -> None:
+    ep = _episode(_Env())
+    ep.record_worker_failure(0.5)
+
+    result = PiRuntime._error_result(  # noqa: SLF001 - partial spend is the contract
+        "task",
+        ep,
+        "do it",
+        "provider failed",
+        StopReason.PROVIDER_ERROR,
+    )
+
+    assert result.worker_usage is not None
+    assert result.worker_usage.calls == 1
+    assert result.worker_usage.call_seconds == [0.5]
 
 
 def test_read_skill_is_runtime_local_and_does_not_consume_environment_budget() -> None:
@@ -290,10 +342,10 @@ def test_run_maps_the_shim_done_reason_to_a_distinct_stop_reason(
         tools=[TOOL_REGISTRY["bash"], SUBMIT],
         port=8899,
     )
-    monkeypatch.setattr(PiRuntime, "_materialize", lambda self: None)
+    monkeypatch.setattr(PiRuntime, "_materialize", lambda self, workdir: None)
 
-    def fake_run_node(self: PiRuntime) -> tuple[int, str]:
-        del self
+    def fake_run_node(self: PiRuntime, port: int, workdir: str) -> tuple[int, str]:
+        del self, port, workdir
         # Stand in for entry.ts POSTing /done with its classified reason.
         episode.answer = "text"
         episode.done_reason = reason
@@ -341,6 +393,10 @@ def test_the_node_wall_budget_comes_from_the_configured_episode_timeout(
     def fake_run(command: list[str], **kwargs: object) -> _Completed:
         commands.append(command)
         assert kwargs["timeout"] == pytest.approx(1800.0 + 60.0)
+        assert (
+            pi_runtime_module._NODE_HARD_KILL_AFTER_S  # noqa: SLF001 - timeout contract
+            < pi_runtime_module._NODE_TEARDOWN_GRACE_S  # noqa: SLF001 - timeout contract
+        )
         return _Completed()
 
     runtime = PiRuntime(
@@ -352,10 +408,13 @@ def test_the_node_wall_budget_comes_from_the_configured_episode_timeout(
     )
     monkeypatch.setattr("wmo.harness.pi_runtime.subprocess.run", fake_run)
 
-    code, _note = runtime._run_node()  # noqa: SLF001 - the remote command is the contract
+    code, _note = runtime._run_node(8898, "~/pi-run/ep-8898")  # noqa: SLF001
 
     assert code == 0
-    assert "timeout 1800 node --experimental-strip-types entry.ts" in commands[0][-1]
+    assert "StrictHostKeyChecking=accept-new" in commands[0]
+    assert (
+        "timeout --kill-after=10 1800 node --experimental-strip-types entry.ts" in commands[0][-1]
+    )
 
 
 @pytest.mark.parametrize(
@@ -391,9 +450,48 @@ def test_a_fractional_node_wall_budget_rounds_up_instead_of_truncating(
     )
     monkeypatch.setattr("wmo.harness.pi_runtime.subprocess.run", fake_run)
 
-    runtime._run_node()  # noqa: SLF001 - the remote command is the contract
+    runtime._run_node(8899, "~/pi-run/ep-8899")  # noqa: SLF001
 
-    assert f"timeout {expected} node --experimental-strip-types entry.ts" in commands[0][-1]
+    assert (
+        f"timeout --kill-after=10 {expected} node --experimental-strip-types entry.ts"
+        in commands[0][-1]
+    )
+
+
+def test_default_runtime_ports_and_workdirs_are_isolated_across_parallel_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Independent local runtimes must not share the default shim port or runner directory."""
+    barrier = threading.Barrier(2)
+    endpoints: list[tuple[int, str]] = []
+    endpoint_lock = threading.Lock()
+
+    monkeypatch.setattr(PiRuntime, "_materialize", lambda self, workdir: None)
+
+    def fake_run_node(self: PiRuntime, port: int, workdir: str) -> tuple[int, str]:
+        del self
+        with endpoint_lock:
+            endpoints.append((port, workdir))
+        barrier.wait(timeout=5)
+        return 0, ""
+
+    monkeypatch.setattr(PiRuntime, "_run_node", fake_run_node)
+    runtimes = [
+        PiRuntime(
+            cast("Provider", _Provider()),
+            files={"src/agent.ts": "// a"},
+            tools=[SUBMIT],
+        )
+        for _ in range(2)
+    ]
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda runtime: runtime.run("t1", "do it", _Env()), runtimes))
+
+    assert len(results) == 2
+    assert len({port for port, _workdir in endpoints}) == 2
+    assert len({workdir for _port, workdir in endpoints}) == 2
+    assert all(port > 0 and workdir.endswith(f"ep-{port}") for port, workdir in endpoints)
 
 
 def test_the_shared_termination_policy_is_materialized_next_to_entry_ts() -> None:

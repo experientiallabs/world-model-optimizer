@@ -32,6 +32,7 @@ from wmo.optimize.policy import (
     cache_credit_usd,
     embedder_provenance,
     knn_decision,
+    linear_decision,
     probe_embedder,
     rank_decision,
     resolve_embedder,
@@ -118,6 +119,24 @@ def _rank_policy(top_k_clusters: int = 1) -> RoutingPolicy:
     )
 
 
+def _linear_policy() -> RoutingPolicy:
+    embedder = EmbedderSpec(dim=8)
+    query = np.asarray(embedder.build().embed(["route this coding task"])[0])
+    return RoutingPolicy(
+        kind="linear",
+        default_model="fable-5",
+        pool=_pool(),
+        embedder=embedder,
+        linear_weak_model="haiku-4-5",
+        linear_strong_model="fable-5",
+        linear_weak_weights=[0.0] * 8,
+        linear_strong_weights=query.tolist(),
+        linear_weak_bias=0.4,
+        linear_strong_bias=0.4,
+        linear_threshold=0.5,
+    )
+
+
 def test_static_policy_routes_to_default() -> None:
     decision = select_model(_static(), "anything at all")
     assert decision.model == "haiku-4-5"
@@ -142,6 +161,39 @@ def test_rank_policy_soft_mixing_follows_the_closer_cluster() -> None:
     policy = _rank_policy(top_k_clusters=2)
     assert select_model(policy, "SELECT count(*) FROM superheroes").model == "fable-5"
     assert select_model(policy, "write a friendly email").model == "haiku-4-5"
+
+
+def test_linear_policy_routes_on_predicted_uplift() -> None:
+    policy = _linear_policy()
+    strong = select_model(policy, "route this coding task")
+    assert strong.model == "fable-5"
+    assert "predicted uplift" in strong.reason
+
+    weak = policy.model_copy(update={"linear_threshold": 0.7})
+    assert select_model(weak, "route this coding task").model == "haiku-4-5"
+
+
+def test_linear_decision_normalizes_query_and_falls_back_on_empty() -> None:
+    policy = _linear_policy()
+    query = np.asarray(policy.embedder.build().embed(["route this coding task"])[0])
+    assert linear_decision(policy, query) == linear_decision(policy, query * 13.0)
+    empty = linear_decision(policy, np.zeros(policy.embedder.dim))
+    assert empty.model == policy.default_model
+    assert "empty embedding" in empty.reason
+
+
+def test_linear_policy_validates_models_weights_and_finite_values() -> None:
+    valid = _linear_policy().model_dump()
+    for update, match in (
+        ({"linear_strong_model": None}, "weak and strong"),
+        ({"linear_strong_model": "haiku-4-5"}, "distinct"),
+        ({"linear_strong_model": "missing"}, "not in the policy pool"),
+        ({"linear_weak_weights": [0.0]}, "embedder dim"),
+        ({"linear_strong_weights": [float("nan")] * 8}, "finite"),
+        ({"linear_threshold": float("inf")}, "finite"),
+    ):
+        with pytest.raises(ValueError, match=match):
+            RoutingPolicy.model_validate({**valid, **update})
 
 
 def test_models_missing_from_rankings_score_default_rank() -> None:
@@ -215,6 +267,15 @@ def test_policy_round_trips_through_json(tmp_path: Path) -> None:
     path = tmp_path / "policy.json"
     policy.save(path)
     assert RoutingPolicy.load(path) == policy
+
+
+def test_linear_policy_round_trips_through_json(tmp_path: Path) -> None:
+    policy = _linear_policy()
+    path = tmp_path / "linear-policy.json"
+    policy.save(path)
+    loaded = RoutingPolicy.load(path)
+    assert loaded == policy
+    assert select_model(loaded, "route this coding task").model == "fable-5"
 
 
 def test_openrouter_candidate_keeps_the_price_it_was_fitted_under(
@@ -531,6 +592,22 @@ def test_azure_embedder_spec_missing_key_env_fails_loudly(
     )
     with pytest.raises(ValueError, match="AZ_EMBED_KEY"):
         spec.build()
+
+
+def test_openai_embedder_spec_builds_a_batched_provider_embedder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_EMBED_KEY", "sk-test")
+    spec = EmbedderSpec(
+        kind="openai",
+        dim=3072,
+        deployment="text-embedding-3-large",
+        api_key_env="OPENAI_EMBED_KEY",
+        batch=128,
+    )
+    from wmo.retrieval.embedders import BatchedEmbedder
+
+    assert isinstance(spec.build(), BatchedEmbedder)
 
 
 def test_support_tilt_shifts_weight_to_supported_clusters() -> None:
@@ -985,6 +1062,35 @@ def test_embedder_provenance_separates_two_azure_resources() -> None:
     assert embedder_provenance(EmbedderSpec(dim=512)) == "hashing-512"
 
 
+def test_openai_embedder_provenance_and_resolution_are_provider_specific() -> None:
+    spec, line = resolve_embedder(
+        "openai",
+        dim=None,
+        deployment="text-embedding-3-large",
+        endpoint=None,
+        api_key_env=None,
+    )
+    assert spec == EmbedderSpec(
+        kind="openai",
+        dim=3072,
+        deployment="text-embedding-3-large",
+        api_key_env="OPENAI_API_KEY",
+    )
+    assert embedder_provenance(spec) == "openai-3072/text-embedding-3-large"
+    assert "billed to that account" in line
+
+
+def test_openai_embedder_rejects_an_azure_endpoint() -> None:
+    with pytest.raises(ValueError, match="drop --endpoint"):
+        resolve_embedder(
+            "openai",
+            dim=None,
+            deployment="text-embedding-3-large",
+            endpoint="https://example.openai.azure.com",
+            api_key_env=None,
+        )
+
+
 def test_evidence_records_the_guards_numbers_when_a_pick_is_routed() -> None:
     # The same decision the reason string describes in prose, in a shape something can aggregate.
     decision = knn_decision(_knn_policy(_knn_bank([[0.0, 1.0]] * 12)), _QUERY)
@@ -1189,7 +1295,7 @@ def test_explicit_azure_without_a_deployment_says_which_flag_is_missing() -> Non
 def test_an_unknown_embedder_is_a_usage_error() -> None:
     with pytest.raises(ValueError) as caught:
         resolve_embedder("word2vec", dim=None, deployment=None, endpoint=None, api_key_env=None)
-    assert "auto, hashing or azure" in str(caught.value)
+    assert "auto, hashing, openai or azure" in str(caught.value)
 
 
 def test_the_azure_resolution_line_says_it_bills_an_api(

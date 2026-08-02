@@ -32,6 +32,24 @@ class ProviderModel(BaseModel):
 _MODELS: tuple[ProviderModel, ...] = (
     ProviderModel(
         provider=ProviderKind.OPENAI,
+        model_type="gpt-5.6-sol",
+        model_id="gpt-5.6-sol",
+        forward_temperature=False,
+    ),
+    ProviderModel(
+        provider=ProviderKind.OPENAI,
+        model_type="gpt-5.6-terra",
+        model_id="gpt-5.6-terra",
+        forward_temperature=False,
+    ),
+    ProviderModel(
+        provider=ProviderKind.OPENAI,
+        model_type="gpt-5.6-luna",
+        model_id="gpt-5.6-luna",
+        forward_temperature=False,
+    ),
+    ProviderModel(
+        provider=ProviderKind.OPENAI,
         model_type="gpt-5.5",
         model_id="gpt-5.5",
         forward_temperature=False,
@@ -52,6 +70,24 @@ _MODELS: tuple[ProviderModel, ...] = (
         provider=ProviderKind.OPENAI,
         model_type="gpt-5.4-mini",
         model_id="gpt-5.4-mini",
+        forward_temperature=False,
+    ),
+    ProviderModel(
+        provider=ProviderKind.OPENAI_RESPONSES,
+        model_type="gpt-5.6-sol",
+        model_id="gpt-5.6-sol",
+        forward_temperature=False,
+    ),
+    ProviderModel(
+        provider=ProviderKind.OPENAI_RESPONSES,
+        model_type="gpt-5.6-terra",
+        model_id="gpt-5.6-terra",
+        forward_temperature=False,
+    ),
+    ProviderModel(
+        provider=ProviderKind.OPENAI_RESPONSES,
+        model_type="gpt-5.6-luna",
+        model_id="gpt-5.6-luna",
         forward_temperature=False,
     ),
     ProviderModel(
@@ -80,8 +116,21 @@ _MODELS: tuple[ProviderModel, ...] = (
     ),
     ProviderModel(
         provider=ProviderKind.ANTHROPIC,
+        model_type="claude-fable-5",
+        model_id="claude-fable-5",
+        forward_temperature=False,
+    ),
+    ProviderModel(
+        provider=ProviderKind.ANTHROPIC,
+        model_type="claude-sonnet-5",
+        model_id="claude-sonnet-5",
+        forward_temperature=False,
+    ),
+    ProviderModel(
+        provider=ProviderKind.ANTHROPIC,
         model_type="claude-opus-4-8",
         model_id="claude-opus-4-8",
+        forward_temperature=False,
     ),
     ProviderModel(
         provider=ProviderKind.ANTHROPIC,
@@ -97,6 +146,7 @@ _MODELS: tuple[ProviderModel, ...] = (
         provider=ProviderKind.ANTHROPIC,
         model_type="claude-haiku-4-5",
         model_id="claude-haiku-4-5",
+        forward_temperature=False,
     ),
     ProviderModel(
         provider=ProviderKind.ANTHROPIC,

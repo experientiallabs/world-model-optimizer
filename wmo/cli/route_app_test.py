@@ -245,7 +245,7 @@ def test_route_fit_rejects_unknown_embedder(tmp_path: Path) -> None:
         ["optimize", "route", "fit", str(_matrix_file(tmp_path)), "--embedder", "vibes"],
     )
     assert result.exit_code != 0
-    assert "hashing or azure" in result.output
+    assert "hashing, openai or azure" in result.output
 
 
 def _knn_matrix_file(

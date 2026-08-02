@@ -11,7 +11,13 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 from llm_waterfall import ChatMaxTokensField, ChatRequest, ChatResponse
 from openai import BadRequestError
 
-from wmo.providers.base import Completion, Message, StreamChunk, TokenUsage
+from wmo.providers.base import (
+    Completion,
+    EmbeddingResult,
+    Message,
+    StreamChunk,
+    TokenUsage,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -174,9 +180,25 @@ def embed(
     `dim`, when set, requests a specific output dimension via the `dimensions` param (supported by
     text-embedding-3-* and their Azure deployments) so the index and query vectors match.
     """
+    return embed_with_usage(embeddings, model, texts, dim).vectors
+
+
+def embed_with_usage(
+    embeddings: _Embeddings,
+    model: str,
+    texts: list[str],
+    dim: int | None = None,
+) -> EmbeddingResult:
+    """Embed text and retain the provider's billable prompt-token count."""
     response = (
         embeddings.create(model=model, input=texts, dimensions=dim)
         if dim is not None
         else embeddings.create(model=model, input=texts)
     )
-    return [item.embedding for item in response.data]
+    usage = getattr(response, "usage", None)
+    prompt_tokens = getattr(usage, "prompt_tokens", 0) if usage is not None else 0
+    return EmbeddingResult(
+        vectors=[item.embedding for item in response.data],
+        usage=TokenUsage(input_tokens=prompt_tokens or 0),
+        model=model,
+    )

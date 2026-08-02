@@ -7,7 +7,13 @@ import math
 import pytest
 
 from wmo.config import HarnessConfig
-from wmo.providers.base import EmbedderKind, ProviderConfig, ProviderKind
+from wmo.providers.base import (
+    EmbedderKind,
+    EmbeddingResult,
+    ProviderConfig,
+    ProviderKind,
+    TokenUsage,
+)
 from wmo.retrieval.embedders import HashingEmbedder, get_embedder
 
 
@@ -112,3 +118,25 @@ def test_batched_embedder_chunks_requests() -> None:
     vectors = batched.embed(["a", "bb", "ccc", "dddd", "eeeee"])
     assert recorder.calls == [2, 2, 1]
     assert vectors == [[1.0], [2.0], [3.0], [4.0], [5.0]]
+
+
+def test_batched_embedder_preserves_usage_across_chunks() -> None:
+    from wmo.retrieval.embedders import BatchedEmbedder
+
+    class _Metered:
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            return self.embed_with_usage(texts).vectors
+
+        def embed_with_usage(self, texts: list[str]) -> EmbeddingResult:
+            return EmbeddingResult(
+                vectors=[[float(len(text))] for text in texts],
+                usage=TokenUsage(input_tokens=10 * len(texts)),
+                model="text-embedding-3-large",
+            )
+
+    result = BatchedEmbedder(_Metered(), batch=2).embed_with_usage(
+        ["a", "bb", "ccc", "dddd", "eeeee"]
+    )
+    assert result.vectors == [[1.0], [2.0], [3.0], [4.0], [5.0]]
+    assert result.usage.input_tokens == 50
+    assert result.model == "text-embedding-3-large"

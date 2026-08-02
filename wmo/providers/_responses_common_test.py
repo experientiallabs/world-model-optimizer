@@ -195,6 +195,8 @@ def test_responses_response_preserves_text_multiple_tools_usage_and_tier() -> No
                 "input_tokens": 321,
                 "output_tokens": 45,
                 "total_tokens": 366,
+                "input_tokens_details": {"cached_tokens": 120},
+                "output_tokens_details": {"reasoning_tokens": 30},
             },
         }
     )
@@ -203,6 +205,10 @@ def test_responses_response_preserves_text_multiple_tools_usage_and_tier() -> No
     assert response.usage is not None
     assert response.usage.prompt_tokens == 321
     assert response.usage.completion_tokens == 45
+    assert response.usage.model_extra == {
+        "prompt_tokens_details": {"cached_tokens": 120},
+        "completion_tokens_details": {"reasoning_tokens": 30},
+    }
     assert response.wire_payload()["service_tier"] == "priority"
     choice = response.choices[0]
     assert choice.finish_reason == "tool_calls"

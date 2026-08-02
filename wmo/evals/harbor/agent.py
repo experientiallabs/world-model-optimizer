@@ -362,7 +362,13 @@ class WmoHarborAgent(BaseAgent):
                 # (the most informative failure class) must still leave the partial transcript
                 # for the proposer, even when cleanup itself was re-cancelled above. Synchronous
                 # small-file I/O, so cancellation cannot interrupt the write itself.
-                self._write_trace(task_id, run_task, bridge, cancelled=cancel_requested.is_set())
+                self._write_trace(
+                    task_id,
+                    instruction,
+                    run_task,
+                    bridge,
+                    cancelled=cancel_requested.is_set(),
+                )
         _populate_context(context, result)
 
     async def _cleanup_uncancellable(
@@ -388,13 +394,20 @@ class WmoHarborAgent(BaseAgent):
     def _write_trace(
         self,
         task_id: str,
+        instruction: str,
         run_task: asyncio.Future[RunResult],
         bridge: HarborAgentEnvironment,
         *,
         cancelled: bool,
     ) -> None:
         """Persist the full RunResult when one exists, else the partial episode evidence."""
-        payload = _trace_payload(task_id, run_task, bridge, cancelled=cancelled)
+        payload = _trace_payload(
+            task_id,
+            instruction,
+            run_task,
+            bridge,
+            cancelled=cancelled,
+        )
         try:
             self.logs_dir.mkdir(parents=True, exist_ok=True)
             (self.logs_dir / _TRACE_FILENAME).write_text(payload, encoding="utf-8")
@@ -406,13 +419,18 @@ class WmoHarborAgent(BaseAgent):
 
 def _trace_payload(
     task_id: str,
+    instruction: str,
     run_task: asyncio.Future[RunResult],
     bridge: HarborAgentEnvironment,
     *,
     cancelled: bool,
 ) -> str:
     if run_task.done() and not run_task.cancelled() and run_task.exception() is None:
-        return run_task.result().model_dump_json(indent=2)
+        return (
+            run_task.result()
+            .model_copy(update={"instruction": instruction})
+            .model_dump_json(indent=2)
+        )
     error = None if not run_task.done() or run_task.cancelled() else run_task.exception()
     stop_reason = (
         _CANCELLED_STOP_REASON
@@ -424,6 +442,7 @@ def _trace_payload(
     steps = bridge.recorded_steps()
     partial: JsonObject = {
         "task_id": task_id,
+        "instruction": instruction,
         "steps": steps,
         "stop_reason": stop_reason,
         "answer": "",

@@ -222,7 +222,7 @@ def compute_savings(
     baseline = actual
     if baseline_entry is not None:
         baseline = sum(
-            baseline_entry.cost_usd(
+            baseline_entry.call_cost_usd(
                 TokenUsage(
                     input_tokens=record.input_tokens,
                     output_tokens=record.output_tokens,

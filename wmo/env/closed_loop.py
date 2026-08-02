@@ -48,6 +48,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict
 
+from wmo.core.types import ActionKind
 from wmo.env.base import Env
 from wmo.env.episode import run_episode
 from wmo.env.llm_agent import DEFAULT_HISTORY_CHARS, LLMAgent
@@ -78,6 +79,11 @@ class _TimedProvider:
     def __init__(self, provider: Provider) -> None:
         self._provider = provider
         self.call_seconds: list[float] = []
+        self.call_input_tokens: list[int] = []
+        self.call_output_tokens: list[int] = []
+        self.call_cached_input_tokens: list[int] = []
+        self.call_cache_write_input_tokens: list[int] = []
+        self.call_usage: list[TokenUsage] = []
         self.replies: list[str] = []
         self.usage = TokenUsage()
 
@@ -98,6 +104,11 @@ class _TimedProvider:
             system, messages, temperature=temperature, max_tokens=max_tokens
         )
         self.call_seconds.append(time.monotonic() - started)
+        self.call_input_tokens.append(completion.usage.input_tokens)
+        self.call_output_tokens.append(completion.usage.output_tokens)
+        self.call_cached_input_tokens.append(completion.usage.cached_input_tokens)
+        self.call_cache_write_input_tokens.append(completion.usage.cache_write_input_tokens)
+        self.call_usage.append(completion.usage)
         self.replies.append(completion.text)
         self.usage = TokenUsage(
             input_tokens=self.usage.input_tokens + completion.usage.input_tokens,
@@ -106,6 +117,7 @@ class _TimedProvider:
             cache_write_input_tokens=self.usage.cache_write_input_tokens
             + completion.usage.cache_write_input_tokens,
             output_tokens=self.usage.output_tokens + completion.usage.output_tokens,
+            reasoning_tokens=self.usage.reasoning_tokens + completion.usage.reasoning_tokens,
         )
         return completion
 
@@ -339,10 +351,15 @@ def run_cell(
         success=score.success if score else False,
         critique=critique,
         steps=len(result.steps),
+        tool_calls=sum(step.action.kind is ActionKind.TOOL_CALL for step in result.steps),
         stop_reason=str(result.stop_reason),
         usage=timed.usage,
-        cost_usd=cell.entry.cost_usd(timed.usage),
+        cost_usd=sum(cell.entry.call_cost_usd(usage) for usage in timed.call_usage),
         call_seconds=timed.call_seconds,
+        call_input_tokens=timed.call_input_tokens,
+        call_output_tokens=timed.call_output_tokens,
+        call_cached_input_tokens=timed.call_cached_input_tokens,
+        call_cache_write_input_tokens=timed.call_cache_write_input_tokens,
         replies=timed.replies,
         error=error,
         remeasured=cell.remeasured,

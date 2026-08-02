@@ -71,6 +71,37 @@ class TokenUsage(BaseModel):
     # at a PREMIUM (Anthropic 5m TTL: 1.25x input), so cache-adjusted cost needs this split
     # too; providers that don't report writes (OpenAI charges no write premium) leave it 0.
     cache_write_input_tokens: int = 0
+    # Reasoning tokens are a SUBSET of output_tokens. They bill at the output rate, but keeping
+    # the split is necessary for per-arm reasoning-effort analysis.
+    reasoning_tokens: int = 0
+
+
+def structured_token_usage(response: ChatResponse) -> TokenUsage:
+    """Project a structured response onto cache-aware and reasoning-aware counters."""
+    counts = response.token_usage()
+    cached = 0
+    cache_write = 0
+    reasoning = 0
+    if response.usage is not None:
+        extras = response.usage.model_extra or {}
+        prompt_details = extras.get("prompt_tokens_details")
+        if isinstance(prompt_details, dict):
+            cached = _nonnegative_int(prompt_details.get("cached_tokens"))
+            cache_write = _nonnegative_int(prompt_details.get("cache_write_tokens"))
+        completion_details = extras.get("completion_tokens_details")
+        if isinstance(completion_details, dict):
+            reasoning = _nonnegative_int(completion_details.get("reasoning_tokens"))
+    return TokenUsage(
+        input_tokens=counts.input_tokens,
+        output_tokens=counts.output_tokens,
+        cached_input_tokens=min(cached, counts.input_tokens),
+        cache_write_input_tokens=min(cache_write, max(0, counts.input_tokens - cached)),
+        reasoning_tokens=min(reasoning, counts.output_tokens),
+    )
+
+
+def _nonnegative_int(value: object) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
 
 
 class Completion(BaseModel):
@@ -165,6 +196,21 @@ class Embedder(Protocol):
     """
 
     def embed(self, texts: list[str]) -> list[list[float]]: ...
+
+
+class EmbeddingResult(BaseModel):
+    """Vectors plus provider-reported billable usage for one embedding request."""
+
+    vectors: list[list[float]]
+    usage: TokenUsage = Field(default_factory=TokenUsage)
+    model: str = Field(min_length=1)
+
+
+@runtime_checkable
+class UsageReportingEmbedder(Protocol):
+    """Optional embedding seam for callers that must meter semantic routing."""
+
+    def embed_with_usage(self, texts: list[str]) -> EmbeddingResult: ...
 
 
 @runtime_checkable

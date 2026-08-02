@@ -123,6 +123,63 @@ def test_git_tasks_download_once_at_resolve_and_pin_without_overwrite(dataset: P
     assert git_task.git_commit_id is None
 
 
+def test_concurrent_git_resolves_serialize_shared_cache_refresh(dataset: Path) -> None:
+    git_task = TaskConfig(
+        path=Path("tasks/task-g"),
+        git_url="https://example.com/tasks.git",
+    )
+
+    async def fake_get_task_configs(
+        self: DatasetConfig,
+        disable_verification: bool = False,
+    ) -> list[TaskConfig]:
+        del self, disable_verification
+        return [git_task]
+
+    class _ConcurrentDownloader(_Downloader):
+        def __init__(self) -> None:
+            super().__init__(commit="A" * 40)
+            self.active = 0
+            self.max_active = 0
+
+        async def download_tasks(
+            self,
+            task_ids: list[TaskIdType],
+            overwrite: bool = False,
+            output_dir: Path | None = None,
+        ) -> BatchDownloadResult:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            try:
+                await asyncio.sleep(0.02)
+                return await super().download_tasks(task_ids, overwrite, output_dir)
+            finally:
+                self.active -= 1
+
+    async def run_pair(
+        config: DatasetConfig,
+        downloader: _ConcurrentDownloader,
+    ) -> tuple[list[TaskConfig], list[TaskConfig]]:
+        first, second = await asyncio.gather(
+            resolve_harbor_tasks(config, ["task-g"], task_client=downloader),
+            resolve_harbor_tasks(config, ["task-g"], task_client=downloader),
+        )
+        return first, second
+
+    downloader = _ConcurrentDownloader()
+    config = DatasetConfig(path=dataset, download_dir=dataset / "cache")
+    original = DatasetConfig.get_task_configs
+    DatasetConfig.get_task_configs = fake_get_task_configs
+    try:
+        first, second = asyncio.run(run_pair(config, downloader))
+    finally:
+        DatasetConfig.get_task_configs = original
+
+    assert first[0].git_commit_id == "a" * 40
+    assert second[0].git_commit_id == "a" * 40
+    assert downloader.max_active == 1
+
+
 def test_local_tasks_never_touch_the_downloader(dataset: Path) -> None:
     class _ExplodingDownloader:
         async def download_tasks(

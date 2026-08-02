@@ -48,7 +48,7 @@ from wmo.providers.base import (
 )
 from wmo.providers.openrouter_pricing import resolve_price as resolve_openrouter_price
 from wmo.providers.registry import get_provider
-from wmo.tracking.pricing import ModelPrice, price_for
+from wmo.tracking.pricing import ModelPrice, price_for, request_price_multipliers
 
 DEFAULT_POOL_PATH = Path(".wmo/pool.toml")
 
@@ -59,6 +59,7 @@ POOL_LOCK_TIMEOUT_S = DEFAULT_LOCK_TIMEOUT_S
 # D-REPORT ModelRef vocabulary: "frontier" anchors the improvement report's comparison; "open"
 # models carry the run-10x-more-for-the-same-budget story.
 Tier = Literal["frontier", "open"]
+ReasoningEffort = Literal["none", "low", "medium", "high", "max", "xhigh"]
 
 
 class PoolEntry(BaseModel):
@@ -82,7 +83,9 @@ class PoolEntry(BaseModel):
     # (Tinker's serving endpoint does) declares it here, because the catalog has never heard of it.
     chat_max_tokens_field: ChatMaxTokensField = "max_completion_tokens"
     endpoint: str | None = None
+    endpoint_env: str | None = None
     deployment: str | None = None  # Azure deployment name
+    deployment_env: str | None = None
     api_version: str | None = None  # Azure api-version
     region: str | None = None  # AWS Bedrock region (bedrock entries only)
     api_key_env: str | None = None  # env var holding this entry's API key (multi-account pools)
@@ -96,9 +99,9 @@ class PoolEntry(BaseModel):
     # One effort dial across vendors: OpenAI-family backends forward it as
     # `reasoning.effort` (dispatching through their Responses client), Anthropic as
     # adaptive thinking's `output_config.effort` (low|medium|high|max, probed live
-    # 2026-07-29). Two entries differing only in effort are two ARMS with one runtime
-    # model id - the router-vs-router comparison's whole premise.
-    reasoning_effort: Literal["none", "low", "medium", "high", "max"] | None = None
+    # 2026-07-29). OpenAI reasoning models may also expose xhigh. Two entries differing only
+    # in effort are two ARMS with one runtime model id, which is the router comparison's premise.
+    reasoning_effort: ReasoningEffort | None = None
     input_per_mtok: float | None = None
     output_per_mtok: float | None = None
     cached_input_per_mtok: float | None = None  # provider cache-read price, USD per 1M tokens
@@ -114,6 +117,12 @@ class PoolEntry(BaseModel):
                 f"pool entry {self.name!r}: reasoning_effort is not supported on bedrock "
                 "(Converse has no effort dial); route effort-dialed Claude through the "
                 "direct anthropic kind instead"
+            )
+        if self.reasoning_effort == "xhigh" and self.kind == ProviderKind.ANTHROPIC:
+            raise ValueError(
+                f"pool entry {self.name!r}: Anthropic adaptive thinking supports effort through "
+                "max, not xhigh; use max or route an xhigh-capable model through its OpenAI "
+                "compatible provider"
             )
         return self
 
@@ -145,12 +154,22 @@ class PoolEntry(BaseModel):
                 f"pool model '{self.name}': '{self.model}' has no built-in price;{catalog_note} "
                 "add input_per_mtok and output_per_mtok (USD per 1M tokens) to its pool entry"
             )
-        if self.kind is ProviderKind.AZURE_OPENAI and self.deployment is None:
+        if self.endpoint is not None and self.endpoint_env is not None:
+            raise ValueError(f"pool model '{self.name}': set endpoint or endpoint_env, not both")
+        if self.deployment is not None and self.deployment_env is not None:
+            raise ValueError(
+                f"pool model '{self.name}': set deployment or deployment_env, not both"
+            )
+        if (
+            self.kind is ProviderKind.AZURE_OPENAI
+            and self.deployment is None
+            and self.deployment_env is None
+        ):
             # Without this the entry loads fine and the first request routed to it 500s
             # from AzureOpenAIProvider._deployment(); load is the validation boundary.
             raise ValueError(
                 f"pool model '{self.name}': azure entries need `deployment` (the Azure "
-                "deployment name to call)"
+                "deployment name to call), or `deployment_env` naming the variable that holds it"
             )
         if self.kind is ProviderKind.BEDROCK and self.api_key_env is not None:
             # Same boundary: `BedrockProvider.__init__` refuses an explicit key, and a sweep
@@ -213,7 +232,9 @@ class PoolEntry(BaseModel):
         entry carries no override, and to the full input rate when the row has no tier either
         (never silently free). The global `wmo.tracking.pricing.cost_usd` only knows the
         built-in table; pool entries with explicit prices must be costed here or they would
-        silently read $0.
+        silently read $0. This aggregate form cannot infer per-request long-context tiers;
+        callers holding one provider request use `call_cost_usd`, and multi-call paths sum it
+        at the request boundary.
         """
         price = self.price()
         read = min(usage.cached_input_tokens, usage.input_tokens)
@@ -239,18 +260,76 @@ class PoolEntry(BaseModel):
             + usage.output_tokens * price.output_per_mtok
         ) / 1_000_000
 
+    def call_cost_usd(self, usage: TokenUsage) -> float:
+        """Price one provider request, including model-specific context tiers."""
+        base = self.price()
+        read = min(usage.cached_input_tokens, usage.input_tokens)
+        write = min(usage.cache_write_input_tokens, usage.input_tokens - read)
+        read_rate = self.cached_input_per_mtok
+        if read_rate is None:
+            read_rate = (
+                base.cache_read_per_mtok
+                if base.cache_read_per_mtok is not None
+                else base.input_per_mtok
+            )
+        write_rate = self.cache_write_per_mtok
+        if write_rate is None:
+            write_rate = (
+                base.cache_write_per_mtok
+                if base.cache_write_per_mtok is not None
+                else base.input_per_mtok
+            )
+        input_multiplier, output_multiplier = request_price_multipliers(
+            self.model_type or self.model,
+            usage.input_tokens,
+        )
+        return (
+            (usage.input_tokens - read - write) * base.input_per_mtok * input_multiplier
+            + read * read_rate * input_multiplier
+            + write * write_rate * input_multiplier
+            + usage.output_tokens * base.output_per_mtok * output_multiplier
+        ) / 1_000_000
+
     def provider_config(self) -> ProviderConfig:
         return ProviderConfig(
             kind=self.kind,
             model=self.model,
             model_type=self.model_type,
             chat_max_tokens_field=self.chat_max_tokens_field,
-            endpoint=self.endpoint,
-            deployment=self.deployment,
+            endpoint=self._env_backed_value(
+                literal=self.endpoint,
+                env_name=self.endpoint_env,
+                field="endpoint",
+            ),
+            deployment=self._env_backed_value(
+                literal=self.deployment,
+                env_name=self.deployment_env,
+                field="deployment",
+            ),
             api_version=self.api_version,
-            region=self.region,
             reasoning_effort=self.reasoning_effort,
+            region=self.region,
         )
+
+    def _env_backed_value(
+        self,
+        *,
+        literal: str | None,
+        env_name: str | None,
+        field: str,
+    ) -> str | None:
+        """Resolve a non-secret pool reference without serializing its value."""
+        if literal is not None:
+            return literal
+        if env_name is None:
+            return None
+        value = os.environ.get(env_name)
+        if not value:
+            raise ValueError(
+                f"pool model '{self.name}': environment variable {env_name} for {field} "
+                "is unset or empty"
+            )
+        return value
 
 
 class ModelPool(BaseModel):

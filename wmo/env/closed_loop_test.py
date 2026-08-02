@@ -98,7 +98,16 @@ class _ScriptedProvider:
     ) -> Completion:
         text = self._script[min(self._i, len(self._script) - 1)]
         self._i += 1
-        return Completion(text=text, usage=TokenUsage(input_tokens=10, output_tokens=5))
+        return Completion(
+            text=text,
+            usage=TokenUsage(
+                input_tokens=10,
+                output_tokens=5,
+                cached_input_tokens=3,
+                cache_write_input_tokens=2,
+                reasoning_tokens=4,
+            ),
+        )
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         raise NotImplementedError
@@ -167,13 +176,26 @@ def test_evaluate_pool_builds_full_matrix() -> None:
     assert outcome.critique == "fine"
     assert outcome.stop_reason == "agent_done"
     # Two policy calls (tool call + done), scripted usage 10in/5out each.
-    assert outcome.usage == TokenUsage(input_tokens=20, output_tokens=10)
+    assert outcome.usage == TokenUsage(
+        input_tokens=20,
+        output_tokens=10,
+        cached_input_tokens=6,
+        cache_write_input_tokens=4,
+        reasoning_tokens=8,
+    )
     assert len(outcome.call_seconds) == 2
+    assert outcome.call_input_tokens == [10, 10]
+    assert outcome.call_output_tokens == [5, 5]
+    assert outcome.call_cached_input_tokens == [3, 3]
+    assert outcome.call_cache_write_input_tokens == [2, 2]
+    assert outcome.tool_calls == 1
     assert len(outcome.replies) == 2
     # Cost prices the POOL ENTRY's override, not the built-in table.
-    assert outcome.cost_usd == pytest.approx((20 * 1.0 + 10 * 2.0) / 1_000_000)
+    assert outcome.cost_usd == pytest.approx((10 * 1.0 + 6 * 1.0 + 4 * 1.0 + 10 * 2.0) / 1_000_000)
     expensive = matrix.for_scenario("trace-1")[1]
-    assert expensive.cost_usd == pytest.approx((20 * 10.0 + 10 * 20.0) / 1_000_000)
+    assert expensive.cost_usd == pytest.approx(
+        (10 * 10.0 + 6 * 10.0 + 4 * 10.0 + 10 * 20.0) / 1_000_000
+    )
 
 
 def test_evaluate_pool_repeats_episodes() -> None:

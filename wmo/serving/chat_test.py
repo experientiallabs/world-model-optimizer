@@ -41,6 +41,7 @@ from wmo.optimize.policy import (
 )
 from wmo.providers.base import (
     Completion,
+    EmbeddingResult,
     Message,
     ProviderKind,
     StreamChunk,
@@ -145,6 +146,22 @@ def _cluster_policy() -> RoutingPolicy:
     )
 
 
+def _linear_policy() -> RoutingPolicy:
+    spec = EmbedderSpec(dim=32)
+    query = spec.build().embed(["route this coding task"])[0]
+    return RoutingPolicy(
+        kind="linear",
+        default_model="fable-5",
+        pool=_pool(),
+        embedder=spec,
+        linear_weak_model="haiku-4-5",
+        linear_strong_model="fable-5",
+        linear_weak_weights=[0.0] * spec.dim,
+        linear_strong_weights=query,
+        linear_threshold=0.5,
+    )
+
+
 def _client(tmp_path: Path, policy: RoutingPolicy | None = None) -> tuple[TestClient, Path]:
     log_path = tmp_path / "requests.jsonl"
     runtime = EndpointRuntime(
@@ -177,6 +194,23 @@ def test_completion_matches_openai_shape(tmp_path: Path) -> None:
         "prompt_tokens_details": {"cached_tokens": 0},
     }
     assert response.headers["x-wmo-routed-model"] == "haiku-4-5"
+
+
+def test_linear_policy_routes_through_the_serving_endpoint(tmp_path: Path) -> None:
+    client, log_path = _client(tmp_path, policy=_linear_policy())
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "tau-bench",
+            "messages": [{"role": "user", "content": "route this coding task"}],
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["x-wmo-routed-model"] == "fable-5"
+    assert response.json()["choices"][0]["message"]["content"] == "served by fable-5"
+    row = _rows(log_path)[0]
+    assert row["model"] == "fable-5"
+    assert "linear router: predicted uplift" in str(row["routing_reason"])
 
 
 def test_streaming_emits_openai_chunks(tmp_path: Path) -> None:
@@ -280,6 +314,43 @@ def test_request_log_rows(tmp_path: Path) -> None:
     assert row["leg"] == "serving"
     assert row["cached_tokens"] == 0  # carried for the metering contract, not yet captured
     assert row["router_cost_usd"] == 0.0  # hashing policy routes for free; passed through
+
+
+def test_semantic_router_cost_uses_provider_reported_embedding_tokens(
+    tmp_path: Path,
+) -> None:
+    class _MeteredEmbedder:
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            return self.embed_with_usage(texts).vectors
+
+        def embed_with_usage(self, texts: list[str]) -> EmbeddingResult:
+            return EmbeddingResult(
+                vectors=HashingEmbedder(dim=64).embed(texts),
+                usage=TokenUsage(input_tokens=1_000),
+                model="text-embedding-3-large",
+            )
+
+    log_path = tmp_path / "requests.jsonl"
+    runtime = EndpointRuntime(
+        name="tau-bench",
+        policy=_knn_policy(tmp_path),
+        provider_factory=_EchoProvider,
+        log=RequestLog(log_path),
+    )
+    runtime._policy_embedder = _MeteredEmbedder()
+    app = FastAPI()
+    app.include_router(create_chat_router({"tau-bench": runtime}))
+
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        json={
+            "model": "tau-bench",
+            "messages": [{"role": "user", "content": "SELECT 1"}],
+        },
+    )
+
+    assert response.status_code == 200
+    assert _rows(log_path)[0]["router_cost_usd"] == pytest.approx(0.00013)
 
 
 def test_create_app_mounts_endpoints_from_policies(tmp_path: Path) -> None:
@@ -490,6 +561,55 @@ def test_knn_policy_routes_a_request_end_to_end(tmp_path: Path) -> None:
     assert [row["model"] for row in rows] == ["fable-5", "haiku-4-5"]
     assert rows[0]["routing_reason"].startswith("knn: ")
     assert rows[0]["cluster_id"] is None  # a knn decision cites neighbors, not clusters
+
+
+def test_cache_aware_knn_logs_the_incumbent_credit_end_to_end(
+    tmp_path: Path,
+) -> None:
+    fitted = _knn_policy(tmp_path)
+    priced_pool = [
+        entry.model_copy(
+            update={
+                "input_per_mtok": 1.0,
+                "cached_input_per_mtok": 0.1,
+                "output_per_mtok": 1.0,
+            }
+        )
+        for entry in fitted.pool
+    ]
+    policy = fitted.model_copy(
+        update={
+            "cache_aware": True,
+            "pool": priced_pool,
+        }
+    )
+    policy.attach_bank(fitted.knn_bank())
+    client, log_path = _client(tmp_path, policy=policy)
+    first = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "tau-bench",
+            "messages": [{"role": "user", "content": "SELECT count(*) FROM superheroes"}],
+        },
+    )
+    reply = first.json()["choices"][0]["message"]["content"]
+    second = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "tau-bench",
+            "messages": [
+                {"role": "user", "content": "SELECT count(*) FROM superheroes"},
+                {"role": "assistant", "content": reply},
+                {"role": "user", "content": "write a friendly email"},
+            ],
+        },
+    )
+
+    assert first.status_code == second.status_code == 200
+    rows = _rows(log_path)
+    assert rows[0]["cache_credit_usd"] is None
+    assert isinstance(rows[1]["cache_credit_usd"], float)
+    assert rows[1]["cache_credit_usd"] > 0
 
 
 def test_runtime_builds_the_policy_embedder_once(
@@ -2268,7 +2388,15 @@ def test_a_static_endpoint_leaves_the_evidence_columns_null(tmp_path: Path) -> N
         json={"model": "tau-bench", "messages": [{"role": "user", "content": "hi"}]},
     )
     row = _rows(log_path)[0]
-    for column in ("mean_diff", "se", "n_pairs", "gate", "propensity", "query_embedding_ref"):
+    for column in (
+        "mean_diff",
+        "se",
+        "n_pairs",
+        "gate",
+        "propensity",
+        "cache_credit_usd",
+        "query_embedding_ref",
+    ):
         assert row[column] is None, column
 
 

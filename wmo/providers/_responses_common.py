@@ -168,9 +168,17 @@ def responses_response(raw: dict[str, object]) -> ChatResponse:
 
     usage = _object_dict(raw.get("usage"))
     if usage is not None:
+        input_details = _object_dict(usage.get("input_tokens_details")) or {}
+        output_details = _object_dict(usage.get("output_tokens_details")) or {}
         response["usage"] = {
             "prompt_tokens": _usage_count(usage.get("input_tokens")),
             "completion_tokens": _usage_count(usage.get("output_tokens")),
+            "prompt_tokens_details": {
+                "cached_tokens": _usage_count(input_details.get("cached_tokens"))
+            },
+            "completion_tokens_details": {
+                "reasoning_tokens": _usage_count(output_details.get("reasoning_tokens"))
+            },
         }
 
     service_tier = raw.get("service_tier")

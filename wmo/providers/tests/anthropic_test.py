@@ -77,6 +77,55 @@ def test_embed_raises_pointing_at_embed_provider() -> None:
         provider.embed(["x"])
 
 
+def test_complete_chat_uses_native_messages_tool_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeClient(
+        _FakeResponse(
+            [
+                {
+                    "type": "tool_use",
+                    "id": "call-1",
+                    "name": "bash",
+                    "input": {"command": "pwd"},
+                }
+            ],
+            _FakeUsage(11, 7),
+        )
+    )
+    provider = AnthropicProvider(
+        ProviderConfig(
+            kind=ProviderKind.ANTHROPIC,
+            model="claude-sonnet-5",
+            reasoning_effort="high",
+        )
+    )
+    monkeypatch.setattr(provider, "_get_client", lambda: fake)
+
+    response = provider.complete_chat(
+        ChatRequest.model_validate(
+            {
+                "messages": [{"role": "user", "content": "Inspect."}],
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "bash",
+                            "parameters": {"type": "object"},
+                        },
+                    }
+                ],
+            }
+        )
+    )
+
+    calls = response.choices[0].message.tool_calls
+    assert calls is not None
+    assert calls[0].function.name == "bash"
+    assert fake.messages.last_kwargs["thinking"] == {"type": "adaptive"}
+    assert fake.messages.last_kwargs["output_config"] == {"effort": "high"}
+
+
 def test_verify_ok_on_successful_ping(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _FakeClient(_FakeResponse([_FakeTextBlock("p")], _FakeUsage(1, 1)))
     provider = AnthropicProvider(_config())

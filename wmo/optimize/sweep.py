@@ -885,7 +885,7 @@ def _estimate_cost(
                 calls=calls,
                 input_per_mtok=price.input_per_mtok,
                 output_per_mtok=price.output_per_mtok,
-                usd=calls * entry.cost_usd(per_call),
+                usd=calls * entry.call_cost_usd(per_call),
             )
         )
     return lines

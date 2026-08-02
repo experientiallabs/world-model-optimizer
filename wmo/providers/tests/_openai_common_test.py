@@ -110,3 +110,29 @@ def test_complete_reraises_unrelated_bad_requests() -> None:
         _openai_common.complete(
             chat, "m", "", [Message(role="user", content="x")], 8, temperature=0.7
         )
+
+
+def test_embed_with_usage_preserves_provider_prompt_tokens() -> None:
+    class _Item:
+        embedding = [0.1, 0.2]
+
+    class _Usage:
+        prompt_tokens = 37
+
+    class _Response:
+        data = [_Item()]
+        usage = _Usage()
+
+    class _Embeddings:
+        def create(self, **kwargs: object) -> _Response:
+            return _Response()
+
+    result = _openai_common.embed_with_usage(
+        cast("_openai_common._Embeddings", _Embeddings()),
+        "text-embedding-3-large",
+        ["route me"],
+        2,
+    )
+    assert result.vectors == [[0.1, 0.2]]
+    assert result.usage.input_tokens == 37
+    assert result.model == "text-embedding-3-large"

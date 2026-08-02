@@ -11,15 +11,18 @@ the shared task cache that concurrent jobs are reading from.
 from __future__ import annotations
 
 import re
+import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Protocol
 
+from filelock import AsyncFileLock
 from harbor.models.job.config import DatasetConfig
 from harbor.models.trial.config import TaskConfig
 from harbor.tasks.client import BatchDownloadResult, TaskClient, TaskIdType
 
 _GIT_COMMIT_PATTERN = re.compile(r"^[0-9a-fA-F]{40}$|^[0-9a-fA-F]{64}$")
+_TASK_DOWNLOAD_LOCK_TIMEOUT_S = 300.0
 
 
 class HarborTaskDownloader(Protocol):
@@ -109,14 +112,30 @@ async def _pin_remote_tasks(
     ]
     if not remote_indexes:
         return selected
-    downloads = await task_client.download_tasks(
-        [selected[index].get_task_id() for index in remote_indexes],
-        # Refresh git checkouts once, here: harbor's cache does not verify that an existing
-        # checkout still came from the requested commit.
-        overwrite=dataset.overwrite
-        or any(selected[index].is_git_task() for index in remote_indexes),
-        output_dir=dataset.download_dir,
+    download_root = (
+        Path(dataset.download_dir)
+        if dataset.download_dir is not None
+        else Path(tempfile.gettempdir()) / "wmo-harbor-task-downloads"
     )
+    download_root.mkdir(parents=True, exist_ok=True)
+    # Harbor refreshes one shared git checkout in place. Separate scorer construction calls may
+    # happen on different event loops and even in different processes, so an asyncio-only lock
+    # cannot protect `git checkout` from a concurrent cache refresh. The async file lock keeps the
+    # event loop responsive while serializing only this short download/pin boundary.
+    lock = AsyncFileLock(
+        download_root / ".wmo-task-download.lock",
+        timeout=_TASK_DOWNLOAD_LOCK_TIMEOUT_S,
+        mode=0o600,
+    )
+    async with lock:
+        downloads = await task_client.download_tasks(
+            [selected[index].get_task_id() for index in remote_indexes],
+            # Refresh git checkouts once, here: harbor's cache does not verify that an existing
+            # checkout still came from the requested commit.
+            overwrite=dataset.overwrite
+            or any(selected[index].is_git_task() for index in remote_indexes),
+            output_dir=dataset.download_dir,
+        )
     if len(downloads.results) != len(remote_indexes):
         raise ValueError("harbor returned an incomplete task download result")
     for index, download in zip(remote_indexes, downloads.results, strict=True):

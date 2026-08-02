@@ -131,7 +131,16 @@ def test_full_turn_emits_ordered_events_and_answers_frames() -> None:
         execute_tool=execute,
         on_event=events.append,
         worker_fn=lambda body: _completion(
-            text="on it", usage={"prompt_tokens": 5, "completion_tokens": 7}
+            text="on it",
+            usage={
+                "prompt_tokens": 5,
+                "completion_tokens": 7,
+                "prompt_tokens_details": {
+                    "cached_tokens": 2,
+                    "cache_write_tokens": 1,
+                },
+                "completion_tokens_details": {"reasoning_tokens": 3},
+            },
         ),
     )
     session.start()
@@ -161,6 +170,15 @@ def test_full_turn_emits_ordered_events_and_answers_frames() -> None:
     assert session.worker_usage.calls == 1
     assert session.worker_usage.input_tokens == 5
     assert session.worker_usage.output_tokens == 7
+    assert session.worker_usage.cached_input_tokens == 2
+    assert session.worker_usage.cache_write_input_tokens == 1
+    assert session.worker_usage.reasoning_tokens == 3
+    assert len(session.worker_usage.call_seconds) == 1
+    assert session.worker_usage.call_seconds[0] >= 0
+    assert session.worker_usage.call_input_tokens == [5]
+    assert session.worker_usage.call_output_tokens == [7]
+    assert session.worker_usage.call_cached_input_tokens == [2]
+    assert session.worker_usage.call_cache_write_input_tokens == [1]
 
 
 def test_submit_tool_response_is_answered_without_executor() -> None:

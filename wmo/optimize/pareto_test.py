@@ -6,7 +6,7 @@ import pytest
 
 from wmo.optimize.outcomes import OutcomeMatrix, ScenarioOutcome
 from wmo.optimize.pareto import ParetoCurve, held_out_curve, pareto_curve
-from wmo.optimize.policy import RoutingPolicy
+from wmo.optimize.policy import EmbedderSpec, RoutingPolicy
 from wmo.providers.base import ProviderKind, TokenUsage
 from wmo.providers.pool import PoolEntry
 
@@ -85,6 +85,32 @@ def test_recommended_without_policy_is_the_frontiers_best_quality_point() -> Non
     curve = pareto_curve(_three_model_matrix(), judge="test-judge")
 
     assert curve.recommended == "strong"
+
+
+def test_linear_policy_adds_one_routed_point_without_a_fake_dial() -> None:
+    matrix = _three_model_matrix()
+    policy = RoutingPolicy(
+        kind="linear",
+        default_model="strong",
+        pool=matrix.pool,
+        embedder=EmbedderSpec(dim=8),
+        linear_weak_model="cheap",
+        linear_strong_model="strong",
+        linear_weak_weights=[0.0] * 8,
+        linear_strong_weights=[0.0] * 8,
+        linear_weak_bias=0.0,
+        linear_strong_bias=1.0,
+        linear_threshold=0.5,
+    )
+
+    curve = held_out_curve(matrix, policy, judge="test-judge")
+
+    routed = [point for point in curve.points if point.kind == "routed"]
+    assert len(routed) == 1
+    assert routed[0].id == "routed"
+    assert routed[0].dial is None
+    assert routed[0].mix == {"strong": 2}
+    assert curve.recommended == "routed"
 
 
 def test_complete_flag_is_false_while_any_candidate_has_unscored_cells() -> None:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from llm_waterfall import ChatResponse
+
 from wmo.providers.base import (
     PING_MAX_TOKENS,
     Completion,
@@ -9,6 +11,7 @@ from wmo.providers.base import (
     ProviderConfig,
     ProviderKind,
     VerifyResult,
+    structured_token_usage,
     verify_via_ping,
 )
 
@@ -86,3 +89,28 @@ def test_verify_reports_real_failures() -> None:
     result = verify_via_ping(_RaisingProvider(exc))
     assert not result.ok
     assert "401" in (result.detail or "")
+
+
+def test_structured_usage_keeps_cache_and_reasoning_splits() -> None:
+    response = ChatResponse.model_validate(
+        {
+            "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 20,
+                "prompt_tokens_details": {
+                    "cached_tokens": 40,
+                    "cache_write_tokens": 10,
+                },
+                "completion_tokens_details": {"reasoning_tokens": 7},
+            },
+        }
+    )
+
+    usage = structured_token_usage(response)
+
+    assert usage.input_tokens == 100
+    assert usage.output_tokens == 20
+    assert usage.cached_input_tokens == 40
+    assert usage.cache_write_input_tokens == 10
+    assert usage.reasoning_tokens == 7

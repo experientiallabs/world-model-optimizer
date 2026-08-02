@@ -25,6 +25,14 @@ def test_model_catalog_owns_temperature_compatibility() -> None:
     assert sonnet.forward_temperature is True
     assert resolve_provider_model(ProviderKind.OPENAI, "gpt-5.5").forward_temperature is False
     assert (
+        resolve_provider_model(ProviderKind.OPENAI_RESPONSES, "gpt-5.6-sol").forward_temperature
+        is False
+    )
+    assert (
+        resolve_provider_model(ProviderKind.ANTHROPIC, "claude-sonnet-5").forward_temperature
+        is False
+    )
+    assert (
         resolve_provider_model(ProviderKind.AZURE_OPENAI, "gpt-5.4-mini").forward_temperature
         is False
     )
@@ -50,6 +58,18 @@ def test_provider_catalog_exposes_only_canonical_model_types() -> None:
         "claude-opus-4-7",
         "claude-sonnet-4-6",
         "claude-haiku-4-5",
+    )
+
+
+def test_current_frontier_models_are_in_direct_provider_catalogs() -> None:
+    assert model_types_for_provider(ProviderKind.OPENAI_RESPONSES)[:3] == (
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+    )
+    assert model_types_for_provider(ProviderKind.ANTHROPIC)[:2] == (
+        "claude-fable-5",
+        "claude-sonnet-5",
     )
 
 

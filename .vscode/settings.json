@@ -1,0 +1,4 @@
+{
+    "terminal.integrated.enableImages": true,
+    "terminal.integrated.windowsUseConptyDll": true
+}

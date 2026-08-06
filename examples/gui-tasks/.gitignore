@@ -1,0 +1,4 @@
+# Only the generated corpus (traces.otel.jsonl) is committed. The 9 GB source stays outside the
+# repo and is read in place; if you ever symlink/copy it in, it stays local.
+traces_kimi_*.jsonl
+*.log

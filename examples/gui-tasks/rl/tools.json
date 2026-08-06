@@ -1,0 +1,19 @@
+{
+ "bash": [
+  "command",
+  "timeout"
+ ],
+ "edit": [
+  "edits",
+  "path"
+ ],
+ "read": [
+  "limit",
+  "offset",
+  "path"
+ ],
+ "write": [
+  "content",
+  "path"
+ ]
+}

@@ -698,6 +698,7 @@ def build(
         "--interactive/--no-interactive",
         help="Guided creation wizard. Default: on at a TTY when inputs are missing.",
     ),
+    endpoint: str = typer.Option(None, "--endpoint", help="OpenAI-compatible API endpoint base URL (e.g. https://generativelanguage.googleapis.com/v1beta/openai/). Sets WMO_ENDPOINT_API_KEY as the credential."),
 ) -> None:
     """Ingest traces (file upload or vendor SDK pull) and build a named world model.
 
@@ -732,6 +733,12 @@ def build(
     if vendor:
         source = vendor
         pull = True
+
+    if endpoint is not None and not endpoint.strip():
+        raise typer.BadParameter(
+            '--endpoint is empty; give the OpenAI-compatible base URL, '
+            'or drop the flag to use the provider default endpoint'
+        )
 
     # Decide whether to run the wizard: explicit flag wins; otherwise auto when at a TTY and the
     # essential inputs (a name and a trace source — a file or a live pull) were not supplied.
@@ -780,6 +787,7 @@ def build(
         embed_provider=embed_provider,
         embed_model=embed_model,
         embed_dim=embed_dim,
+        endpoint=endpoint,
     )
     if use_wizard:
         params = run_build_wizard(_console, params)
@@ -860,6 +868,7 @@ def build(
         train_split=params.train_split,
         judge_model=params.judge_model or judge_model_default(params.provider, params.model),
         trace_adapter=params.source,
+        endpoint=params.endpoint,
     )
     if use_configured_worker and configured_worker is not None:
         config.providers[0] = config.providers[0].model_copy(

@@ -156,6 +156,7 @@ class BuildParams(BaseModel):
     embed_provider: str = "hashing"
     embed_model: str | None = None
     embed_dim: int = 512
+    endpoint: str | None = None
 
 
 # Trace sources offered in the build wizard: name -> (label, can-pull-live). File-only sources

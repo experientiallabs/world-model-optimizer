@@ -81,6 +81,21 @@ export E2B_API_KEY=...
 wmo optimize harness my-agent my-environment --tasks tasks.jsonl --backend e2b
 ```
 
+### Provider credentials
+
+Each provider backend reads its API key from a specific environment variable:
+
+| Provider | Credential env var | Notes |
+|----------|-------------------|-------|
+| OpenAI (real) | `OPENAI_API_KEY` | Used for direct OpenAI API access. |
+| OpenAI-compatible endpoints | `WMO_ENDPOINT_API_KEY` | Used when `--endpoint` is configured (Gemini, vLLM, etc.). Never sends `OPENAI_API_KEY` to custom hosts. |
+| Anthropic | `ANTHROPIC_API_KEY` | |
+| Bedrock | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | |
+| Azure OpenAI | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` | |
+| OpenRouter | `OPENROUTER_API_KEY` | |
+
+> **Important:** `WMO_ENDPOINT_API_KEY` is only read when an explicit `--endpoint` is configured. Real OpenAI API calls use `OPENAI_API_KEY` directly. This separation ensures your real API key never leaks to a third-party host.
+
 ## Use a world model as an API
 
 `world-model-optimizer` includes world models that can be used to simulate your agent environment

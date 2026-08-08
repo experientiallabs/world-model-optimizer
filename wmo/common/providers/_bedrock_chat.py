@@ -14,6 +14,7 @@ def converse_request(request: ChatRequest, model: str) -> dict[str, object]:
     """Translate the provider-neutral structured contract to Bedrock Converse."""
     system: list[dict[str, str]] = []
     messages: list[dict[str, object]] = []
+    has_tool_history = False
 
     def push(role: str, content: list[dict[str, object]]) -> None:
         if messages and messages[-1]["role"] == role:
@@ -29,6 +30,7 @@ def converse_request(request: ChatRequest, model: str) -> dict[str, object]:
                 system.append({"text": text})
             continue
         if message.role == "tool":
+            has_tool_history = True
             push(
                 "user",
                 [
@@ -46,6 +48,7 @@ def converse_request(request: ChatRequest, model: str) -> dict[str, object]:
         if text:
             blocks.append({"text": text})
         for tool_call in message.tool_calls or []:
+            has_tool_history = True
             try:
                 arguments = json.loads(tool_call.function.arguments)
             except ValueError:
@@ -73,6 +76,7 @@ def converse_request(request: ChatRequest, model: str) -> dict[str, object]:
     }
     if system:
         result["system"] = system
+    choice = request.tool_choice
     if request.tools:
         tools = [
             {
@@ -85,15 +89,25 @@ def converse_request(request: ChatRequest, model: str) -> dict[str, object]:
             for tool in request.tools
         ]
         tool_config: dict[str, object] = {"tools": tools}
-        choice = request.tool_choice
         if choice == "required":
             tool_config["toolChoice"] = {"any": {}}
+        elif choice == "none" and has_tool_history:
+            # Caller disabled tools for this turn but history has toolUse/toolResult
+            # blocks. Bedrock requires toolConfig to be present; lock it to auto so
+            # the model can interpret the history without being allowed to call new
+            # tools (auto is the least-permissive mode Converse supports here).
+            tool_config["toolChoice"] = {"auto": {}}
         elif isinstance(choice, dict):
             function = choice.get("function")
             if isinstance(function, dict) and isinstance(function.get("name"), str):
                 tool_config["toolChoice"] = {"tool": {"name": function["name"]}}
-        if choice != "none":
+        if choice != "none" or has_tool_history:
             result["toolConfig"] = tool_config
+    elif has_tool_history:
+        # No tools on this turn but replayed history carries toolUse/toolResult
+        # blocks. Bedrock rejects the request without toolConfig, so attach an
+        # empty tools list in auto mode as the minimum-viable placeholder.
+        result["toolConfig"] = {"tools": [], "toolChoice": {"auto": {}}}
     return result
 
 

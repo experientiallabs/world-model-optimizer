@@ -21,7 +21,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any, cast
 
 import typer
 from pydantic import ValidationError
@@ -29,6 +29,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
+import wmo.cli.runs_app as _self
 from wmo.common.config import ARTIFACT_DIR
 from wmo.runtime.platform.credentials import credentials_path
 from wmo.runtime.runs.schema import (
@@ -96,10 +97,10 @@ _ORG = typer.Option(
 def _reader(org: str | None = None) -> RunsReader:
     """The org-scoped reader, or a clean usage error naming the fix."""
     from wmo.runtime.platform.client import PlatformError
-    from wmo.runtime.runs.reader import RunsReader
 
     try:
-        reader = RunsReader.open(org=org)
+        reader_cls = cast(Any, _self.RunsReader)
+        reader = reader_cls.open(org=org)
     except PlatformError as error:
         raise _failed("Could not resolve the organization", error) from error
     if reader is None:
@@ -721,3 +722,13 @@ def _failed(headline: str, error: PlatformError) -> typer.Exit:
 def register(app: typer.Typer) -> None:
     """Attach the runs commands to the root CLI."""
     app.add_typer(runs_app, name="runs")
+
+
+def __getattr__(name: str) -> object:
+    """Lazy module attribute resolution for deferred CLI imports."""
+    if name == "RunsReader":
+        from wmo.runtime.runs.reader import RunsReader
+
+        return RunsReader
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+

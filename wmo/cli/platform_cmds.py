@@ -15,12 +15,13 @@ import webbrowser
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any, cast
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
+import wmo.cli.platform_cmds as _self
 from wmo.common.config.store import WorldModelStore
 from wmo.runtime.platform.credentials import (
     DEFAULT_WEB_URL,
@@ -78,10 +79,8 @@ def login(
 ) -> None:
     """Connect this machine to a platform account."""
     from wmo.runtime.platform.client import (
-        PlatformClient,
         PlatformError,
         PlatformUnreachable,
-        fetch_cli_config,
     )
 
     credentials = load_credentials()
@@ -90,7 +89,8 @@ def login(
     if api_url is None:
         web_url = (url or credentials.web_url or DEFAULT_WEB_URL).rstrip("/")
         try:
-            api_url = fetch_cli_config(web_url)
+            fetch_cfg = cast(Any, _self.fetch_cli_config)
+            api_url = fetch_cfg(web_url)
         except PlatformUnreachable as error:
             raise typer.BadParameter(str(error)) from error
         except PlatformError as error:
@@ -273,11 +273,10 @@ def _browser_login(web_url: str, *, open_browser: bool) -> str | None:
 
 
 def _client(credentials: PlatformCredentials) -> PlatformClient:
-    from wmo.runtime.platform.client import PlatformClient
-
     if credentials.api_url is None or credentials.token is None:
         raise typer.BadParameter("not connected to a platform; run `wmo login` first")
-    return PlatformClient(credentials.api_url, credentials.token)
+    client_cls = cast(Any, _self.PlatformClient)
+    return client_cls(credentials.api_url, credentials.token)
 
 
 @contextmanager
@@ -448,10 +447,8 @@ def _push_pipeline(client: PlatformClient, org_id: str, remote_name: str, model_
     from wmo.optimize.telemetry.backfill import (
         BackfillRefused,
         ensure_backfillable,
-        optimize_events,
     )
-    from wmo.runtime.runs.client import PushRejected, PushUnavailable, RunsSink, default_emitter_id
-    from wmo.runtime.runs.reader import RunsReader
+    from wmo.runtime.runs.client import PushRejected, PushUnavailable, default_emitter_id
     from wmo.runtime.runs.schema import pipeline_external_id
 
     manifest = model_dir / MANIFEST_RELPATH
@@ -459,8 +456,11 @@ def _push_pipeline(client: PlatformClient, org_id: str, remote_name: str, model_
         _console.print("no optimize manifest in the model directory; skipping the pipeline leg")
         return
     external_id = pipeline_external_id(remote_name)
-    events = optimize_events(manifest, model=remote_name, external_id=external_id)
-    recorded = RunsReader(client, org_id).event_count(external_id)
+    opt_events = cast(Any, _self.optimize_events)
+    reader_cls = cast(Any, _self.RunsReader)
+    sink_cls = cast(Any, _self.RunsSink)
+    events = opt_events(manifest, model=remote_name, external_id=external_id)
+    recorded = reader_cls(client, org_id).event_count(external_id)
     try:
         ensure_backfillable(recorded)
     except BackfillRefused:
@@ -473,7 +473,7 @@ def _push_pipeline(client: PlatformClient, org_id: str, remote_name: str, model_
             f"`wmo runs backfill {model_dir} --name {external_id} --force` completes it."
         )
         return
-    sink = RunsSink(client, org_id=org_id, emitter_id=default_emitter_id())
+    sink = sink_cls(client, org_id=org_id, emitter_id=default_emitter_id())
     try:
         ack = sink.push(external_id, events)
     except (PushRejected, PushUnavailable) as error:
@@ -567,3 +567,31 @@ def register(app: typer.Typer) -> None:
     app.command("status")(status)
     app.command("push")(push)
     app.command("pull")(pull)
+
+
+def __getattr__(name: str) -> object:
+    """Lazy module attribute resolution for deferred CLI imports."""
+    if name == "PlatformClient":
+        from wmo.runtime.platform.client import PlatformClient
+
+        return PlatformClient
+    if name == "fetch_cli_config":
+        from wmo.runtime.platform.client import fetch_cli_config
+
+        return fetch_cli_config
+    if name == "RunsReader":
+        from wmo.runtime.runs.reader import RunsReader
+
+        return RunsReader
+    if name == "RunsSink":
+        from wmo.runtime.runs.client import RunsSink
+
+        return RunsSink
+    if name == "optimize_events":
+        from wmo.optimize.telemetry.backfill import optimize_events
+
+        return optimize_events
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+

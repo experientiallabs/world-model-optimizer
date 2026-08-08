@@ -34,7 +34,7 @@ import json
 import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import typer
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -43,6 +43,7 @@ from rich.markup import escape
 from rich.prompt import Confirm
 from rich.table import Table
 
+import wmo.cli.model_app as _self
 from wmo.cli.consent import can_prompt, require_spend_consent
 from wmo.common.config import ARTIFACT_DIR
 
@@ -92,7 +93,6 @@ model_app = typer.Typer(
 _console = Console()
 
 
-@model_app.command("run")
 def _load_harbor_task_ids(path: Path) -> tuple[str, ...]:
     """Load the exact ordered task-id list, validated by the canonical score request rules."""
     from wmo.runtime.harness.scoring import ScoreRequest
@@ -110,6 +110,7 @@ def _load_harbor_task_ids(path: Path) -> tuple[str, ...]:
     return request.task_ids
 
 
+@model_app.command("run")
 def run(
     ctx: typer.Context,
     config: str = typer.Option(
@@ -456,7 +457,6 @@ def run_distill(
     from wmo.optimize.model.loop import (
         DEFAULT_DISTILL_HARNESS,
         DistillBudgetError,
-        run_distillation,
     )
     from wmo.optimize.model.store import AdapterStore, DistillRunStore
     from wmo.runtime.harness.store import write_json_atomic
@@ -600,7 +600,8 @@ def run_distill(
         console.print(f"  \\[{event.phase}] {escape(event.message)}{spend}")
 
     try:
-        result = run_distillation(
+        run_distill_fn = cast(Any, _self.run_distillation)
+        result = run_distill_fn(
             base,
             cfg,
             seed_doc,
@@ -853,11 +854,12 @@ def _preflight_e2b_capacity(console: Console, *, trial_concurrency: int) -> None
             too few slots are free after reaping the safe class.
     """
     from wmo.optimize.model.rollouts import E2B_SANDBOXES_PER_TRIAL
-    from wmo.runtime.harness.e2b_reap import E2B_API_KEY_ENV, check_capacity, is_credential_error
+    from wmo.runtime.harness.e2b_reap import E2B_API_KEY_ENV, is_credential_error
 
     required = trial_concurrency * E2B_SANDBOXES_PER_TRIAL
     try:
-        check = check_capacity(required=required)
+        check_cap_fn = cast(Any, _self.check_capacity)
+        check = check_cap_fn(required=required)
     except ImportError as error:
         raise typer.BadParameter(
             f"{error}; the distill config selects harbor.backend = 'e2b'"
@@ -1314,3 +1316,18 @@ def _row_int(row: JsonObject, key: str) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int):
         return None
     return value
+
+
+def __getattr__(name: str) -> object:
+    """Lazy module attribute resolution for deferred CLI imports."""
+    if name == "run_distillation":
+        from wmo.optimize.model.loop import run_distillation
+
+        return run_distillation
+    if name == "check_capacity":
+        from wmo.runtime.harness.e2b_reap import check_capacity
+
+        return check_capacity
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+

@@ -11,10 +11,12 @@ docs/reference/closed_loop.md names.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import typer
 from rich.console import Console
+
+import wmo.cli.eval_closed_loop as _self
 
 if TYPE_CHECKING:
     from wmo.runtime.harness.doc import HarnessDoc
@@ -49,12 +51,9 @@ def run_closed_loop(
     at once unless `--eval-concurrency` caps them.
     """
     from wmo.cli.model_roles import resolve_opt_in_model_provider
-    from wmo.common.config import WorldModelStore
     from wmo.runtime.harness.runtime import DEFAULT_MAX_TURNS, AgentRuntime
-    from wmo.simulation.evaluation.closed_loop import ClosedLoopEval
     from wmo.simulation.evaluation.gold import GoldJudge
     from wmo.simulation.evaluation.tasks import load_tasks
-    from wmo.simulation.model import load_world_model
 
     if harness_backend not in ("local", "e2b"):
         raise typer.BadParameter(
@@ -65,12 +64,12 @@ def run_closed_loop(
     except (OSError, ValueError) as exc:  # missing file, malformed JSONL, empty, duplicate ids
         raise typer.BadParameter(f"cannot load tasks from {tasks_file!r}: {exc}") from exc
     # The world model IS the environment on every backend, so it is always required.
-    store = WorldModelStore(root)
+    store = cast(Any, _self.WorldModelStore)(root)
     try:
         model_dir = store.resolve(name)
     except (FileNotFoundError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
-    world_model, provider = load_world_model(model_dir)
+    world_model, provider = cast(Any, _self.load_world_model)(model_dir)
     agent_provider, agent_model = resolve_opt_in_model_provider(root, "agent", provider)
 
     loaded_harness = _load_harness(harness, root)
@@ -137,7 +136,7 @@ def run_closed_loop(
     else:
         runtime = AgentRuntime(agent_provider, max_turns=max_turns or DEFAULT_MAX_TURNS)
     try:
-        evaluation = ClosedLoopEval(
+        evaluation = cast(Any, _self.ClosedLoopEval)(
             tasks,
             world_model,
             agent_provider,
@@ -216,3 +215,24 @@ def _load_harness(name: str | None, root: str) -> HarnessDoc | None:
         return HarnessStore(root).load(base, ref or None)
     except (FileNotFoundError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
+
+
+def __getattr__(name: str) -> object:
+    """Lazy module attribute resolution for deferred CLI imports."""
+    if name == "WorldModelStore":
+        from wmo.common.config import WorldModelStore
+
+        globals()["WorldModelStore"] = WorldModelStore
+        return WorldModelStore
+    if name == "ClosedLoopEval":
+        from wmo.simulation.evaluation.closed_loop import ClosedLoopEval
+
+        globals()["ClosedLoopEval"] = ClosedLoopEval
+        return ClosedLoopEval
+    if name == "load_world_model":
+        from wmo.simulation.model import load_world_model
+
+        globals()["load_world_model"] = load_world_model
+        return load_world_model
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+

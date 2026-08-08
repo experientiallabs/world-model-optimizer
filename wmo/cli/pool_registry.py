@@ -29,7 +29,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlsplit
 
 import typer
@@ -38,6 +38,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
+import wmo.cli.pool_registry as _self
 from wmo.cli.model_roles import DEFAULT_AZURE_API_VERSION
 from wmo.cli.ui import creds_note, ensure_credentials, has_credentials, select_option
 from wmo.common.config import PROVIDER_ENV_VARS
@@ -219,7 +220,7 @@ def register_from_provider(
     operator-chosen deployment, so a first deployment that answers proves nothing about the
     second. `wmo providers verify` bills a call per model for the same reason.
     """
-    from wmo.common.providers.catalog import endpoint_catalog, list_provider_models
+    from wmo.common.providers.catalog import list_provider_models
 
     if kind is ProviderKind.OPENAI:
         # The one kind that can point at a self-hosted server (Ollama, vLLM, llama.cpp), so the
@@ -227,7 +228,8 @@ def register_from_provider(
         # what that server actually serves.
         options = _ask_endpoint(console, ask, options)
     if kind is ProviderKind.OPENAI and options.endpoint:
-        catalog = endpoint_catalog(options.endpoint)
+        endpoint_cat_fn = cast(Any, _self.endpoint_catalog)
+        catalog = endpoint_cat_fn(options.endpoint)
     else:
         catalog = list_provider_models(kind)
     _describe_catalog(console, catalog)
@@ -356,7 +358,7 @@ def register_model_ids(
             models for one. Non-interactively there is nobody to ask, so this fails loudly rather
             than writing a candidate that does not work.
     """
-    from wmo.common.providers.catalog import CatalogModel, endpoint_catalog, list_provider_models
+    from wmo.common.providers.catalog import CatalogModel, list_provider_models
     from wmo.common.providers.pool import is_local_endpoint, static_requirements
 
     _check_azure_deployment(kind, model_ids, options)
@@ -388,7 +390,8 @@ def register_model_ids(
         )
         options = options.model_copy(update={"input_per_mtok": 0.0, "output_per_mtok": 0.0})
     if _self_hosted(kind, options):
-        catalog = endpoint_catalog(options.endpoint or "")
+        endpoint_cat_fn = cast(Any, _self.endpoint_catalog)
+        catalog = endpoint_cat_fn(options.endpoint or "")
     else:
         catalog = list_provider_models(kind)
     check = verify or verify_pool_entry
@@ -987,3 +990,15 @@ def _read(ask: PromptReader, prompt: str) -> str:
         return ask(prompt).strip()
     except EOFError:
         raise typer.Abort() from None
+
+
+def __getattr__(name: str) -> object:
+    """Lazy module attribute resolution for deferred CLI imports."""
+    if name == "endpoint_catalog":
+        from wmo.common.providers.catalog import endpoint_catalog
+
+        globals()["endpoint_catalog"] = endpoint_catalog
+        return endpoint_catalog
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+

@@ -215,6 +215,24 @@ If no route can fit the shared team, identity, or total pool allocation, the neu
 returns HTTP 429 with OpenAI `insufficient_quota` semantics before provider work. Any required
 unknown price makes that route ineligible while a hard limit applies.
 
+A rung may author a `GatewayRungDispatchPolicy` on its gateway metadata (all fields inert by
+default). Its `concurrency_bound` is a per-worker in-flight cap enforced by pure in-process
+counters at the same pre-dispatch point: a rung at its bound is bypassed sideways to the next
+claimable rung (spill in seconds) instead of queueing at the deployment until the request
+deadline. With `fair_share: true` (which requires the bound), a contended rung additionally
+limits each organization to its weighted max-min share of the bound; weights arrive per request
+on `AuthorizationSnapshot.fair_share_weight` (default 1) from the hosted store, capacity below
+the bound is always borrowable (a lone organization uses the whole rung), freed slots are
+reserved for recently active under-share organizations, and running dispatches are never
+preempted. A ladder whose every remaining rung was bypassed only by these policies force-admits
+past the bound rather than manufacturing a failure unbounded admission would not have had.
+Every policy-routed dispatch is disclosed on its attempt row: `dispatch_reason` (`affinity`,
+`fair_share_shed`, `queue_bound`, `rung_dead`, `saturated_overflow`), the bypassed
+`preferred_deployment_id` with its frozen base token rates, and at settle a
+`counterfactual_cost_micro_usd` pricing the same observed usage at those preferred rates, so
+cost optimality is measurable from the ledger alone. Pools and rungs that author none of this
+keep byte-identical behavior and null disclosure columns.
+
 A deployment's price schedule may declare a long-context tier: a whole-request premium applied
 once provider-reported input tokens reach its threshold, matching both published tier schedules
 (Gemini reprices `prompts > 200k` entirely; Anthropic's Claude 4.6+ models serve the 1M window at
@@ -488,7 +506,17 @@ bills catalog rates) and a route with no eligible rung drops it with disclosure.
 marker-honoring (Anthropic Messages) rungs before marker-dropping wires, stably within each
 group, so a shim rung can no longer silently bill every turn's full context uncached while the
 native rung stands ready; routes narrowing to only marker-dropping wires keep disclosing the
-dropped markers. Every coercion is disclosed in `path->effective` form
+dropped markers. On `maximize_cache_affinity` pools the certified initial order is replaced per
+request by a weighted rendezvous hash of the request's stable conversation identity (the caller's
+`prompt_cache_key`, else a Responses continuation's original episode key, else the session-scoped
+`X-Client-Request-Id`, else the idempotency key, else the request id) over the pool's rungs, with
+weights from each rung's authored `GatewayRungDispatchPolicy.affinity_weight`. Every worker
+computes the identical permutation from catalog data alone (no per-worker memory, no shared
+state), so one conversation lands on the same rung fleet-wide and, when that rung sheds or dies,
+on the same deterministic alternate, building warm cache there instead of scattering; a rung's
+death or restoration moves only its own fingerprints. Failover semantics under this mode are
+availability-style (a throttle fails over to the deterministic alternate), and the cache-marker
+partition above still applies first on marked requests, rendezvous-ordered within each group. Every coercion is disclosed in `path->effective` form
 through `ignored_parameters`, logged, and counted in the `admission_parameter_coercions`
 metric; every serving surface carries that list to the caller as a body-level
 `x-experiential-ignored-parameters` key (Chat chunk and completion, Responses envelope, and the

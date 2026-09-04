@@ -9,6 +9,7 @@ from exp.common.core.artifacts import JsonObject
 from exp.common.models.catalog import (
     GatewayDeploymentCapabilities,
     GatewayDeploymentMetadata,
+    GatewayRungDispatchPolicy,
     GatewayServiceTierPrices,
     GatewayTokenPrices,
 )
@@ -19,7 +20,7 @@ from exp.common.models.content import (
     TextContentPart,
     VideoContentPart,
 )
-from exp.common.models.gateway_catalog import ExactModelDeployment
+from exp.common.models.gateway_catalog import ExactModelDeployment, FailoverMode
 from exp.common.models.model import ModelCapabilities
 from exp.runtime.gateway.contracts import (
     AuthorizationSnapshot,
@@ -33,6 +34,7 @@ from exp.runtime.gateway.contracts import (
 )
 from exp.runtime.gateway.native_accounting import NativeAttemptAccounting
 from exp.runtime.gateway.native_admission import (
+    _affinity_ordered_rungs,
     _prefer_cache_capable_rungs,
     admitted_route_requests,
     protocol_compatible_indexes,
@@ -92,7 +94,7 @@ def _mixed_route(
             exact_model_id="exact-one",
             pool_id="pool-one",
             deployment_ids=tuple(item.deployment_id for item in deployments),
-            failover_mode=cast(Literal["maximize_availability", "maximize_cache"], failover_mode),
+            failover_mode=cast(FailoverMode, failover_mode),
         ),
         deployment=deployments[0],
         fallback_deployments=deployments[1:],
@@ -1283,3 +1285,178 @@ def test_parallel_tool_calls_shape_per_rung_capability() -> None:
         request.model_copy(update={"parallel_tool_calls": None}), missing
     )
     assert untouched.parallel_tool_calls is None and disclosure is None
+def _weighted_deployment(deployment_id: str, weight: float | None) -> ExactModelDeployment:
+    """Build one rung carrying an authored affinity weight (or none)."""
+    dispatch = None if weight is None else GatewayRungDispatchPolicy(affinity_weight=weight)
+    return _deployment(deployment_id, gateway=GatewayDeploymentMetadata(dispatch=dispatch))
+
+
+def _affinity_fixture(
+    failover_mode: str = "maximize_cache_affinity",
+) -> tuple[GatewayRoute, tuple[tuple[GatewayWireProfile, NativeWireClient], ...]]:
+    """Build a three-rung affinity route over uniform openai-compatible wires."""
+    deployments = (
+        _weighted_deployment("dep-house", 10.0),
+        _weighted_deployment("dep-fireworks", 3.0),
+        _weighted_deployment("dep-openrouter", None),
+    )
+    route = _mixed_route(failover_mode, deployments, GatewayApiSurface.CHAT_COMPLETIONS)
+    client = cast(NativeWireClient, object())
+    wires = tuple(
+        (
+            GatewayWireProfile(
+                dialect="openai_compatible", url=f"https://{item.deployment_id}.test"
+            ),
+            client,
+        )
+        for item in deployments
+    )
+    return route, wires
+
+
+def _session_request(client_request_id: str) -> GatewayRequest:
+    """Build one chat request carrying a session-scoped correlation id."""
+    return GatewayRequest(
+        surface=GatewayApiSurface.CHAT_COMPLETIONS,
+        messages=(GatewayMessage(role="user", content="hi"),),
+        client_request_id=client_request_id,
+    )
+
+
+def _order(route: GatewayRoute) -> tuple[str, ...]:
+    """Name the route's dispatch order for readable assertions."""
+    return tuple(item.deployment_id for item in route.deployments)
+
+
+class TestAffinityOrderedRungs:
+    """Rendezvous ordering under the affinity flag, and the flag-off gate."""
+
+    def test_legacy_modes_keep_the_certified_order_object(self) -> None:
+        """The two shipped modes return the identical route, byte for byte."""
+        for mode in ("maximize_availability", "maximize_cache"):
+            route, wires = _affinity_fixture(mode)
+            ordered, ordered_wires = _affinity_ordered_rungs(
+                route,
+                wires,
+                _session_request("session-1"),
+                authorization=route.snapshot.authorization,
+                continuation=None,
+            )
+            assert ordered is route
+            assert ordered_wires is wires
+
+    def test_simulated_workers_order_one_session_identically(self) -> None:
+        """Independent computations of one session agree on the full ladder."""
+        orders = set()
+        for _worker in range(6):
+            route, wires = _affinity_fixture()
+            ordered, _wires_out = _affinity_ordered_rungs(
+                route,
+                wires,
+                _session_request("session-42"),
+                authorization=route.snapshot.authorization,
+                continuation=None,
+            )
+            orders.add(_order(ordered))
+        assert len(orders) == 1
+
+    def test_different_sessions_reach_different_first_rungs(self) -> None:
+        """The rendezvous spreads distinct conversations across rungs."""
+        first_rungs = set()
+        for index in range(64):
+            route, wires = _affinity_fixture()
+            ordered, _wires_out = _affinity_ordered_rungs(
+                route,
+                wires,
+                _session_request(f"session-{index}"),
+                authorization=route.snapshot.authorization,
+                continuation=None,
+            )
+            first_rungs.add(_order(ordered)[0])
+        assert len(first_rungs) > 1
+
+    def test_wires_stay_aligned_with_the_reordered_route(self) -> None:
+        """Each reordered rung keeps its own resolved wire."""
+        route, wires = _affinity_fixture()
+        ordered, ordered_wires = _affinity_ordered_rungs(
+            route,
+            wires,
+            _session_request("session-7"),
+            authorization=route.snapshot.authorization,
+            continuation=None,
+        )
+        for deployment, (profile, _client) in zip(ordered.deployments, ordered_wires, strict=True):
+            assert profile.url == f"https://{deployment.deployment_id}.test"
+
+    def test_continuation_keeps_the_original_turns_placement(self) -> None:
+        """A continued conversation orders exactly like its originating session."""
+        from exp.runtime.gateway.native_responses import ContinuationContext
+        from exp.runtime.openai_protocol.state import ProtocolNamespace
+
+        route, wires = _affinity_fixture()
+        original, _wires_out = _affinity_ordered_rungs(
+            route,
+            wires,
+            _session_request("session-original"),
+            authorization=route.snapshot.authorization,
+            continuation=None,
+        )
+        continuation = ContinuationContext(
+            namespace=ProtocolNamespace(
+                organization_id="organization-one",
+                identity_id="identity-one",
+                alias_revision_id="revision-one",
+            ),
+            episode_key="session-original",
+            response_id="resp-1",
+            messages=(),
+        )
+        continued_route, continued_wires = _affinity_fixture()
+        continued, _wires_out = _affinity_ordered_rungs(
+            continued_route,
+            continued_wires,
+            _session_request("a-fresh-per-turn-id"),
+            authorization=continued_route.snapshot.authorization,
+            continuation=continuation,
+        )
+        assert _order(continued) == _order(original)
+
+    def test_marked_requests_keep_marker_honoring_rungs_first(self) -> None:
+        """#717 composes: markers partition first, rendezvous orders within."""
+        deployments = (
+            _weighted_deployment("dep-shim", 10.0),
+            _weighted_deployment("dep-native-a", 3.0),
+            _weighted_deployment("dep-native-b", 1.0),
+        )
+        route = _mixed_route("maximize_cache_affinity", deployments, GatewayApiSurface.MESSAGES)
+        client = cast(NativeWireClient, object())
+        wires = (
+            (GatewayWireProfile(dialect="openai_compatible", url="https://shim.test"), client),
+            (GatewayWireProfile(dialect="anthropic_messages", url="https://a.test"), client),
+            (GatewayWireProfile(dialect="anthropic_messages", url="https://b.test"), client),
+        )
+        marked = _marked_request().model_copy(update={"client_request_id": "session-1"})
+        ordered, _wires_out = _affinity_ordered_rungs(
+            route,
+            wires,
+            marked,
+            authorization=route.snapshot.authorization,
+            continuation=None,
+        )
+        assert set(_order(ordered)[:2]) == {"dep-native-a", "dep-native-b"}
+        assert _order(ordered)[2] == "dep-shim"
+        # The markerless order restricted to the native group matches the
+        # within-group order of the marked request: one rendezvous, two views.
+        plain_route, plain_wires = (
+            _mixed_route("maximize_cache_affinity", deployments, GatewayApiSurface.MESSAGES),
+            wires,
+        )
+        plain_ordered, _wires_out = _affinity_ordered_rungs(
+            plain_route,
+            plain_wires,
+            _session_request("session-1"),
+            authorization=plain_route.snapshot.authorization,
+            continuation=None,
+        )
+        plain_native_order = tuple(name for name in _order(plain_ordered) if name != "dep-shim")
+        assert _order(ordered)[:2] == plain_native_order

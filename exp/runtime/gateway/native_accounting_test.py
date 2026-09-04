@@ -880,6 +880,8 @@ def test_start_attempt_reprices_only_when_the_selected_depth_forwards_the_tier()
             maximum_cost_micro_usd: int | None = None,
             route_reason: str | None = None,
             fallback_reason: str | None = None,
+            dispatch_reason: str | None = None,
+            preferred_deployment: ExactModelDeployment | None = None,
         ) -> str:
             """Record the reserved input rate, then reserve as the base fake does."""
             self.reserved_input_micro.append(
@@ -893,6 +895,8 @@ def test_start_attempt_reprices_only_when_the_selected_depth_forwards_the_tier()
                 maximum_cost_micro_usd=maximum_cost_micro_usd,
                 route_reason=route_reason,
                 fallback_reason=fallback_reason,
+                dispatch_reason=dispatch_reason,
+                preferred_deployment=preferred_deployment,
             )
 
     carded = _deployment("deployment-a", connection_sha256="b" * 64).model_copy(

@@ -18,6 +18,11 @@ import logging
 from collections.abc import Sequence
 
 from exp.common.models.catalog import GatewayDeploymentCapabilities
+from exp.runtime.gateway.affinity import (
+    affinity_fingerprint,
+    affinity_seed_material,
+    rendezvous_order,
+)
 from exp.runtime.gateway.contracts import AuthorizationSnapshot, DirectTarget, GatewayRequest
 from exp.runtime.gateway.native_accounting import NativeAttemptAccounting
 from exp.runtime.gateway.native_components import NativeGatewayComponents
@@ -90,6 +95,7 @@ def admitted_route_requests(
     *,
     accounting: NativeAttemptAccounting,
     authorization: AuthorizationSnapshot,
+    continuation: ContinuationContext | None = None,
 ) -> tuple[GatewayRoute, _ResolvedWires, GatewayRequest, GatewayRequest]:
     """Narrow one certified route to rungs that serve the admitted request.
 
@@ -99,6 +105,9 @@ def admitted_route_requests(
         request: Canonical request produced by the public protocol decoder.
         accounting: Shared accounting owning the coercion counter.
         authorization: Frozen authority for the accepted request.
+        continuation: Responses continuation context when this request
+            continues a stored response; its original episode key keeps the
+            conversation's cache-affinity placement.
 
     Returns:
         The narrowed route and wires plus the public request (carrying any
@@ -265,6 +274,13 @@ def admitted_route_requests(
         )
     provider_request = _with_cache_affinity(provider_request, authorization)
     route, resolved_wires = _prefer_cache_capable_rungs(route, resolved_wires, provider_request)
+    route, resolved_wires = _affinity_ordered_rungs(
+        route,
+        resolved_wires,
+        provider_request,
+        authorization=authorization,
+        continuation=continuation,
+    )
     return route, resolved_wires, public_request, provider_request
 
 
@@ -330,6 +346,70 @@ def _prefer_cache_capable_rungs(
         *marker_capable,
         *(index for index in range(len(resolved_wires)) if index not in marker_capable),
     )
+    return (
+        reorder_route_deployments(route, order),
+        tuple(resolved_wires[index] for index in order),
+    )
+
+
+def _affinity_ordered_rungs(
+    route: GatewayRoute,
+    resolved_wires: _ResolvedWires,
+    provider_request: GatewayRequest,
+    *,
+    authorization: AuthorizationSnapshot,
+    continuation: ContinuationContext | None,
+) -> tuple[GatewayRoute, _ResolvedWires]:
+    """Dispatch rungs in weighted rendezvous order on affinity pools.
+
+    Under ``maximize_cache_affinity`` the certified order is replaced by the
+    request fingerprint's rendezvous permutation over the surviving rungs, so
+    every worker sends one conversation to the same rung and, when that rung
+    sheds or dies, to the same deterministic alternate. Weights come from each
+    deployment's authored ``GatewayRungDispatchPolicy.affinity_weight``
+    (default 1.0). The cache-marker guarantee composes: a cache-marked request
+    on a route mixing marker-honoring and marker-dropping wires still
+    dispatches the marker-honoring group first, rendezvous-ordered within each
+    group. The other two failover modes are untouched.
+    """
+    if route.snapshot.failover_mode != "maximize_cache_affinity":
+        return route, resolved_wires
+    if len(resolved_wires) < 2:
+        return route, resolved_wires
+    material = affinity_seed_material(
+        provider_request,
+        continuation_episode_key=None if continuation is None else continuation.episode_key,
+        request_id=authorization.request_id,
+    )
+    fingerprint = affinity_fingerprint(
+        organization_id=authorization.organization_id,
+        identity_id=authorization.identity_id,
+        material=material,
+    )
+    weighted_rungs = tuple(
+        (
+            deployment.deployment_id,
+            (
+                1.0
+                if deployment.gateway.dispatch is None
+                or deployment.gateway.dispatch.affinity_weight is None
+                else deployment.gateway.dispatch.affinity_weight
+            ),
+        )
+        for deployment in route.deployments
+    )
+    order = rendezvous_order(fingerprint, weighted_rungs)
+    if request_carries_cache_markers(provider_request):
+        marker_capable = frozenset(
+            index
+            for index, (profile, _client) in enumerate(resolved_wires)
+            if profile.dialect == "anthropic_messages"
+        )
+        if marker_capable and len(marker_capable) < len(resolved_wires):
+            order = (
+                *(index for index in order if index in marker_capable),
+                *(index for index in order if index not in marker_capable),
+            )
     return (
         reorder_route_deployments(route, order),
         tuple(resolved_wires[index] for index in order),

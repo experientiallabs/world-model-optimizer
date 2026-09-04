@@ -5141,3 +5141,92 @@ def test_internal_admission_failures_log_the_real_exception(
     assert str(fields["request_id"]).startswith("request-")
     assert fields["exception_type"] == "KeyError"
     assert fields["operation"] == "native_admit"
+
+
+def _affinity_pool_control_plane(root: Path) -> tuple[NativeControlPlane, str, Path]:
+    """Load the control plane over a pool opted into cache-affinity routing.
+
+    Seeds the standard certified two-deployment pool, then authors the opt-in
+    the way the hosted platform does: the pool's ``failover_mode`` flips to
+    ``maximize_cache_affinity`` and each rung carries an affinity weight in
+    its dispatch policy, all as catalog data behind a fresh alias revision.
+    """
+    from exp.common.models.catalog import (
+        GatewayRungDispatchPolicy,
+        load_model_catalog,
+        write_model_catalog,
+    )
+    from exp.runtime.gateway.catalog_authority import snapshot_current_catalog
+
+    manager, raw_key = _configured_pool_gateway(root)
+    catalog_path = root / "models.toml"
+    catalog = load_model_catalog(catalog_path)
+    weighted_models = dict(catalog.models)
+    for alias, weight in (("alpha", 1.0), ("beta", 6.0)):
+        record = weighted_models[alias]
+        assert record.gateway is not None
+        weighted_models[alias] = record.model_copy(
+            update={
+                "gateway": record.gateway.model_copy(
+                    update={"dispatch": GatewayRungDispatchPolicy(affinity_weight=weight)}
+                )
+            }
+        )
+    pool = catalog.gateway_pools["coding"].model_copy(
+        update={"failover_mode": "maximize_cache_affinity"}
+    )
+    write_model_catalog(
+        catalog_path,
+        catalog.model_copy(update={"models": weighted_models, "gateway_pools": {"coding": pool}}),
+    )
+    _catalog, normalized, snapshot = snapshot_current_catalog(root)
+    manager.activate_direct_alias(
+        alias_id="coding",
+        alias_name="coding",
+        revision_id="revision-pool-affinity",
+        pool_id="coding",
+        snapshot_ref=f"catalog-snapshots/{snapshot.name}",
+        catalog_sha256=normalized.identity_sha256(),
+    )
+    components = load_gateway_components(
+        root,
+        environment={"TEST_PROVIDER_KEY": "provider-secret-canary"},
+    )
+    return NativeControlPlane(components), raw_key, manager.database_path
+
+
+def test_affinity_pool_routes_each_session_deterministically(tmp_path: Path) -> None:
+    """One session always admits the same rendezvous ladder, disclosed as such.
+
+    Three admissions of one session id produce byte-identical route orders,
+    distinct sessions reach distinct first rungs (the whole point of spreading
+    by fingerprint), the 6x-weighted rung carries the clear majority, and the
+    reserved first dispatch lands durable ``dispatch_reason='affinity'``.
+    """
+    import sqlite3
+
+    control, raw_key, database_path = _affinity_pool_control_plane(tmp_path)
+    body = json.dumps({"model": "coding", "messages": [{"role": "user", "content": "hi"}]})
+
+    def admitted_order(session: str) -> tuple[str, ...]:
+        """Admit one request under a session id and name its rung order."""
+        admission = _admit(control, raw_key, body, client_request_id=session)
+        route = admission["route"]
+        assert isinstance(route, list)
+        return tuple(str(cast("JsonObject", entry)["deployment_id"]) for entry in route)
+
+    assert len({admitted_order("session-pinned") for _ in range(3)}) == 1
+    first_rungs = [admitted_order(f"session-{index}")[0] for index in range(24)]
+    assert set(first_rungs) == {"alpha", "beta"}
+    assert first_rungs.count("beta") > first_rungs.count("alpha")
+
+    admission = _admit(control, raw_key, body, client_request_id="session-disclosed")
+    started = _start_first(control, admission)
+    assert started["route_depth"] == 0
+    with sqlite3.connect(database_path) as connection:
+        row = connection.execute(
+            "SELECT dispatch_reason, preferred_deployment_id FROM gateway_attempts"
+            " WHERE attempt_id = ?",
+            (str(started["attempt_id"]),),
+        ).fetchone()
+    assert row == ("affinity", None)

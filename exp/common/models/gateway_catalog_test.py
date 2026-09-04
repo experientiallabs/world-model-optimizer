@@ -17,6 +17,7 @@ from exp.common.models.catalog import (
     GatewayEquivalenceCertification,
     GatewayLongContextTier,
     GatewayPoolRecord,
+    GatewayRungDispatchPolicy,
     GatewayTokenPrices,
     ModelCatalog,
     ModelRecord,
@@ -235,6 +236,7 @@ def test_added_defaulted_fields_and_explicit_defaults_do_not_perturb_identity() 
         GatewayDeploymentCapabilities(),
         GatewayTokenPrices(),
         GatewayDeploymentMetadata(),
+        GatewayRungDispatchPolicy(),
         ModelCapabilities(),
         NormalizedGatewayCatalog(),
     ):
@@ -594,6 +596,81 @@ def test_authored_pool_failover_mode_carries_into_the_normalized_pool() -> None:
         ).failover_mode
         == "maximize_availability"
     )
+
+
+def test_affinity_pool_and_dispatch_policy_round_trip_and_move_identity() -> None:
+    """The affinity opt-in normalizes intact, and AUTHORING it moves the digest.
+
+    Adding the fields to the schema is identity-invisible (the pinned-digest
+    test above); actually authoring a value is a real catalog change and must
+    produce a new content address.
+    """
+    certification = GatewayEquivalenceCertification(
+        certification_id="certification-affinity",
+        provenance="operator comparison run 2026-09-04",
+        evidence_sha256=_DIGEST,
+        certified_at=datetime(2026, 9, 4, tzinfo=UTC),
+    )
+
+    def catalog(*, opted_in: bool) -> ModelCatalog:
+        """Build the same two-rung catalog with and without the opt-in."""
+        dispatch = (
+            GatewayRungDispatchPolicy(concurrency_bound=8, fair_share=True, affinity_weight=10.0)
+            if opted_in
+            else None
+        )
+        return ModelCatalog(
+            connections={"openai": ConnectionConfig(provider="openai")},
+            models={
+                "route-a": ModelRecord(
+                    connection="openai",
+                    model="m-a",
+                    billing_source=BillingSource.HOST_MANAGED,
+                    gateway=GatewayDeploymentMetadata(
+                        exact_model_id="exact-affinity", dispatch=dispatch
+                    ),
+                ),
+                "route-b": ModelRecord(
+                    connection="openai",
+                    model="m-b",
+                    billing_source=BillingSource.HOST_MANAGED,
+                    gateway=GatewayDeploymentMetadata(exact_model_id="exact-affinity"),
+                ),
+            },
+            gateway_pools={
+                "affinity-pool": GatewayPoolRecord(
+                    exact_model_id="exact-affinity",
+                    deployment_aliases=("route-a", "route-b"),
+                    equivalence=certification,
+                    failover_mode=(
+                        "maximize_cache_affinity" if opted_in else "maximize_availability"
+                    ),
+                )
+            },
+        )
+
+    normalized = normalize_gateway_catalog(catalog(opted_in=True))
+    assert normalized.pools[0].failover_mode == "maximize_cache_affinity"
+    lead = next(
+        deployment for deployment in normalized.deployments if deployment.source_alias == "route-a"
+    )
+    assert lead.gateway.dispatch == GatewayRungDispatchPolicy(
+        concurrency_bound=8, fair_share=True, affinity_weight=10.0
+    )
+    baseline = normalize_gateway_catalog(catalog(opted_in=False))
+    assert normalized.identity_sha256() != baseline.identity_sha256()
+
+
+def test_rung_dispatch_policy_rejects_incoherent_authoring() -> None:
+    """Fairness without a bound, and degenerate bounds or weights, fail closed."""
+    with pytest.raises(ValueError, match="concurrency_bound"):
+        GatewayRungDispatchPolicy(fair_share=True)
+    with pytest.raises(ValueError):
+        GatewayRungDispatchPolicy(concurrency_bound=0)
+    with pytest.raises(ValueError):
+        GatewayRungDispatchPolicy(affinity_weight=0.0)
+    with pytest.raises(ValueError):
+        GatewayRungDispatchPolicy(affinity_weight=float("inf"))
 
 
 def test_equivalence_catalog_rejects_implicit_false_or_ambiguous_grouping() -> None:

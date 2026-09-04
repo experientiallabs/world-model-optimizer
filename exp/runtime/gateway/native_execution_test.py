@@ -307,6 +307,29 @@ def test_maximize_cache_returns_a_throttle_without_failing_over() -> None:
     )
 
 
+def test_maximize_cache_affinity_fails_over_on_a_throttle() -> None:
+    """The affinity policy keeps availability-style failover on a throttle.
+
+    Its cache story is the deterministic rendezvous ALTERNATE: spilling builds
+    warm cache at the same alternate every time, so waiting out a backoff
+    window (the maximize_cache move) would only add latency.
+    """
+    health = DeploymentHealthRegistry()
+    assert (
+        next_route_candidate(
+            health=health,
+            keys=_KEYS,
+            failure=_failover_only(),
+            current_depth=0,
+            attempt_counts=[1, 0],
+            total_attempts=1,
+            refusal_failover=False,
+            failover_mode="maximize_cache_affinity",
+        )
+        == 1
+    )
+
+
 def test_maximize_cache_does_not_redial_a_stalled_timeout_lane() -> None:
     """A stalled-lane timeout fails over even under maximize_cache.
 

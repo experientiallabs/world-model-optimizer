@@ -881,6 +881,14 @@ class AuthorizationSnapshot(ContractModel):
     attribution_label: str | None = Field(default=None, max_length=1024)
     """End-user attribution from the OpenAI ``safety_identifier`` (or deprecated
     ``user``) request field: content-free and never a credential."""
+    fair_share_weight: int = Field(default=1, ge=1, le=1_000_000)
+    """Relative weight of this organization for fair-share rung admission.
+
+    Populated by the hosted store's ``authorize_request`` from its own org data
+    (paying tiers heavier than promo/free); the default 1 gives every caller an
+    equal share, which is byte-identical to pre-fair-share behavior. Read only
+    on rungs whose ``GatewayRungDispatchPolicy.fair_share`` is authored on.
+    """
 
 
 class ExecutionSnapshot(ContractModel):

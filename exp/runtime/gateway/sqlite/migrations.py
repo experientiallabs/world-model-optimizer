@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 
 class GatewaySchemaError(RuntimeError):
@@ -668,6 +668,23 @@ _MIGRATION_15 = (
 # ledger's content-free posture.
 _MIGRATION_16 = ("ALTER TABLE gateway_attempts ADD COLUMN failure_message TEXT",)
 
+# v17: cost-optimality disclosure for policy-routed dispatches. When a rung
+# dispatch policy or an affinity pool bypasses the route's preferred rung,
+# dispatch_reason names why the chosen rung serves (affinity, fair_share_shed,
+# queue_bound, rung_dead, saturated_overflow) and the preferred_* columns
+# freeze the bypassed rung's identity and base token rates at reservation, so
+# settle can price the SAME observed usage counterfactually
+# (counterfactual_cost_micro_usd) without any content or re-derivation.
+_MIGRATION_17 = (
+    "ALTER TABLE gateway_attempts ADD COLUMN dispatch_reason TEXT",
+    "ALTER TABLE gateway_attempts ADD COLUMN preferred_deployment_id TEXT",
+    "ALTER TABLE gateway_attempts ADD COLUMN preferred_input_rate INTEGER",
+    "ALTER TABLE gateway_attempts ADD COLUMN preferred_cached_input_rate INTEGER",
+    "ALTER TABLE gateway_attempts ADD COLUMN preferred_output_rate INTEGER",
+    "ALTER TABLE gateway_attempts ADD COLUMN preferred_reasoning_rate INTEGER",
+    "ALTER TABLE gateway_attempts ADD COLUMN counterfactual_cost_micro_usd INTEGER",
+)
+
 _MIGRATIONS = {
     1: _MIGRATION_1,
     2: _MIGRATION_2,
@@ -685,6 +702,7 @@ _MIGRATIONS = {
     14: _MIGRATION_14,
     15: _MIGRATION_15,
     16: _MIGRATION_16,
+    17: _MIGRATION_17,
 }
 
 

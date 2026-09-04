@@ -174,6 +174,8 @@ class GroupCommitAttemptLedger:
         maximum_cost_micro_usd: int | None = None,
         route_reason: str | None = None,
         fallback_reason: str | None = None,
+        dispatch_reason: str | None = None,
+        preferred_deployment: ExactModelDeployment | None = None,
     ) -> AttemptId:
         """Durably reserve budget and record one dispatch before provider work.
 
@@ -185,6 +187,8 @@ class GroupCommitAttemptLedger:
             maximum_cost_micro_usd: Conservative charge reserved before dispatch.
             route_reason: Optional learned-selection reason code.
             fallback_reason: Optional embedding or router fallback reason code.
+            dispatch_reason: Optional policy-dispatch disclosure code.
+            preferred_deployment: The route's bypassed preferred rung, when divergent.
 
         Returns:
             Stable new attempt ID.
@@ -199,6 +203,8 @@ class GroupCommitAttemptLedger:
                 maximum_cost_micro_usd=maximum_cost_micro_usd,
                 route_reason=route_reason,
                 fallback_reason=fallback_reason,
+                dispatch_reason=dispatch_reason,
+                preferred_deployment=preferred_deployment,
             )
         )
 
@@ -492,6 +498,8 @@ class SyncGroupCommitLedger:
         maximum_cost_micro_usd: int | None = None,
         route_reason: str | None = None,
         fallback_reason: str | None = None,
+        dispatch_reason: str | None = None,
+        preferred_deployment: ExactModelDeployment | None = None,
     ) -> AttemptId:
         """Durably reserve budget and record one dispatch before provider work.
 
@@ -503,6 +511,8 @@ class SyncGroupCommitLedger:
             maximum_cost_micro_usd: Conservative charge reserved before dispatch.
             route_reason: Optional learned-selection reason code.
             fallback_reason: Optional embedding or router fallback reason code.
+            dispatch_reason: Optional policy-dispatch disclosure code.
+            preferred_deployment: The route's bypassed preferred rung, when divergent.
 
         Returns:
             Stable new attempt ID.
@@ -517,6 +527,8 @@ class SyncGroupCommitLedger:
                 maximum_cost_micro_usd=maximum_cost_micro_usd,
                 route_reason=route_reason,
                 fallback_reason=fallback_reason,
+                dispatch_reason=dispatch_reason,
+                preferred_deployment=preferred_deployment,
             )
         )
 

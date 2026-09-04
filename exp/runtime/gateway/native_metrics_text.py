@@ -60,6 +60,14 @@ _CONTROL_PLANE_COUNTERS: tuple[tuple[str, str], ...] = (
         "Disclosed request coercions at admission.",
     ),
     (
+        "rung_admission_sheds",
+        "Dispatches shed by a rung's bound or fair share.",
+    ),
+    (
+        "rung_saturated_overflows",
+        "Dispatches forced past a saturated rung bound.",
+    ),
+    (
         "reconciled_expired_requests",
         "Crashed requests reconciled at startup.",
     ),

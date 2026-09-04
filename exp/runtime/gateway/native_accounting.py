@@ -50,6 +50,8 @@ from exp.runtime.gateway.native_settlement import (
     ledger_failure,
     terminal_from_settlement,
 )
+from exp.runtime.gateway.routing import GatewayRoute
+from exp.runtime.gateway.rung_admission import RungLoadRegistry, RungShed
 from exp.runtime.openai_protocol.errors import (
     THROTTLED_RETRY_AFTER_SECONDS,
     OpenAIProtocolError,
@@ -249,6 +251,10 @@ class NativeAttemptAccounting:
         # The native waterfall's deployment-health circuits, revision-scoped
         # to the traffic this plane serves.
         self._health = DeploymentHealthRegistry()
+        # Per-worker in-flight counters for rungs that author a dispatch
+        # policy (concurrency bound, weighted fair share); pure in-memory
+        # arithmetic, physical-lane scoped so counters survive catalog rolls.
+        self._loads = RungLoadRegistry()
         self._inflight: dict[str, InflightRequest] = {}
         self._lock = threading.Lock()
         self._accounting_healthy = True
@@ -260,6 +266,11 @@ class NativeAttemptAccounting:
         self._admission_dead_rungs_skipped = 0
         self._admission_parameter_coercions = 0
         self._admission_lead_rungs_skipped = 0
+        # Dispatch-policy outcomes: rungs bypassed at their bound or their
+        # organization's fair share, and dispatches forced past a bound
+        # because no other rung could serve.
+        self._rung_admission_sheds = 0
+        self._rung_saturated_overflows = 0
         # The sweep also runs on a timer so retained settlements and abandoned
         # attempts are recovered even when no further requests arrive.
         self._sweeper = threading.Thread(
@@ -278,6 +289,50 @@ class NativeAttemptAccounting:
     def health(self) -> DeploymentHealthRegistry:
         """Return the native waterfall's deployment-health circuits."""
         return self._health
+
+    @property
+    def loads(self) -> RungLoadRegistry:
+        """Return the per-worker rung in-flight registry for bounded admission."""
+        return self._loads
+
+    def _reserve_rung_slot(
+        self,
+        entry: InflightRequest,
+        deployment: ExactModelDeployment,
+        *,
+        force: bool,
+    ) -> str | RungShed | None:
+        """Reserve one policy-bounded slot on a rung, or report the shed.
+
+        Args:
+            entry: The owning in-flight request (organization and weight).
+            deployment: The claimed rung about to dispatch.
+            force: Admit past the bound because no other rung can serve.
+
+        Returns:
+            An opaque reservation ticket, the shed disclosure, or ``None``
+            when the rung authors no dispatch policy (the untouched default).
+        """
+        policy = deployment.gateway.dispatch
+        if policy is None or policy.concurrency_bound is None:
+            return None
+        result = self._loads.reserve(
+            (deployment.deployment_id, deployment.connection_sha256),
+            organization_id=entry.authorization.organization_id,
+            weight=entry.authorization.fair_share_weight,
+            bound=policy.concurrency_bound,
+            fair_share=policy.fair_share,
+            force=force,
+        )
+        if isinstance(result, RungShed):
+            with self._lock:
+                self._rung_admission_sheds += 1
+        return result
+
+    def rung_admission_counters(self) -> tuple[int, int]:
+        """Return ``(sheds, saturated_overflows)`` for the metrics snapshot."""
+        with self._lock:
+            return (self._rung_admission_sheds, self._rung_saturated_overflows)
 
     def mark_unhealthy(self) -> None:
         """Latch an unhealthy state after a lost terminal accounting write."""
@@ -400,7 +455,21 @@ class NativeAttemptAccounting:
         else:
             candidate = claim_route_from(self._health, keys, 0)
             last_failure = None
-        while candidate is not None:
+        # Rung dispatch policies shed a claimed rung SIDEWAYS to the next
+        # claimable one instead of queueing on it (spill in seconds, never a
+        # deadline death). Each shed is remembered so the dispatched attempt
+        # can disclose the bypassed preferred rung, and so a ladder exhausted
+        # ONLY by policy sheds can force-admit past the bound rather than
+        # manufacture a failure unbounded admission would not have had.
+        policy_sheds: list[tuple[int, str]] = []
+        forced_overflow = False
+        while True:
+            if candidate is None:
+                if policy_sheds and last_failure is None and not forced_overflow:
+                    forced_overflow = True
+                    candidate = policy_sheds[0][0]
+                else:
+                    break
             deployment = _deployment_priced_for_service_tier(
                 route.deployments[candidate],
                 getattr(entry.request, "service_tier", None),
@@ -408,6 +477,18 @@ class NativeAttemptAccounting:
                     candidate < len(entry.tier_forwarded_by_depth)
                     and entry.tier_forwarded_by_depth[candidate]
                 ),
+            )
+            ticket = self._reserve_rung_slot(entry, deployment, force=forced_overflow)
+            if isinstance(ticket, RungShed):
+                policy_sheds.append((candidate, ticket.reason))
+                self._health.release_probe(keys[candidate])
+                candidate = claim_route_from(self._health, keys, candidate + 1)
+                continue
+            dispatch_reason, preferred_deployment = _dispatch_disclosure(
+                route,
+                candidate,
+                policy_sheds=policy_sheds,
+                forced_overflow=forced_overflow,
             )
             try:
                 attempt_id = self._write_ledger.start_attempt(
@@ -420,8 +501,12 @@ class NativeAttemptAccounting:
                     ),
                     route_reason=route.route_reason,
                     fallback_reason=route.fallback_reason,
+                    dispatch_reason=dispatch_reason,
+                    preferred_deployment=preferred_deployment,
                 )
             except BudgetReservationRejected as exc:
+                if ticket is not None:
+                    self._loads.release_ticket(ticket)
                 self._health.release_probe(keys[candidate])
                 if exc.scope_kind is not BudgetScopeKind.DEPLOYMENT:
                     error = (
@@ -446,6 +531,8 @@ class NativeAttemptAccounting:
                 # A reservation that raised before returning an attempt id
                 # wrote nothing durable; the accepted request is terminalized
                 # and the sanitized failure answers the caller.
+                if ticket is not None:
+                    self._loads.release_ticket(ticket)
                 self._health.release_probe(keys[candidate])
                 error = authority_error(exc)
                 self.finish_request_quietly(
@@ -460,6 +547,11 @@ class NativeAttemptAccounting:
                 with self._lock:
                     self._inflight.pop(request_id, None)
                 raise error from exc
+            if ticket is not None:
+                self._loads.bind(ticket, attempt_id)
+            if forced_overflow:
+                with self._lock:
+                    self._rung_saturated_overflows += 1
             with self._lock:
                 entry.attempt_counts[candidate] += 1
                 entry.total_attempts += 1
@@ -647,6 +739,10 @@ class NativeAttemptAccounting:
             opened: Whether the provider dispatch opened successfully.
             failure: The terminal failure, or ``None`` for a success.
         """
+        # The rung's bounded-admission slot frees with the health recording:
+        # both releases are idempotent, so settle, abandon, and the sweep can
+        # each fire without double-counting.
+        self._loads.release_attempt(attempt_id)
         depth = entry.attempt_depths.get(attempt_id)
         if depth is None:
             return
@@ -771,6 +867,57 @@ class NativeAttemptAccounting:
             elif entry.active_attempt_id == attempt_id:
                 entry.active_attempt_id = None
         return True
+
+
+def _dispatch_disclosure(
+    route: GatewayRoute,
+    candidate: int,
+    *,
+    policy_sheds: list[tuple[int, str]],
+    forced_overflow: bool,
+) -> tuple[str | None, ExactModelDeployment | None]:
+    """Name why the chosen rung serves and the bypassed preferred rung, if any.
+
+    Emission is gated so an alias the platform never opted in keeps byte-null
+    disclosure columns. On a ``maximize_cache_affinity`` pool every attempt
+    discloses against the rendezvous-preferred depth-0 rung: ``affinity`` on
+    the happy path, the shed reason when depth 0 was policy-shed in this
+    reservation, ``rung_dead`` when it was bypassed by health or an earlier
+    failure, ``saturated_overflow`` when the ladder force-admitted past a
+    bound. On any other pool a disclosure appears only when a dispatch policy
+    actually shed a rung in this reservation, and the preferred rung is the
+    shed rung itself (the counterfactual the shed is measured against).
+
+    Args:
+        route: Frozen ordered route for this request.
+        candidate: The route depth about to dispatch.
+        policy_sheds: ``(depth, reason)`` for every policy shed this
+            reservation, in ladder order.
+        forced_overflow: Whether this dispatch was forced past a bound.
+
+    Returns:
+        ``(dispatch_reason, preferred_deployment)``; the deployment is
+        ``None`` whenever the chosen rung IS the disclosure's preferred rung.
+    """
+    if route.snapshot.failover_mode == "maximize_cache_affinity":
+        target_depth = 0
+        if forced_overflow:
+            reason = "saturated_overflow"
+        elif candidate == 0:
+            reason = "affinity"
+        else:
+            lead_shed = next((shed for depth, shed in policy_sheds if depth == 0), None)
+            reason = lead_shed or "rung_dead"
+    elif forced_overflow:
+        target_depth = policy_sheds[0][0]
+        reason = "saturated_overflow"
+    elif policy_sheds:
+        target_depth, reason = policy_sheds[0]
+    else:
+        return None, None
+    if target_depth == candidate:
+        return reason, None
+    return reason, route.deployments[target_depth]
 
 
 def record_dead_admission_rungs(

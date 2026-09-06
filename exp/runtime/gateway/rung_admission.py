@@ -154,23 +154,27 @@ class RungLoadRegistry:
         queue-death fix. Below it, fairness sheds an over-share organization
         only when the remaining slots are reserved for other recently active
         under-share organizations; otherwise unused capacity is borrowable.
+        Shares are floored to whole slots: a fractional reservation would hold
+        back capacity no organization could actually occupy (three equal
+        organizations on a bound of 8 would strand the last two slots), and
+        work conservation outranks the sub-slot remainder of a share.
         """
         if rung.total >= bound:
             return RungShed("queue_bound")
         if not fair_share:
             return None
-        floor = organization.last_seen - self._window
+        recency_floor = organization.last_seen - self._window
         active = [
             candidate
             for candidate in rung.organizations.values()
-            if candidate.inflight > 0 or candidate.last_seen >= floor
+            if candidate.inflight > 0 or candidate.last_seen >= recency_floor
         ]
         total_weight = sum(candidate.weight for candidate in active)
-        share = bound * organization.weight / total_weight
+        share = bound * organization.weight // total_weight
         if organization.inflight + 1 <= share:
             return None
         reserved = sum(
-            max(0.0, bound * candidate.weight / total_weight - candidate.inflight)
+            max(0, bound * candidate.weight // total_weight - candidate.inflight)
             for candidate in active
             if candidate is not organization
         )

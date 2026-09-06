@@ -7,7 +7,6 @@ from exp.common.models.catalog import (
     GatewayEquivalenceCertification,
     GatewayLongContextTier,
     GatewayPoolRecord,
-    GatewayRungDispatchPolicy,
     GatewayTokenPrices,
     ModelCatalog,
     ModelCatalogError,
@@ -34,6 +33,7 @@ from exp.common.models.discovery import (
     served_roles,
     serves_role,
 )
+from exp.common.models.dispatch_policy import GatewayRungDispatchPolicy
 from exp.common.models.gateway_catalog import (
     GATEWAY_EXCLUDED_PROVIDERS,
     SNAPSHOT_SCHEMA_VERSION,

@@ -161,6 +161,25 @@ class TestFairShare:
         now[0] = 11.0
         assert isinstance(_reserve(registry, "org-a", bound=8, fair_share=True), str)
 
+    def test_fractional_shares_never_strand_capacity(self) -> None:
+        """Three equal organizations fill a bound of 8 completely.
+
+        Fractional shares (8/3) must not reserve sub-slot capacity nobody can
+        occupy: once every organization sits at its floored share, remaining
+        slots are borrowable, so sustained demand reaches exactly the bound.
+        """
+        registry = _registry([0.0])
+        admitted = 0
+        for round_index in range(4):
+            for organization in ("org-a", "org-b", "org-c"):
+                ticket = _reserve(registry, organization, bound=8, fair_share=True)
+                if isinstance(ticket, str):
+                    admitted += 1
+            del round_index
+        assert registry.inflight(_KEY) == 8
+        assert admitted == 8
+        assert _reserve(registry, "org-a", bound=8, fair_share=True) == RungShed("queue_bound")
+
     def test_no_preemption_running_reservations_always_survive(self) -> None:
         """Fairness never revokes a held ticket; only new admissions are shed."""
         now = [0.0]

@@ -661,18 +661,6 @@ def test_affinity_pool_and_dispatch_policy_round_trip_and_move_identity() -> Non
     assert normalized.identity_sha256() != baseline.identity_sha256()
 
 
-def test_rung_dispatch_policy_rejects_incoherent_authoring() -> None:
-    """Fairness without a bound, and degenerate bounds or weights, fail closed."""
-    with pytest.raises(ValueError, match="concurrency_bound"):
-        GatewayRungDispatchPolicy(fair_share=True)
-    with pytest.raises(ValueError):
-        GatewayRungDispatchPolicy(concurrency_bound=0)
-    with pytest.raises(ValueError):
-        GatewayRungDispatchPolicy(affinity_weight=0.0)
-    with pytest.raises(ValueError):
-        GatewayRungDispatchPolicy(affinity_weight=float("inf"))
-
-
 def test_equivalence_catalog_rejects_implicit_false_or_ambiguous_grouping() -> None:
     """Missing exact declarations, training handles, and repeated membership fail closed."""
     certification = GatewayEquivalenceCertification(

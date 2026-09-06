@@ -1173,3 +1173,106 @@ def test_v15_migration_widens_api_surface_to_images_and_preserves_rows(
         migrated.execute("DELETE FROM gateway_requests WHERE request_id = 'req-1'")
     finally:
         migrated.close()
+
+
+def test_v17_migration_adds_null_dispatch_disclosures_to_existing_attempts(
+    tmp_path: Path,
+) -> None:
+    """A v16 database migrates with every disclosure column NULL on old rows.
+
+    Deployed ledgers carry settled attempt rows from before dispatch-policy
+    disclosures existed; the ALTER-only migration must leave those rows intact
+    with all seven new columns NULL (never a default that reads as a
+    disclosure) while new writes can populate them.
+    """
+    path = tmp_path / "gateway.db"
+    descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+    os.close(descriptor)
+    connection = connect_database(path)
+    try:
+        connection.execute("BEGIN EXCLUSIVE")
+        for version in range(1, 17):
+            for statement in migrations._MIGRATIONS[version]:
+                connection.execute(statement)
+        connection.execute("PRAGMA user_version = 16")
+        seed_statements = """
+            INSERT INTO organizations VALUES ('org', 'org', 'Org', 1, 't', 't');
+            INSERT INTO identities VALUES ('id', 'org', 'Identity', NULL, 1, 't', 't');
+            INSERT INTO virtual_keys (
+                key_id, organization_id, identity_id, prefix,
+                fingerprint_version, fingerprint_sha256, created_at
+            ) VALUES ('key', 'org', 'id', 'pfx', 1, '{fingerprint}', 't');
+            INSERT INTO catalog_snapshot_refs VALUES ('snap', 'org', '{digest}', 't');
+            INSERT INTO gateway_aliases (
+                alias_id, organization_id, alias_name, active_revision_id,
+                created_at, updated_at
+            ) VALUES ('alias', 'org', 'alias', NULL, 't', 't');
+            INSERT INTO alias_revisions (
+                revision_id, organization_id, alias_id, revision_number,
+                target_kind, pool_id, catalog_sha256, snapshot_ref, created_at
+            ) VALUES ('rev', 'org', 'alias', 1, 'direct', 'pool', '{digest}', 'snap', 't');
+            INSERT INTO gateway_requests (
+                request_id, organization_id, identity_id, key_id, alias_id,
+                alias_revision_id, api_surface, canonical_request_sha256,
+                accepted_at, deadline_at
+            ) VALUES (
+                'req-1', 'org', 'id', 'key', 'alias', 'rev', 'chat_completions',
+                '{digest}', 't', 't'
+            );
+            INSERT INTO gateway_attempts (
+                attempt_id, request_id, organization_id, attempt_ordinal,
+                route_depth, deployment_id, provider, exact_model_id, pool_id,
+                catalog_sha256, state, started_at, budget_period_start
+            ) VALUES (
+                'att-1', 'req-1', 'org', 0, 0, 'deploy', 'provider', 'exact',
+                'pool', '{digest}', 'completed', 't', '2026-08-01T00:00:00+00:00'
+            );
+            """.format(fingerprint="a" * 64, digest="b" * 64)
+        # executescript would commit the exclusive transaction implicitly, so
+        # the seed rows are inserted statement by statement instead.
+        for statement in seed_statements.split(";"):
+            if statement.strip():
+                connection.execute(statement)
+        connection.execute("COMMIT")
+    finally:
+        connection.close()
+
+    backup = initialize_database(path)
+
+    assert backup is not None and backup.exists()
+    disclosure_columns = (
+        "dispatch_reason",
+        "preferred_deployment_id",
+        "preferred_input_rate",
+        "preferred_cached_input_rate",
+        "preferred_output_rate",
+        "preferred_reasoning_rate",
+        "counterfactual_cost_micro_usd",
+    )
+    migrated = connect_database(path)
+    try:
+        assert migrated.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+        assert migrated.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert migrated.execute("PRAGMA foreign_key_check").fetchall() == []
+        selected = ", ".join(disclosure_columns)
+        row = migrated.execute(
+            f"SELECT state, {selected} FROM gateway_attempts WHERE attempt_id = 'att-1'"  # noqa: S608 - fixed column names.
+        ).fetchone()
+        assert row is not None
+        assert row[0] == "completed"
+        assert tuple(row)[1:] == (None,) * len(disclosure_columns)
+        # New writes can populate the disclosure; old rows never gain one.
+        migrated.execute(
+            "UPDATE gateway_attempts SET dispatch_reason = 'queue_bound',"
+            " preferred_deployment_id = 'deploy-lead', preferred_input_rate = 1"
+            " WHERE attempt_id = 'att-1'"
+        )
+    finally:
+        migrated.close()
+    prior = sqlite3.connect(backup)
+    try:
+        columns = {str(entry[1]) for entry in prior.execute("PRAGMA table_info(gateway_attempts)")}
+        assert not columns.intersection(disclosure_columns)
+        assert prior.execute("PRAGMA user_version").fetchone() == (16,)
+    finally:
+        prior.close()

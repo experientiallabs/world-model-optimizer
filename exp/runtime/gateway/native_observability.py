@@ -141,12 +141,15 @@ class NativeObservabilityMixin:
             data_plane = json.loads(self._data_plane_metrics())
         retained_replayed, abandoned_cancelled, inflight = self._accounting.counters()
         lead_rungs_skipped, dead_rungs_skipped = self._accounting.admission_rung_skips()
+        rung_sheds, rung_overflows = self._accounting.rung_admission_counters()
         control_plane: JsonObject = {
             "sweep_retained_settlements_replayed": retained_replayed,
             "sweep_abandoned_attempts_cancelled": abandoned_cancelled,
             "admission_dead_rungs_skipped": dead_rungs_skipped,
             "admission_lead_rungs_skipped": lead_rungs_skipped,
             "admission_parameter_coercions": self._accounting.admission_parameter_coercions(),
+            "rung_admission_sheds": rung_sheds,
+            "rung_saturated_overflows": rung_overflows,
             "inflight_attempts": inflight,
             "reconciled_expired_requests": self._components.reconciled_expired_requests,
             "reconciled_unknown_attempts": self._components.reconciled_unknown_attempts,

@@ -41,6 +41,8 @@ def _control_plane() -> JsonObject:
         "admission_dead_rungs_skipped": 0,
         "admission_lead_rungs_skipped": 0,
         "admission_parameter_coercions": 0,
+        "rung_admission_sheds": 0,
+        "rung_saturated_overflows": 0,
         "inflight_attempts": 2,
         "reconciled_expired_requests": 0,
         "reconciled_unknown_attempts": 0,
@@ -107,6 +109,12 @@ exp_gateway_admission_lead_rungs_skipped_total 0
 # HELP exp_gateway_admission_parameter_coercions_total Disclosed request coercions at admission.
 # TYPE exp_gateway_admission_parameter_coercions_total counter
 exp_gateway_admission_parameter_coercions_total 0
+# HELP exp_gateway_rung_admission_sheds_total Dispatches shed by a rung's bound or fair share.
+# TYPE exp_gateway_rung_admission_sheds_total counter
+exp_gateway_rung_admission_sheds_total 0
+# HELP exp_gateway_rung_saturated_overflows_total Dispatches forced past a saturated rung bound.
+# TYPE exp_gateway_rung_saturated_overflows_total counter
+exp_gateway_rung_saturated_overflows_total 0
 # HELP exp_gateway_reconciled_expired_requests_total Crashed requests reconciled at startup.
 # TYPE exp_gateway_reconciled_expired_requests_total counter
 exp_gateway_reconciled_expired_requests_total 0

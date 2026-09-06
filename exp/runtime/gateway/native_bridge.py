@@ -516,6 +516,7 @@ class NativeControlPlane(
                 request,
                 accounting=self._accounting,
                 authorization=authorization,
+                continuation=continuation_context,
             )
             wire_route: list[JsonObject] = []
             parallel_disclosures: set[str] = set()

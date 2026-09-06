@@ -202,12 +202,15 @@ def next_route_candidate(
     Under ``maximize_cache`` a throttle (429) surfaces to the caller instead of
     failing over: the warm rung's prompt cache is kept for a caller retry after
     the provider's backoff, rather than restarting cold on another provider.
-    Timeouts are unchanged from the default: a retryable 408 still redials the
-    warm rung via its own ``retryable_same_deployment`` flag in both modes, while
+    ``maximize_cache_affinity`` deliberately does NOT share that short-circuit:
+    its cache story is the deterministic rendezvous alternate, so a throttle
+    fails over exactly like ``maximize_availability``. Timeouts are identical
+    in every mode: a retryable 408 redials the
+    warm rung via its own ``retryable_same_deployment`` flag, while
     a first-byte/header-phase stall is a dead lane the classifier marks
     non-redialable and so still fails over. Operational deadness (auth, not-found,
-    provider 5xx, transport) and client errors are unchanged too: deadness still
-    fails over in both modes, client errors never do.
+    provider 5xx, transport) and client errors are identical in every mode too:
+    deadness always fails over, client errors never do.
 
     Args:
         health: Revision-isolated circuit and throttle registry.

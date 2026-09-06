@@ -87,6 +87,8 @@ class AttemptLedger(Protocol):
         maximum_cost_micro_usd: int | None = None,
         route_reason: str | None = None,
         fallback_reason: str | None = None,
+        dispatch_reason: str | None = None,
+        preferred_deployment: ExactModelDeployment | None = None,
     ) -> AttemptId:
         """Atomically reserve cost and persist one attempt before provider dispatch."""
         ...

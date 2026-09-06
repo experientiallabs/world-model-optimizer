@@ -8,10 +8,10 @@ from typing import Literal
 from pydantic import Field
 
 from exp.common.core.artifacts import ContractModel
-from exp.runtime.gateway.ledger import (
+from exp.runtime.gateway.ledger import SQLiteAttemptLedger
+from exp.runtime.gateway.ledger_usage import (
     BillingSourceUsage,
     IdentityUsage,
-    SQLiteAttemptLedger,
     UsageTerminalCount,
 )
 

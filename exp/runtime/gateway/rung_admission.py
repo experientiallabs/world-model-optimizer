@@ -154,10 +154,13 @@ class RungLoadRegistry:
         queue-death fix. Below it, fairness sheds an over-share organization
         only when the remaining slots are reserved for other recently active
         under-share organizations; otherwise unused capacity is borrowable.
-        Shares are floored to whole slots: a fractional reservation would hold
-        back capacity no organization could actually occupy (three equal
-        organizations on a bound of 8 would strand the last two slots), and
-        work conservation outranks the sub-slot remainder of a share.
+        Shares stay EXACT (a 3:1:1 weighting of a bound of 8 guarantees
+        4.8:1.6:1.6, never a per-share rounding), and only the AGGREGATE
+        reservation is floored to whole slots: slots are indivisible, so the
+        sub-slot remainder of the summed deficits is capacity no organization
+        could occupy right now, and reserving it would strand the bound's last
+        slots against sustained demand (three equal organizations on a bound
+        of 8 would otherwise freeze at 6).
         """
         if rung.total >= bound:
             return RungShed("queue_bound")
@@ -170,15 +173,15 @@ class RungLoadRegistry:
             if candidate.inflight > 0 or candidate.last_seen >= recency_floor
         ]
         total_weight = sum(candidate.weight for candidate in active)
-        share = bound * organization.weight // total_weight
+        share = bound * organization.weight / total_weight
         if organization.inflight + 1 <= share:
             return None
-        reserved = sum(
-            max(0, bound * candidate.weight // total_weight - candidate.inflight)
+        reserved_deficit = sum(
+            max(0.0, bound * candidate.weight / total_weight - candidate.inflight)
             for candidate in active
             if candidate is not organization
         )
-        if rung.total + 1 + reserved > bound:
+        if rung.total + 1 + int(reserved_deficit) > bound:
             return RungShed("fair_share_shed")
         return None
 

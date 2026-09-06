@@ -180,6 +180,32 @@ class TestFairShare:
         assert admitted == 8
         assert _reserve(registry, "org-a", bound=8, fair_share=True) == RungShed("queue_bound")
 
+    def test_fractional_guarantees_survive_the_aggregate_floor(self) -> None:
+        """Exact shares hold: a 3:1:1 borrower stops at 5 of 8, not 6.
+
+        Shares are never rounded per organization (the heavy share is 4.8, so
+        the fifth slot is a borrow, not a guarantee); the two light
+        organizations' summed 1.2-slot deficit floors to one reserved slot, so
+        the heavy borrower is shed at 6 while a light organization still
+        claims the last slot.
+        """
+        registry = _registry([0.0])
+        for organization in ("light-1", "light-2"):
+            assert isinstance(
+                _reserve(registry, organization, weight=1, bound=8, fair_share=True),
+                str,
+            )
+        admitted_heavy = 0
+        while True:
+            ticket = _reserve(registry, "heavy", weight=3, bound=8, fair_share=True)
+            if isinstance(ticket, RungShed):
+                assert ticket == RungShed("fair_share_shed")
+                break
+            admitted_heavy += 1
+        assert admitted_heavy == 5
+        assert isinstance(_reserve(registry, "light-1", weight=1, bound=8, fair_share=True), str)
+        assert registry.inflight(_KEY) == 8
+
     def test_no_preemption_running_reservations_always_survive(self) -> None:
         """Fairness never revokes a held ticket; only new admissions are shed."""
         now = [0.0]

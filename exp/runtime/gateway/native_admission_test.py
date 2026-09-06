@@ -1285,6 +1285,8 @@ def test_parallel_tool_calls_shape_per_rung_capability() -> None:
         request.model_copy(update={"parallel_tool_calls": None}), missing
     )
     assert untouched.parallel_tool_calls is None and disclosure is None
+
+
 def _weighted_deployment(deployment_id: str, weight: float | None) -> ExactModelDeployment:
     """Build one rung carrying an authored affinity weight (or none)."""
     dispatch = None if weight is None else GatewayRungDispatchPolicy(affinity_weight=weight)

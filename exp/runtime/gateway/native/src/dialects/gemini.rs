@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 
-use super::{malformed, parse_object, refusal_failure, Normalizer};
+use super::{malformed, parse_object, Normalizer};
 use crate::errors::{Failure, FailureClass};
 use crate::events::{gemini_usage, require_string, Event, ToolAccumulator};
 
@@ -57,7 +57,12 @@ impl Normalizer {
             if let Some(usage) = self.usage.take() {
                 events.push(Event::Usage(usage));
             }
-            events.push(Event::Failed(refusal_failure()));
+            // The block reason names the category the same way a candidate
+            // finishReason does.
+            let reason = gemini_block_reason(&payload).unwrap_or_default();
+            events.push(Event::Failed(Failure::refusal(
+                crate::stream_errors::refusal_reason(Some(&reason), None),
+            )));
             return Ok(events);
         }
         let candidates = match payload.get("candidates") {
@@ -131,9 +136,14 @@ impl Normalizer {
             "STOP" | "FINISH_REASON_UNSPECIFIED" => events.push(Event::Completed),
             "MAX_TOKENS" => events.push(Event::Incomplete),
             // The python mapper's refusal signal table: safety, copyright,
-            // and sensitive-information stops are content-free refusals.
-            "SAFETY" | "PROHIBITED_CONTENT" | "BLOCKLIST" | "RECITATION" | "SPII" => {
-                events.push(Event::Failed(refusal_failure()));
+            // and sensitive-information stops are content-free refusals. The
+            // finish token names the category (RECITATION, SPII, SAFETY), so
+            // the caller sees which policy declined without any provider prose.
+            "SAFETY" | "PROHIBITED_CONTENT" | "BLOCKLIST" | "RECITATION" | "SPII"
+            | "IMAGE_SAFETY" => {
+                events.push(Event::Failed(Failure::refusal(
+                    crate::stream_errors::refusal_reason(Some(&finish_reason), None),
+                )));
             }
             _ => {
                 events.push(Event::Failed(Failure::new(
@@ -206,6 +216,18 @@ fn gemini_prompt_blocked(payload: &serde_json::Map<String, Value>) -> Result<boo
         Some(Value::String(reason)) => Ok(reason != "BLOCK_REASON_UNSPECIFIED"),
         Some(_) => Err(malformed("Gemini promptFeedback.blockReason must be text")),
     }
+}
+
+/// The `promptFeedback.blockReason` token, if the frame carries one. Only
+/// called after `gemini_prompt_blocked` confirmed a present, meaningful
+/// reason, so a malformed shape has already been rejected.
+fn gemini_block_reason(payload: &serde_json::Map<String, Value>) -> Option<String> {
+    payload
+        .get("promptFeedback")
+        .and_then(Value::as_object)
+        .and_then(|feedback| feedback.get("blockReason"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 #[cfg(test)]
@@ -381,13 +403,19 @@ mod gemini_tests {
     }
 
     #[test]
-    fn gemini_safety_finish_maps_to_a_content_free_refusal() {
-        for reason in [
-            "SAFETY",
-            "PROHIBITED_CONTENT",
-            "BLOCKLIST",
-            "RECITATION",
-            "SPII",
+    fn gemini_safety_finish_maps_to_a_categorized_refusal() {
+        // Each finish token names the bounded category the caller sees, with
+        // the fixed phrase in the message and never any provider prose.
+        for (reason, category, phrase) in [
+            ("SAFETY", "content_policy", "content policy"),
+            ("PROHIBITED_CONTENT", "content_policy", "content policy"),
+            ("BLOCKLIST", "content_policy", "content policy"),
+            (
+                "RECITATION",
+                "recitation",
+                "recitation of copyrighted material",
+            ),
+            ("SPII", "data_inspection", "data inspection"),
         ] {
             let chunks = [sse(&json!({"candidates": [{"finishReason": reason}]}))];
             let refs: Vec<&[u8]> = chunks.iter().map(Vec::as_slice).collect();
@@ -398,8 +426,10 @@ mod gemini_tests {
                 vec![json!({
                     "kind": "failed",
                     "failure_class": "refusal",
-                    "safe_message": "provider refused the request",
-                })]
+                    "safe_message": format!("provider refused the request: {phrase}"),
+                    "refusal_reason": category,
+                })],
+                "{reason}"
             );
         }
     }
@@ -411,12 +441,29 @@ mod gemini_tests {
         // block named on promptFeedback, and usageMetadata counting the
         // prompt Google processed. It must terminate the stream as a refusal
         // (400, no retry, no failover), never as a malformed stream end.
-        for reason in [
-            "SAFETY",
-            "PROHIBITED_CONTENT",
-            "BLOCKLIST",
-            "OTHER",
-            "IMAGE_SAFETY",
+        for (reason, category, message) in [
+            (
+                "SAFETY",
+                "content_policy",
+                "provider refused the request: content policy",
+            ),
+            (
+                "PROHIBITED_CONTENT",
+                "content_policy",
+                "provider refused the request: content policy",
+            ),
+            (
+                "BLOCKLIST",
+                "content_policy",
+                "provider refused the request: content policy",
+            ),
+            // A block reason the vocabulary does not know is an unnamed refusal.
+            ("OTHER", "unspecified", "provider refused the request"),
+            (
+                "IMAGE_SAFETY",
+                "content_policy",
+                "provider refused the request: content policy",
+            ),
         ] {
             let chunks = [sse(&json!({
                 "promptFeedback": {
@@ -446,7 +493,8 @@ mod gemini_tests {
                     json!({
                         "kind": "failed",
                         "failure_class": "refusal",
-                        "safe_message": "provider refused the request",
+                        "safe_message": message,
+                        "refusal_reason": category,
                     }),
                 ],
                 "{reason}"
@@ -465,12 +513,13 @@ mod gemini_tests {
             vec![json!({
                 "kind": "failed",
                 "failure_class": "refusal",
-                "safe_message": "provider refused the request",
+                "safe_message": "provider refused the request: content policy",
+                "refusal_reason": "content_policy",
             })]
         );
         // A refusal is the model's verdict on the prompt: neither redialed on
         // the same deployment nor failed over to a sibling lane.
-        let refusal = refusal_failure();
+        let refusal = Failure::refusal(crate::errors::RefusalReason::ContentPolicy);
         assert!(!refusal.retryable_same_deployment);
         assert!(!refusal.failover_eligible);
     }

@@ -11,6 +11,7 @@ from exp.runtime.gateway.contracts import (
     GatewayEventKind,
     GatewayFailure,
     GatewayFailureClass,
+    GatewayRefusalReason,
     GatewayUsage,
 )
 from exp.runtime.gateway.routing import GatewayRoute
@@ -21,6 +22,20 @@ _TERMINAL_KINDS = {
     "incomplete": GatewayEventKind.INCOMPLETE,
     "failed": GatewayEventKind.FAILED,
 }
+
+
+def refusal_reason_from_payload(value: object) -> GatewayRefusalReason | None:
+    """Parse one optional bounded refusal reason from a boundary payload.
+
+    An unknown token fails closed to ``None`` rather than raising, so a future
+    native reason a stale worker does not know never breaks settlement.
+    """
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return GatewayRefusalReason(value)
+    except ValueError:
+        return None
 
 
 def ledger_failure(failure: GatewayFailure) -> GatewayFailure:
@@ -67,6 +82,9 @@ def terminal_from_settlement(
                 provider_detail if isinstance(provider_detail, str) and provider_detail else None
             ),
             customer_owned=failure_payload.get("customer_owned") is True,
+            # The bounded refusal category rides the settlement argument so the
+            # control plane counts refusals by reason without parsing detail.
+            refusal_reason=refusal_reason_from_payload(failure_payload.get("refusal_reason")),
         )
         # A rejected credential or exhausted account on the customer's own
         # BYOK rung kept its ladder class in the data plane (so another

@@ -2,7 +2,41 @@
 
 import pytest
 
-from exp.runtime.gateway.stream_contracts import GatewayEvent, GatewayEventKind
+from exp.runtime.gateway.stream_contracts import (
+    GatewayEvent,
+    GatewayEventKind,
+    GatewayFailure,
+    GatewayFailureClass,
+    GatewayRefusalReason,
+)
+
+
+def test_gateway_failure_carries_an_optional_bounded_refusal_reason() -> None:
+    """The refusal reason is an optional typed field that round-trips through
+    the contract's JSON serialization and defaults to absent."""
+    bare = GatewayFailure(
+        failure_class=GatewayFailureClass.PROVIDER_INTERNAL,
+        safe_message="provider stream failed",
+    )
+    assert bare.refusal_reason is None
+
+    refused = GatewayFailure(
+        failure_class=GatewayFailureClass.REFUSAL,
+        safe_message="provider refused the request: cybersecurity policy",
+        refusal_reason=GatewayRefusalReason.CYBER_POLICY,
+    )
+    assert refused.refusal_reason is GatewayRefusalReason.CYBER_POLICY
+    restored = GatewayFailure.model_validate(refused.model_dump(mode="json"))
+    assert restored.refusal_reason is GatewayRefusalReason.CYBER_POLICY
+    # The enum members are exactly the closed vocabulary shared with the engine.
+    assert {reason.value for reason in GatewayRefusalReason} == {
+        "cyber_policy",
+        "cbrn",
+        "content_policy",
+        "recitation",
+        "data_inspection",
+        "unspecified",
+    }
 
 
 @pytest.mark.parametrize("length", [257, 65_536])

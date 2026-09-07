@@ -39,10 +39,16 @@ pub fn anthropic_error_body(error: &PublicError) -> Value {
         Some(param) if !param.is_empty() => format!("{} (param: {param})", error.message),
         _ => error.message.clone(),
     };
-    json!({
+    let mut body = json!({
         "type": "error",
         "error": {"type": error_type, "message": message},
-    })
+    });
+    // A refusal carries its bounded category on the Anthropic envelope too, so
+    // a Messages caller reads the same machine-readable reason as a Chat one.
+    if let Some(reason) = error.refusal_reason {
+        body["error"]["refusal_reason"] = json!(reason.as_str());
+    }
+    body
 }
 
 fn invalid_provider_stream(message: &str) -> PublicError {

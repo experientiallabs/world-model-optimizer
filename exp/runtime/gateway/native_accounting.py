@@ -49,6 +49,7 @@ from exp.runtime.gateway.native_settlement import (
     budget_quota_protocol_error,
     first_token_at_from_settlement,
     ledger_failure,
+    refusal_reason_from_payload,
     terminal_from_settlement,
 )
 from exp.runtime.gateway.routing import GatewayRoute
@@ -191,6 +192,7 @@ def _failure_from_payload(payload: object) -> GatewayFailure | None:
             provider_detail if isinstance(provider_detail, str) and provider_detail else None
         ),
         customer_owned=data.get("customer_owned") is True,
+        refusal_reason=refusal_reason_from_payload(data.get("refusal_reason")),
     )
 
 
@@ -597,6 +599,10 @@ class NativeAttemptAccounting:
             failure_payload["rejected_parameter"] = exhaustion.rejected_parameter
         if exhaustion.provider_detail is not None:
             failure_payload["provider_detail"] = exhaustion.provider_detail
+        if exhaustion.refusal_reason is not None:
+            # Echoed back so an exhausted refusal ladder re-renders with its
+            # bounded category on the caller-facing 400.
+            failure_payload["refusal_reason"] = exhaustion.refusal_reason.value
         if exhaustion.retry_after_seconds is not None:
             failure_payload["retry_after_seconds"] = exhaustion.retry_after_seconds
         return json.dumps(

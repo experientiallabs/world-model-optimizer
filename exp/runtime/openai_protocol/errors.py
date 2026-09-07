@@ -9,7 +9,11 @@ from typing import Literal
 from pydantic import Field
 
 from exp.common.core.artifacts import ContractModel, JsonObject
-from exp.runtime.gateway.contracts import GatewayFailure, GatewayFailureClass
+from exp.runtime.gateway.contracts import (
+    GatewayFailure,
+    GatewayFailureClass,
+    GatewayRefusalReason,
+)
 
 THROTTLED_RETRY_AFTER_SECONDS = 5
 UNAVAILABLE_RETRY_AFTER_SECONDS = 2
@@ -28,6 +32,9 @@ class OpenAIErrorDetail(ContractModel):
     ]
     param: str | None = Field(default=None, max_length=512)
     code: str = Field(min_length=1, max_length=128)
+    refusal_reason: GatewayRefusalReason | None = None
+    """The bounded refusal category, present only on a ``refusal`` error, so a
+    caller reads which policy declined without any provider prose."""
 
 
 class OpenAIErrorEnvelope(ContractModel):
@@ -54,6 +61,7 @@ class OpenAIProtocolError(ValueError):
         ] = "invalid_request_error",
         param: str | None = None,
         retry_after_seconds: int | None = None,
+        refusal_reason: GatewayRefusalReason | None = None,
     ) -> None:
         """Create one sanitized public protocol failure.
 
@@ -64,6 +72,7 @@ class OpenAIProtocolError(ValueError):
             error_type: OpenAI error category.
             param: Exact public request field responsible for the error.
             retry_after_seconds: Optional positive wait advertised as ``Retry-After``.
+            refusal_reason: Bounded refusal category, set only on a ``refusal``.
         """
         if retry_after_seconds is not None and retry_after_seconds <= 0:
             raise ValueError("retry_after_seconds must be positive")
@@ -75,6 +84,7 @@ class OpenAIProtocolError(ValueError):
             type=error_type,
             param=param,
             code=code,
+            refusal_reason=refusal_reason,
         )
 
     def envelope(self) -> OpenAIErrorEnvelope:
@@ -82,8 +92,17 @@ class OpenAIProtocolError(ValueError):
         return OpenAIErrorEnvelope(error=self.detail)
 
     def json_body(self) -> JsonObject:
-        """Return a JSON-compatible body suitable for an HTTP response."""
-        return self.envelope().model_dump(mode="json")
+        """Return a JSON-compatible body suitable for an HTTP response.
+
+        ``refusal_reason`` is additive: it appears only on a refusal, so every
+        other error keeps its exact pre-existing envelope shape.
+        """
+        body = self.envelope().model_dump(mode="json")
+        if self.detail.refusal_reason is None:
+            error = body.get("error")
+            if isinstance(error, dict):
+                error.pop("refusal_reason", None)
+        return body
 
     def headers(self) -> dict[str, str]:
         """Return transport headers implied by this error, such as ``Retry-After``."""
@@ -249,6 +268,13 @@ def public_failure_error(
             f"{message}. The allocation resets at {boundary}; retry after that time "
             "or ask the gateway operator to raise the monthly budget."
         )
+    # A refusal names its bounded category to the caller; an unnamed one is
+    # explicitly ``unspecified`` so a client can always branch on the field.
+    refusal_reason = (
+        (failure.refusal_reason or GatewayRefusalReason.UNSPECIFIED)
+        if failure.failure_class is GatewayFailureClass.REFUSAL
+        else None
+    )
     return OpenAIProtocolError(
         status_code=status,
         code=code,
@@ -256,6 +282,7 @@ def public_failure_error(
         error_type=error_type,
         param=param,
         retry_after_seconds=retry_after_seconds,
+        refusal_reason=refusal_reason,
     )
 
 

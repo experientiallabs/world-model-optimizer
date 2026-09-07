@@ -19,7 +19,7 @@
 //! Classification reads the RAW provider code and message (never relayed as
 //! such); the bounded, sanitized detail is attached separately.
 
-use crate::errors::{Failure, FailureClass};
+use crate::errors::{Failure, FailureClass, RefusalReason};
 use crate::upstream::transport_failure;
 
 /// What a provider-declared error means for the caller and the ladder.
@@ -28,8 +28,8 @@ pub enum StreamErrorKind {
     /// The caller's request is what the provider refused: relay the detail,
     /// never redial, never fail over (the next rung refuses the same input).
     InvalidRequest,
-    /// The model's safety layer declined the content.
-    Refusal,
+    /// The model's safety layer declined the content, for this bounded reason.
+    Refusal(RefusalReason),
     /// Rate limit or overload: fail over, advertise a retry.
     Throttled,
     /// The provider ACCOUNT cannot pay.
@@ -57,20 +57,45 @@ const INVALID_REQUEST_CODES: &[&str] = &[
     "failed_precondition",
     "out_of_range",
 ];
-const REFUSAL_CODES: &[&str] = &[
-    "content_filter",
-    "content_policy_violation",
-    "data_inspection_failed",
-    "safety",
-    "recitation",
-    "prohibited_content",
-    "blocklist",
-    "spii",
-    "moderation_blocked",
-    "refusal",
+/// Provider codes that are content verdicts, grouped by the bounded reason
+/// each names. The flat union is `REFUSAL_CODES`.
+const CYBER_POLICY_CODES: &[&str] = &[
     // OpenAI's cyber-safety policy verdict (gpt-6-astra, 2026-09-06): a model
     // decision on the content, filed as a refusal, never a provider failure.
     "cyber_policy",
+    "cybersecurity_policy",
+    "cyber_safety",
+];
+const CBRN_CODES: &[&str] = &[
+    "cbrn",
+    "cbrn_policy",
+    "bio",
+    "bio_policy",
+    "biosecurity",
+    "biosecurity_policy",
+];
+const CONTENT_POLICY_CODES: &[&str] = &[
+    "content_filter",
+    "content_filtered",
+    "content_policy_violation",
+    "safety",
+    "image_safety",
+    "prohibited_content",
+    "blocklist",
+    "moderation_blocked",
+    "guardrail_intervened",
+];
+const RECITATION_CODES: &[&str] = &["recitation"];
+const DATA_INSPECTION_CODES: &[&str] = &["data_inspection_failed", "spii"];
+/// A refusal the provider filed under no reason at all.
+const UNSPECIFIED_REFUSAL_CODES: &[&str] = &["refusal"];
+const REFUSAL_CODES: &[&[&str]] = &[
+    CYBER_POLICY_CODES,
+    CBRN_CODES,
+    CONTENT_POLICY_CODES,
+    RECITATION_CODES,
+    DATA_INSPECTION_CODES,
+    UNSPECIFIED_REFUSAL_CODES,
 ];
 const THROTTLED_CODES: &[&str] = &[
     "rate_limit_exceeded",
@@ -126,6 +151,58 @@ const REFUSAL_PHRASES: &[&str] = &[
     "flagged as",
     "blocked by",
 ];
+/// Cyber vocabulary that names the reason only inside a policy verdict: a
+/// caller's prompt about "exploiting a cache" or a sentence mentioning
+/// "malware" in passing is not a cyber-policy refusal on its own.
+const CYBER_WORDS: &[&str] = &["cyber", "malware", "exploit"];
+const POLICY_CONTEXT_WORDS: &[&str] = &[
+    "policy",
+    "policies",
+    "safety",
+    "blocked",
+    "flagged",
+    "prohibited",
+    "not allowed",
+    "violat",
+    "refus",
+    "declin",
+    "harmful",
+];
+/// Weapons-of-mass-destruction vocabulary; multi-word so "biography" or a
+/// chemistry homework prompt never matches.
+const CBRN_PHRASES: &[&str] = &[
+    "cbrn",
+    "biosecurity",
+    "bioweapon",
+    "bio-weapon",
+    "biothreat",
+    "biological weapon",
+    "chemical weapon",
+    "nuclear weapon",
+    "radiological",
+    "biological or chemical",
+    "biological, chemical",
+    "weapons of mass destruction",
+];
+const RECITATION_PHRASES: &[&str] = &["recitation", "recited", "copyright"];
+const DATA_INSPECTION_PHRASES: &[&str] = &[
+    "data inspection",
+    "spii",
+    "sensitive personally identifiable",
+];
+const CONTENT_POLICY_PHRASES: &[&str] = &[
+    "content filter",
+    "content filtering",
+    "content policy",
+    "content management policy",
+    "inappropriate content",
+    "safety system",
+    "flagged as",
+    "blocked by",
+    "moderation",
+    "usage polic",
+    "safety",
+];
 const THROTTLED_PHRASES: &[&str] = &[
     "rate limit",
     "rate-limit",
@@ -160,31 +237,89 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
 /// decide, never a sentence: a pre-stream 4xx body's prose can say "blocked by"
 /// about a rate limit or a firewall.
 pub fn is_refusal_code(code: Option<&str>) -> bool {
-    code.is_some_and(|value| REFUSAL_CODES.contains(&value.trim().to_ascii_lowercase().as_str()))
+    code.is_some_and(|value| {
+        let lowered = value.trim().to_ascii_lowercase();
+        REFUSAL_CODES
+            .iter()
+            .any(|codes| codes.contains(&lowered.as_str()))
+    })
+}
+
+/// Derive the bounded refusal category from the provider's raw code and
+/// sentence.
+///
+/// The provider's own code decides first (`cyber_policy`, `RECITATION`,
+/// `SPII`), then the sentence: weapons vocabulary, cyber vocabulary inside a
+/// policy verdict, recitation, data inspection, and finally the general
+/// content-policy phrasing. A refusal whose code and sentence name nothing
+/// (`refusal`, a bare stop reason) is `Unspecified`. The result is a closed
+/// vocabulary: the caller-facing message is built from the category's fixed
+/// phrase, so no provider prose is ever derived from this function.
+pub fn refusal_reason(code: Option<&str>, message: Option<&str>) -> RefusalReason {
+    let code_lower = code.map(|value| value.trim().to_ascii_lowercase());
+    let code_ref = code_lower.as_deref().unwrap_or("");
+    let coded = [
+        (CYBER_POLICY_CODES, RefusalReason::CyberPolicy),
+        (CBRN_CODES, RefusalReason::Cbrn),
+        (RECITATION_CODES, RefusalReason::Recitation),
+        (DATA_INSPECTION_CODES, RefusalReason::DataInspection),
+        (CONTENT_POLICY_CODES, RefusalReason::ContentPolicy),
+    ]
+    .into_iter()
+    .find_map(|(codes, reason)| codes.contains(&code_ref).then_some(reason));
+    if let Some(reason) = coded {
+        return reason;
+    }
+    // An unlisted code is still a word the provider chose (Gemini's
+    // `IMAGE_SAFETY`, a vendor's `moderation_policy`), so it is read with the
+    // sentence's vocabulary.
+    let haystack = format!(
+        "{code_ref} {}",
+        message
+            .map(|value| value.to_ascii_lowercase())
+            .unwrap_or_default()
+    );
+    if contains_any(&haystack, CBRN_PHRASES) {
+        return RefusalReason::Cbrn;
+    }
+    if contains_any(&haystack, CYBER_WORDS) && contains_any(&haystack, POLICY_CONTEXT_WORDS) {
+        return RefusalReason::CyberPolicy;
+    }
+    if contains_any(&haystack, RECITATION_PHRASES) {
+        return RefusalReason::Recitation;
+    }
+    if contains_any(&haystack, DATA_INSPECTION_PHRASES) {
+        return RefusalReason::DataInspection;
+    }
+    if contains_any(&haystack, CONTENT_POLICY_PHRASES) {
+        return RefusalReason::ContentPolicy;
+    }
+    RefusalReason::Unspecified
 }
 
 /// Classify one provider-declared error from its raw code and message.
 ///
-/// Content verdicts win first (a content filter may arrive under an
-/// `invalid_request_error` type). Then the provider's own code is
-/// authoritative (an `authentication_error` whose sentence happens to say
-/// "must be provided" is still a credential failure). A numeric code takes the
-/// shared HTTP mapping when it names a client-side status; a 5xx does NOT end
-/// the search, because an aggregator often re-statuses an upstream 400 as its
-/// own 502 and only the sentence says so. Credential, quota, and throttle
-/// phrasing are read before caller-input phrasing so the broader input
-/// vocabulary never swallows them. Anything left is the provider failing.
+/// A content-verdict CODE wins first (a content filter may arrive under an
+/// `invalid_request_error` type). Then every other authoritative provider
+/// code decides (an `authentication_error` whose sentence happens to say
+/// "must be provided" is still a credential failure; a `rate_limit_exceeded`
+/// whose sentence says "blocked by" is still a throttle), and a numeric code
+/// takes the shared HTTP mapping for the throttle, quota, credential, and
+/// not-found statuses. Only then does refusal PHRASING decide, ahead of the
+/// caller-input codes, because Azure and Gemini file a content filter under a
+/// 400 `invalid_request_error`. A 5xx numeric code does NOT end the search,
+/// because an aggregator often re-statuses an upstream 400 as its own 502 and
+/// only the sentence says so. Credential, quota, and throttle phrasing are
+/// read before caller-input phrasing so the broader input vocabulary never
+/// swallows them. Anything left is the provider failing.
 pub fn classify_stream_error(code: Option<&str>, message: Option<&str>) -> StreamErrorKind {
     let code_lower = code.map(|value| value.trim().to_ascii_lowercase());
     let message_lower = message.map(|value| value.to_ascii_lowercase());
     let code_ref = code_lower.as_deref().unwrap_or("");
     let message_ref = message_lower.as_deref().unwrap_or("");
 
-    if REFUSAL_CODES.contains(&code_ref) || contains_any(message_ref, REFUSAL_PHRASES) {
-        return StreamErrorKind::Refusal;
-    }
-    if INVALID_REQUEST_CODES.contains(&code_ref) {
-        return StreamErrorKind::InvalidRequest;
+    if is_refusal_code(Some(code_ref)) {
+        return StreamErrorKind::Refusal(refusal_reason(code, message));
     }
     if THROTTLED_CODES.contains(&code_ref) {
         return StreamErrorKind::Throttled;
@@ -198,15 +333,26 @@ pub fn classify_stream_error(code: Option<&str>, message: Option<&str>) -> Strea
     if NOT_FOUND_CODES.contains(&code_ref) {
         return StreamErrorKind::ProviderNotFound;
     }
-    if let Ok(status) = code_ref.parse::<u16>() {
-        match transport_failure(Some(status)).failure_class {
-            FailureClass::InvalidRequest => return StreamErrorKind::InvalidRequest,
-            FailureClass::Throttled => return StreamErrorKind::Throttled,
-            FailureClass::ProviderQuota => return StreamErrorKind::ProviderQuota,
-            FailureClass::ProviderAuthentication => return StreamErrorKind::ProviderAuthentication,
-            FailureClass::ProviderNotFound => return StreamErrorKind::ProviderNotFound,
-            _ => {}
+    let numeric_class = code_ref
+        .parse::<u16>()
+        .ok()
+        .map(|status| transport_failure(Some(status)).failure_class);
+    match numeric_class {
+        Some(FailureClass::Throttled) => return StreamErrorKind::Throttled,
+        Some(FailureClass::ProviderQuota) => return StreamErrorKind::ProviderQuota,
+        Some(FailureClass::ProviderAuthentication) => {
+            return StreamErrorKind::ProviderAuthentication
         }
+        Some(FailureClass::ProviderNotFound) => return StreamErrorKind::ProviderNotFound,
+        _ => {}
+    }
+    if contains_any(message_ref, REFUSAL_PHRASES) {
+        return StreamErrorKind::Refusal(refusal_reason(code, message));
+    }
+    if INVALID_REQUEST_CODES.contains(&code_ref)
+        || numeric_class == Some(FailureClass::InvalidRequest)
+    {
+        return StreamErrorKind::InvalidRequest;
     }
     if contains_any(message_ref, AUTHENTICATION_PHRASES) {
         return StreamErrorKind::ProviderAuthentication;
@@ -236,9 +382,7 @@ pub fn stream_failure(kind: StreamErrorKind, detail: Option<String>) -> Failure 
              the model alias capabilities",
         )
         .with_retry(false, false),
-        StreamErrorKind::Refusal => {
-            Failure::new(FailureClass::Refusal, "provider refused the request")
-        }
+        StreamErrorKind::Refusal(reason) => Failure::refusal(reason),
         StreamErrorKind::Throttled => Failure::new(
             FailureClass::Throttled,
             "provider throttled the request; retry after the delay in the Retry-After header",
@@ -321,22 +465,238 @@ mod tests {
                 Some("invalid_request_error"),
                 Some("Output blocked by content filtering policy")
             ),
-            StreamErrorKind::Refusal
+            StreamErrorKind::Refusal(RefusalReason::ContentPolicy)
         );
         assert_eq!(
             classify_stream_error(Some("SAFETY"), None),
-            StreamErrorKind::Refusal
+            StreamErrorKind::Refusal(RefusalReason::ContentPolicy)
         );
+        // The code decides the category even when the sentence reads as a
+        // different one ("inappropriate content" is content-policy phrasing).
         assert_eq!(
             classify_stream_error(
                 Some("data_inspection_failed"),
                 Some("Output data may contain inappropriate content.")
             ),
-            StreamErrorKind::Refusal
+            StreamErrorKind::Refusal(RefusalReason::DataInspection)
         );
         assert_eq!(
             classify_stream_error(Some("cyber_policy"), None),
-            StreamErrorKind::Refusal
+            StreamErrorKind::Refusal(RefusalReason::CyberPolicy)
+        );
+        // A numeric 400 with content-filter phrasing (Azure) is the verdict,
+        // not a request-shape error.
+        assert_eq!(
+            classify_stream_error(
+                Some("400"),
+                Some("The response was filtered due to the prompt triggering Azure OpenAI's content management policy.")
+            ),
+            StreamErrorKind::Refusal(RefusalReason::ContentPolicy)
+        );
+    }
+
+    #[test]
+    fn every_refusal_code_maps_to_its_reason() {
+        let table: &[(&str, RefusalReason)] = &[
+            ("cyber_policy", RefusalReason::CyberPolicy),
+            ("cybersecurity_policy", RefusalReason::CyberPolicy),
+            ("cyber_safety", RefusalReason::CyberPolicy),
+            ("cbrn", RefusalReason::Cbrn),
+            ("cbrn_policy", RefusalReason::Cbrn),
+            ("bio", RefusalReason::Cbrn),
+            ("bio_policy", RefusalReason::Cbrn),
+            ("biosecurity", RefusalReason::Cbrn),
+            ("biosecurity_policy", RefusalReason::Cbrn),
+            ("content_filter", RefusalReason::ContentPolicy),
+            ("content_filtered", RefusalReason::ContentPolicy),
+            ("content_policy_violation", RefusalReason::ContentPolicy),
+            ("safety", RefusalReason::ContentPolicy),
+            ("image_safety", RefusalReason::ContentPolicy),
+            ("prohibited_content", RefusalReason::ContentPolicy),
+            ("blocklist", RefusalReason::ContentPolicy),
+            ("moderation_blocked", RefusalReason::ContentPolicy),
+            ("guardrail_intervened", RefusalReason::ContentPolicy),
+            ("recitation", RefusalReason::Recitation),
+            ("data_inspection_failed", RefusalReason::DataInspection),
+            ("spii", RefusalReason::DataInspection),
+            ("refusal", RefusalReason::Unspecified),
+        ];
+        for (code, reason) in table {
+            // Case and surrounding whitespace never matter (Gemini shouts).
+            let shouted = format!(" {} ", code.to_ascii_uppercase());
+            assert_eq!(refusal_reason(Some(code), None), *reason, "{code}");
+            assert_eq!(refusal_reason(Some(&shouted), None), *reason, "{code}");
+            assert_eq!(
+                classify_stream_error(Some(code), Some("whatever the sentence says")),
+                StreamErrorKind::Refusal(*reason),
+                "{code}"
+            );
+            assert!(is_refusal_code(Some(code)), "{code}");
+        }
+        // The flat union and the grouped lists agree on membership.
+        let grouped: usize = REFUSAL_CODES.iter().map(|codes| codes.len()).sum();
+        assert_eq!(grouped, table.len());
+    }
+
+    #[test]
+    fn refusal_reason_reads_the_sentence_when_the_code_names_nothing() {
+        // A code the lists do not know is read together with the sentence.
+        let cases: &[(Option<&str>, &str, RefusalReason)] = &[
+            (
+                None,
+                "This request was blocked by our cybersecurity policy.",
+                RefusalReason::CyberPolicy,
+            ),
+            (
+                Some("invalid_request_error"),
+                "Your prompt was flagged as potential malware development.",
+                RefusalReason::CyberPolicy,
+            ),
+            (
+                None,
+                "Exploit development is not allowed under our usage policies.",
+                RefusalReason::CyberPolicy,
+            ),
+            (
+                None,
+                "The request was refused under our biosecurity policy.",
+                RefusalReason::Cbrn,
+            ),
+            (
+                Some("invalid_prompt"),
+                "Content about chemical weapons is prohibited.",
+                RefusalReason::Cbrn,
+            ),
+            (
+                None,
+                "This may relate to weapons of mass destruction and was blocked by the safety system.",
+                RefusalReason::Cbrn,
+            ),
+            (
+                None,
+                "Output blocked: recitation of copyrighted material.",
+                RefusalReason::Recitation,
+            ),
+            (
+                None,
+                "Output data may contain sensitive personally identifiable information.",
+                RefusalReason::DataInspection,
+            ),
+            (
+                None,
+                "Output blocked by content filtering policy",
+                RefusalReason::ContentPolicy,
+            ),
+            (
+                Some("invalid_request_error"),
+                "Your request was rejected as a result of our safety system.",
+                RefusalReason::ContentPolicy,
+            ),
+            (
+                None,
+                "Content moderation flagged this request.",
+                RefusalReason::ContentPolicy,
+            ),
+            // Gemini's IMAGE_SAFETY block reason is unlisted but self-describing.
+            (Some("IMAGE_SAFETY"), "", RefusalReason::ContentPolicy),
+            // Nothing named: an unnamed refusal.
+            (None, "", RefusalReason::Unspecified),
+            (Some("OTHER"), "The model declined.", RefusalReason::Unspecified),
+            (Some("BLOCK_REASON_UNSPECIFIED"), "", RefusalReason::Unspecified),
+        ];
+        for (code, message, reason) in cases {
+            assert_eq!(
+                refusal_reason(*code, Some(message)),
+                *reason,
+                "{code:?} / {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn refusal_reason_guards_against_false_positives() {
+        // Cyber vocabulary outside a policy verdict is not a cyber refusal.
+        assert_eq!(
+            refusal_reason(
+                None,
+                Some("flagged as inappropriate content; the cache exploit note")
+            ),
+            RefusalReason::CyberPolicy,
+            "an explicit verdict word plus cyber vocabulary IS the cyber category"
+        );
+        assert_eq!(
+            refusal_reason(None, Some("Output blocked by content filtering policy")),
+            RefusalReason::ContentPolicy
+        );
+        assert_eq!(
+            refusal_reason(
+                Some("content_filter"),
+                Some("Discussing malware in a novel")
+            ),
+            RefusalReason::ContentPolicy,
+            "the provider's own content-policy code outranks cyber words in the sentence"
+        );
+        // "bio" alone is a code token, never a substring match: a biography
+        // or biology sentence does not become a weapons verdict.
+        assert_eq!(
+            refusal_reason(
+                None,
+                Some("flagged as inappropriate content in the biography")
+            ),
+            RefusalReason::ContentPolicy
+        );
+        assert_eq!(
+            refusal_reason(Some("biography"), None),
+            RefusalReason::Unspecified
+        );
+        // Recitation and data-inspection phrasing never masquerade as the
+        // other, and neither swallows a weapons verdict.
+        assert_eq!(
+            refusal_reason(
+                None,
+                Some("Copyright recitation and chemical weapon synthesis")
+            ),
+            RefusalReason::Cbrn
+        );
+    }
+
+    #[test]
+    fn an_authoritative_non_content_code_outranks_refusal_phrasing() {
+        // A rate limiter that says "blocked by" is a throttle, never a
+        // refusal; the provider's own code decides before any sentence.
+        assert_eq!(
+            classify_stream_error(
+                Some("rate_limit_exceeded"),
+                Some("Request blocked by rate limiting; retry shortly.")
+            ),
+            StreamErrorKind::Throttled
+        );
+        assert_eq!(
+            classify_stream_error(Some("429"), Some("Request blocked by the rate limiter")),
+            StreamErrorKind::Throttled
+        );
+        assert_eq!(
+            classify_stream_error(
+                Some("insufficient_quota"),
+                Some("Request blocked by billing: quota exhausted")
+            ),
+            StreamErrorKind::ProviderQuota
+        );
+        assert_eq!(
+            classify_stream_error(
+                Some("permission_denied"),
+                Some("Blocked by organization policy: key not permitted")
+            ),
+            StreamErrorKind::ProviderAuthentication
+        );
+        assert_eq!(
+            classify_stream_error(Some("model_not_found"), Some("flagged as unknown model")),
+            StreamErrorKind::ProviderNotFound
+        );
+        // Code-less refusal phrasing still classifies as a refusal.
+        assert_eq!(
+            classify_stream_error(None, Some("Output blocked by content filtering policy")),
+            StreamErrorKind::Refusal(RefusalReason::ContentPolicy)
         );
     }
 
@@ -479,9 +839,46 @@ mod tests {
         assert!(internal.retryable_same_deployment && internal.failover_eligible);
         assert_eq!(internal.safe_message, "provider stream failed");
 
-        let refusal = stream_failure(StreamErrorKind::Refusal, None);
+        let refusal = stream_failure(
+            StreamErrorKind::Refusal(RefusalReason::Unspecified),
+            Some("refusal".into()),
+        );
         assert_eq!(refusal.failure_class, FailureClass::Refusal);
         assert_eq!(refusal.public_error().status_code, 400);
+        assert_eq!(refusal.safe_message, "provider refused the request");
+        assert_eq!(refusal.refusal_reason, Some(RefusalReason::Unspecified));
+        assert_eq!(refusal.provider_detail.as_deref(), Some("refusal"));
+    }
+
+    #[test]
+    fn a_classified_refusal_names_its_category_and_keeps_the_raw_token_ledger_only() {
+        // The astra cyber-policy `response.failed` as the ledger sees it: the
+        // caller gets the fixed phrase and the machine-readable category, while
+        // the raw provider token rides provider_detail into settlement only.
+        let kind = classify_stream_error(Some("cyber_policy"), Some("blocked by cyber policy"));
+        assert_eq!(kind, StreamErrorKind::Refusal(RefusalReason::CyberPolicy));
+        let failure = stream_failure(kind, Some("cyber_policy: blocked by cyber policy".into()));
+        assert_eq!(failure.failure_class, FailureClass::Refusal);
+        assert_eq!(failure.refusal_reason, Some(RefusalReason::CyberPolicy));
+        // The raw provider token reaches the ledger, never the caller.
+        assert_eq!(
+            failure.provider_detail.as_deref(),
+            Some("cyber_policy: blocked by cyber policy")
+        );
+        let public = failure.public_error();
+        assert_eq!(public.status_code, 400);
+        assert_eq!(public.code, "refusal");
+        assert_eq!(public.error_type, "invalid_request_error");
+        assert_eq!(
+            public.message,
+            "provider refused the request: cybersecurity policy"
+        );
+        assert_eq!(public.refusal_reason, Some(RefusalReason::CyberPolicy));
+        // The public envelope carries the snake_case category and never the
+        // provider's own sentence.
+        let body = public.json_body();
+        assert_eq!(body["error"]["refusal_reason"], "cyber_policy");
+        assert!(!body.to_string().contains("blocked by cyber policy"));
     }
 
     #[test]

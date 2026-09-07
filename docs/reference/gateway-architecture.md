@@ -388,6 +388,18 @@ fault stays `provider stream failed`. An aggregator's 502 wrapping an upstream 4
 sentence. The bounded ledger detail exempts the request's own model id from the identifier screen,
 so a provider sentence naming the model is kept rather than dropped.
 
+**A refusal names its bounded category to the caller.** A `refusal` answer stays a 400 with code
+`refusal` and type `invalid_request_error`, but it now carries a machine-readable `refusal_reason`
+field in the error body (present on every surface that renders the public error: `/v1/chat/completions`,
+`/v1/responses`, and `/v1/messages`, whose Anthropic envelope carries the same field). The category
+is a closed vocabulary derived from the provider's own code and sentence, never its prose:
+`cyber_policy`, `cbrn`, `content_policy`, `recitation`, `data_inspection`, and `unspecified` for a
+refusal the provider filed under no reason. The caller-facing message is the fixed sentence plus the
+category's fixed phrase ("provider refused the request: cybersecurity policy"), while the raw provider
+token keeps riding `provider_detail` into the ledger only. The reason also rides the settlement
+argument next to `provider_detail`, so the control plane counts refusals by reason without parsing the
+free-form detail.
+
 **Customer-managed credentials fail as the customer's error.** On a BYOK rung, a provider 401/403
 or 402, at stream open or declared mid-stream, is the customer's configuration, not operator
 deadness. The failure keeps its ladder class so any other customer-managed rung with its own

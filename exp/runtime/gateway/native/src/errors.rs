@@ -18,6 +18,11 @@ pub struct PublicError {
     pub param: Option<String>,
     #[serde(default)]
     pub retry_after_seconds: Option<u32>,
+    /// The bounded category of a provider refusal (`code: refusal` only):
+    /// every refusal answer carries one, `unspecified` when the provider
+    /// named no reason. Absent on every other error.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refusal_reason: Option<RefusalReason>,
 }
 
 fn default_error_type() -> String {
@@ -33,19 +38,27 @@ impl PublicError {
             error_type: error_type.to_string(),
             param: None,
             retry_after_seconds: None,
+            refusal_reason: None,
         }
     }
 
     /// The OpenAI error envelope body, matching `OpenAIProtocolError.json_body()`.
+    ///
+    /// A refusal adds the one additive `refusal_reason` field; every other
+    /// error keeps the exact four-field envelope.
     pub fn json_body(&self) -> serde_json::Value {
-        json!({
+        let mut body = json!({
             "error": {
                 "message": self.message,
                 "type": self.error_type,
                 "param": self.param,
                 "code": self.code,
             }
-        })
+        });
+        if let Some(reason) = self.refusal_reason {
+            body["error"]["refusal_reason"] = json!(reason.as_str());
+        }
+        body
     }
 
     pub fn invalid_key() -> Self {
@@ -161,6 +174,61 @@ impl FailureClass {
     }
 }
 
+/// The bounded category of a provider refusal, derived from the provider's
+/// own code and sentence (`stream_errors::refusal_reason`) and shared with
+/// the python `GatewayRefusalReason`.
+///
+/// The caller sees WHICH policy declined the content as a fixed phrase,
+/// never the provider's prose: the vocabulary is closed so a client can
+/// branch on it, and the raw token keeps riding `provider_detail` into the
+/// ledger only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RefusalReason {
+    /// A cyber-safety verdict (OpenAI `cyber_policy`).
+    CyberPolicy,
+    /// A biological, chemical, radiological, or nuclear weapons verdict.
+    Cbrn,
+    /// A general content-policy or safety-system verdict.
+    ContentPolicy,
+    /// The output would recite copyrighted material (Gemini `RECITATION`).
+    Recitation,
+    /// The provider's data-inspection layer blocked the content (Gemini
+    /// `SPII`, Qwen `data_inspection_failed`).
+    DataInspection,
+    /// The provider refused without naming a reason.
+    Unspecified,
+}
+
+impl RefusalReason {
+    /// The wire name shared with the python enum and the public error field.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RefusalReason::CyberPolicy => "cyber_policy",
+            RefusalReason::Cbrn => "cbrn",
+            RefusalReason::ContentPolicy => "content_policy",
+            RefusalReason::Recitation => "recitation",
+            RefusalReason::DataInspection => "data_inspection",
+            RefusalReason::Unspecified => "unspecified",
+        }
+    }
+
+    /// The fixed caller-facing phrase, or none for an unnamed refusal.
+    pub fn phrase(&self) -> Option<&'static str> {
+        match self {
+            RefusalReason::CyberPolicy => Some("cybersecurity policy"),
+            RefusalReason::Cbrn => Some("biological/chemical safety policy"),
+            RefusalReason::ContentPolicy => Some("content policy"),
+            RefusalReason::Recitation => Some("recitation of copyrighted material"),
+            RefusalReason::DataInspection => Some("data inspection"),
+            RefusalReason::Unspecified => None,
+        }
+    }
+}
+
+/// The generic refusal sentence every refusal message starts from.
+const REFUSAL_MESSAGE: &str = "provider refused the request";
+
 /// One sanitized provider failure, the Rust mirror of `GatewayFailure`,
 /// including the executor's per-failure retry classification: whether the
 /// same deployment may be redialed and whether a later certified deployment
@@ -198,6 +266,11 @@ pub struct Failure {
     /// answer is their 400 naming the fix, and settlement files it client-side.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub customer_owned: bool,
+    /// The bounded category of a refusal, set by every refusal builder so
+    /// the public error and the settlement ledger can name which policy
+    /// declined the content without parsing `provider_detail`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refusal_reason: Option<RefusalReason>,
 }
 
 impl Failure {
@@ -211,6 +284,22 @@ impl Failure {
             provider_detail: None,
             retry_after_seconds: None,
             customer_owned: false,
+            refusal_reason: None,
+        }
+    }
+
+    /// The provider refusal for one bounded reason. The message is the fixed
+    /// generic sentence followed by the reason's fixed phrase (nothing the
+    /// provider wrote), and the reason rides the failure into the public
+    /// error and settlement.
+    pub fn refusal(reason: RefusalReason) -> Self {
+        let safe_message = match reason.phrase() {
+            Some(phrase) => format!("{REFUSAL_MESSAGE}: {phrase}"),
+            None => REFUSAL_MESSAGE.to_string(),
+        };
+        Self {
+            refusal_reason: Some(reason),
+            ..Self::new(FailureClass::Refusal, &safe_message)
         }
     }
 
@@ -307,6 +396,12 @@ impl Failure {
             _ => (502, "all_routes_failed", "api_error"),
         };
         let mut error = PublicError::new(status, code, &self.safe_message, error_type);
+        if self.failure_class == FailureClass::Refusal {
+            // Every refusal answer names its category; a refusal built
+            // without one (a visible-refusal stream, a bare stop reason) is
+            // explicitly `unspecified` so clients can branch on the field.
+            error.refusal_reason = Some(self.refusal_reason.unwrap_or(RefusalReason::Unspecified));
+        }
         if self.failure_class == FailureClass::InvalidRequest {
             error.param = self.rejected_parameter.clone();
             if let Some(detail) = self.provider_detail.as_deref() {
@@ -351,10 +446,93 @@ mod tests {
         assert_eq!(error.error_type, "invalid_request_error");
         assert_eq!(error.message, "provider refused the request");
         assert_eq!(error.retry_after_seconds, None);
+        // A refusal built without a reason still names its category.
+        assert_eq!(error.refusal_reason, Some(RefusalReason::Unspecified));
+        assert_eq!(error.json_body()["error"]["refusal_reason"], "unspecified");
         // Untyped provider failures keep the routing-failure shape.
         let internal = Failure::new(FailureClass::ProviderInternal, "provider failed");
         assert_eq!(internal.public_error().status_code, 502);
         assert_eq!(internal.public_error().code, "all_routes_failed");
+    }
+
+    #[test]
+    fn every_refusal_reason_renders_its_fixed_phrase_and_wire_name() {
+        // (reason, wire name, public message): the message is the generic
+        // sentence plus the reason's fixed phrase, never provider prose.
+        let table = [
+            (
+                RefusalReason::CyberPolicy,
+                "cyber_policy",
+                "provider refused the request: cybersecurity policy",
+            ),
+            (
+                RefusalReason::Cbrn,
+                "cbrn",
+                "provider refused the request: biological/chemical safety policy",
+            ),
+            (
+                RefusalReason::ContentPolicy,
+                "content_policy",
+                "provider refused the request: content policy",
+            ),
+            (
+                RefusalReason::Recitation,
+                "recitation",
+                "provider refused the request: recitation of copyrighted material",
+            ),
+            (
+                RefusalReason::DataInspection,
+                "data_inspection",
+                "provider refused the request: data inspection",
+            ),
+            (
+                RefusalReason::Unspecified,
+                "unspecified",
+                "provider refused the request",
+            ),
+        ];
+        for (reason, wire, message) in table {
+            let failure = Failure::refusal(reason)
+                .with_provider_detail(Some("cyber_policy: raw provider prose".into()));
+            assert_eq!(failure.failure_class, FailureClass::Refusal);
+            assert_eq!(failure.refusal_reason, Some(reason));
+            assert_eq!(reason.as_str(), wire);
+            let error = failure.public_error();
+            // Status, code, and type are unchanged so existing clients behave
+            // the same; the reason is the one additive field.
+            assert_eq!(error.status_code, 400);
+            assert_eq!(error.code, "refusal");
+            assert_eq!(error.error_type, "invalid_request_error");
+            assert_eq!(error.message, message);
+            assert_eq!(error.refusal_reason, Some(reason));
+            let body = error.json_body();
+            assert_eq!(body["error"]["refusal_reason"], wire);
+            assert_eq!(body["error"]["code"], "refusal");
+            // The provider's own detail never reaches the caller.
+            assert!(!body.to_string().contains("raw provider prose"));
+            // The enum round-trips through its snake_case wire name.
+            let back: RefusalReason =
+                serde_json::from_value(serde_json::Value::String(wire.to_string()))
+                    .expect("round trip");
+            assert_eq!(back, reason);
+        }
+        // Every other class stays free of the field, on the struct and in
+        // the envelope, so non-refusal payloads are byte-identical.
+        let throttled = Failure::new(FailureClass::Throttled, "slow down").public_error();
+        assert_eq!(throttled.refusal_reason, None);
+        assert!(throttled.json_body()["error"]
+            .get("refusal_reason")
+            .is_none());
+        assert!(serde_json::to_value(&throttled)
+            .expect("serializable")
+            .get("refusal_reason")
+            .is_none());
+        // A boundary payload without the field still deserializes.
+        let legacy: PublicError = serde_json::from_value(serde_json::json!({
+            "status_code": 400, "code": "refusal", "message": "m"
+        }))
+        .expect("field is optional");
+        assert_eq!(legacy.refusal_reason, None);
     }
 
     #[test]

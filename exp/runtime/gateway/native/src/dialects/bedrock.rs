@@ -3,7 +3,7 @@
 
 use serde_json::{Map, Value};
 
-use super::{malformed, parse_object, refusal_failure, Normalizer};
+use super::{malformed, parse_object, Normalizer};
 use crate::errors::{Failure, FailureClass};
 use crate::events::{bedrock_usage, require_string, require_u64, Event, ToolAccumulator};
 
@@ -237,7 +237,10 @@ impl Normalizer {
         match reason {
             "end_turn" | "stop_sequence" | "tool_use" => Event::Completed,
             "max_tokens" | "model_context_window_exceeded" => Event::Incomplete,
-            "content_filtered" | "guardrail_intervened" => Event::Failed(refusal_failure()),
+            // The Bedrock stop reason names the content verdict.
+            "content_filtered" | "guardrail_intervened" => Event::Failed(Failure::refusal(
+                crate::stream_errors::refusal_reason(Some(reason), None),
+            )),
             _ => Event::Failed(Failure::new(
                 FailureClass::ProviderInternal,
                 "provider ended the stream unexpectedly",
@@ -420,7 +423,8 @@ mod bedrock_tests {
                 json!({
                     "kind": "failed",
                     "failure_class": "refusal",
-                    "safe_message": "provider refused the request",
+                    "safe_message": "provider refused the request: content policy",
+                    "refusal_reason": "content_policy",
                 }),
             ),
             (
@@ -428,7 +432,8 @@ mod bedrock_tests {
                 json!({
                     "kind": "failed",
                     "failure_class": "refusal",
-                    "safe_message": "provider refused the request",
+                    "safe_message": "provider refused the request: content policy",
+                    "refusal_reason": "content_policy",
                 }),
             ),
             (

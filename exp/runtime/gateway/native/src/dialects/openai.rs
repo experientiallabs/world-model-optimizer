@@ -794,7 +794,10 @@ impl Normalizer {
                     if reason == "max_output_tokens" {
                         events.push(Event::Incomplete);
                     } else if reason == "content_filter" || reason == "safety" {
-                        events.push(Event::Failed(refusal_failure()));
+                        // The incomplete reason IS the category token.
+                        events.push(Event::Failed(Failure::refusal(
+                            crate::stream_errors::refusal_reason(Some(reason), None),
+                        )));
                     } else {
                         // The undocumented reason is the only diagnostic this
                         // terminal carries; it rides as the bounded detail.

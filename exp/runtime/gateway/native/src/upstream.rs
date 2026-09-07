@@ -235,14 +235,12 @@ pub async fn open_stream(
             .or_else(|| code.clone().filter(|token| !generic_error_code(token)));
         // A content-filter CODE under a 4xx is the model's verdict on the
         // content (Azure and Gemini answer 400 for it), not a request-shape
-        // error: file and answer it as a refusal, detail kept ledger-only.
-        // Only the authoritative code decides here; a sentence saying
-        // "blocked by" could be about a firewall or a limit.
+        // error: file and answer it as a refusal naming its bounded category,
+        // detail kept ledger-only. Only the authoritative code decides here; a
+        // sentence saying "blocked by" could be about a firewall or a limit.
         if crate::stream_errors::is_refusal_code(code.as_deref()) {
-            return Err(
-                Failure::new(FailureClass::Refusal, "provider refused the request")
-                    .with_provider_detail(detail),
-            );
+            let reason = crate::stream_errors::refusal_reason(code.as_deref(), None);
+            return Err(Failure::refusal(reason).with_provider_detail(detail));
         }
         // A sentence naming a limitation of THIS lane's serving stack (a chat
         // template that rejects a mid-conversation system turn the OpenAI
@@ -446,12 +444,17 @@ mod tests {
         assert_eq!(failure.failure_class, FailureClass::Refusal);
         assert_eq!(failure.public_error().status_code, 400);
         assert_eq!(failure.public_error().code, "refusal");
+        // The content_filter code names the content-policy category.
+        assert_eq!(
+            failure.refusal_reason,
+            Some(crate::errors::RefusalReason::ContentPolicy)
+        );
         // The sanitized sentence (or the code token when it must drop) rides
         // to the ledger; a refusal never relays it to the caller.
         assert!(failure.provider_detail.is_some());
         assert_eq!(
             failure.public_error().message,
-            "provider refused the request"
+            "provider refused the request: content policy"
         );
     }
 

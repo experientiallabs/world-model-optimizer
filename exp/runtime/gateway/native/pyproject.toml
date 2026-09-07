@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "exp-gateway-native"
-version = "0.3.42"
+version = "0.3.43"
 description = "Rust data plane for the Experiential local gateway (compiled extension module)."
 license = { file = "LICENSE" }
 requires-python = ">=3.12"

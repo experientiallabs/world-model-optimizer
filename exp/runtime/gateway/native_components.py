@@ -42,6 +42,8 @@ class SyncWriteLedger(Protocol):
         attempt_ordinal: int,
         route_depth: int,
         maximum_cost_micro_usd: int | None = None,
+        reserved_input_tokens: int | None = None,
+        reserved_output_tokens: int | None = None,
         route_reason: str | None = None,
         fallback_reason: str | None = None,
         dispatch_reason: str | None = None,

@@ -234,6 +234,8 @@ class SQLiteAttemptLedger:
         attempt_ordinal: int,
         route_depth: int,
         maximum_cost_micro_usd: int | None = None,
+        reserved_input_tokens: int | None = None,
+        reserved_output_tokens: int | None = None,
         route_reason: str | None = None,
         fallback_reason: str | None = None,
         dispatch_reason: str | None = None,
@@ -265,6 +267,8 @@ class SQLiteAttemptLedger:
                 attempt_ordinal=attempt_ordinal,
                 route_depth=route_depth,
                 maximum_cost_micro_usd=maximum_cost_micro_usd,
+                reserved_input_tokens=reserved_input_tokens,
+                reserved_output_tokens=reserved_output_tokens,
                 route_reason=route_reason,
                 fallback_reason=fallback_reason,
                 dispatch_reason=dispatch_reason,
@@ -280,6 +284,8 @@ class SQLiteAttemptLedger:
         attempt_ordinal: int,
         route_depth: int,
         maximum_cost_micro_usd: int | None = None,
+        reserved_input_tokens: int | None = None,
+        reserved_output_tokens: int | None = None,
         route_reason: str | None = None,
         fallback_reason: str | None = None,
         dispatch_reason: str | None = None,
@@ -304,6 +310,10 @@ class SQLiteAttemptLedger:
         Returns:
             Stable new attempt ID.
         """
+        # The in-process SQLite mirror carries no promo / rate-limit token
+        # columns, so the reservations are accepted for Protocol parity and
+        # dropped here; the platform's Postgres ledger stores and counts them.
+        del reserved_input_tokens, reserved_output_tokens
         for value in (route_reason, fallback_reason, dispatch_reason):
             if value is not None and (len(value) > 512 or any(ord(char) < 32 for char in value)):
                 raise GatewayLedgerError("route context must be a short display-safe code")

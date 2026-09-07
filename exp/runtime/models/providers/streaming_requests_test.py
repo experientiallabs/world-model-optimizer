@@ -2610,6 +2610,36 @@ def test_context_management_forwards_on_anthropic_and_discloses_elsewhere() -> N
     assert provider.context_management is None
 
 
+def test_tool_names_the_anthropic_wire_rejects_narrow_out_before_dispatch() -> None:
+    """A dotted tool name is refused by name on Anthropic and Bedrock rungs
+    (the provider's own 400 named tools.0.custom.name after dispatch, one
+    org, 2026-09-07) and passes untouched on wires that accept it."""
+    request = _chat_request().model_copy(
+        update={
+            "tools": (
+                GatewayToolDefinition(name="search", parameters={"type": "object"}),
+                GatewayToolDefinition(name="web.search", parameters={"type": "object"}),
+            )
+        }
+    )
+    anthropic = GatewayWireProfile(
+        dialect="anthropic_messages", url="https://anthropic.test", model_id="claude-sonnet-4-5"
+    )
+    bedrock = GatewayWireProfile(
+        dialect="bedrock_converse_stream",
+        url="https://bedrock.test",
+        model_id="anthropic.claude-sonnet-4-5-v1:0",
+    )
+    for profile in (anthropic, bedrock):
+        with pytest.raises(ProviderParameterError) as rejected:
+            route_generation_parameter_requests((profile,), request)
+        assert rejected.value.param == "tools[1].name"
+        assert "web.search" not in str(rejected.value)
+    compatible = GatewayWireProfile(dialect="openai_compatible", url="https://fw.test")
+    public, _provider = route_generation_parameter_requests((compatible,), request)
+    assert public.ignored_parameters == ()
+
+
 def test_assistant_prefill_narrows_out_rungs_whose_model_rejects_it() -> None:
     """A trailing assistant turn is refused BEFORE dispatch on the Anthropic
     releases that 400 it (live 2026-09-07: 4.6+ and every 5-generation

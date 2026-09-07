@@ -256,6 +256,25 @@ def _anthropic_multimodal_blocks(message: GatewayMessage) -> list[JsonObject]:
     return blocks
 
 
+def _reasoning_intact(message: GatewayMessage) -> bool:
+    """Whether the flattened reasoning still holds every thinking block the caller sent.
+
+    Admission may strip or narrow reasoning blocks for a rung; the verbatim
+    order is only replayed when it would say exactly what the flattened
+    fields say.
+    """
+    assert message.provider_anthropic_blocks is not None
+    sent = sum(
+        1
+        for block in message.provider_anthropic_blocks
+        if block.get("type") in {"thinking", "redacted_thinking"}
+    )
+    kept = sum(
+        1 for block in message.provider_reasoning if block.kind in {"thinking", "redacted_thinking"}
+    )
+    return sent == kept and sent > 0
+
+
 def anthropic_blocks(message: GatewayMessage) -> tuple[str, list[JsonObject]]:
     """Translate one non-instruction gateway message to Anthropic content blocks."""
     if message.role == "tool":
@@ -309,6 +328,12 @@ def anthropic_blocks(message: GatewayMessage) -> tuple[str, list[JsonObject]]:
         # An echoed server-tool block re-emits byte-for-byte at its position;
         # route admission guarantees this dispatch is an Anthropic rung.
         return "assistant", [message.provider_anthropic_block]
+    if message.provider_anthropic_blocks is not None and _reasoning_intact(message):
+        # A thinking turn replays in the caller's own block order: Anthropic
+        # verifies the latest assistant message against its signatures, and
+        # interleaved thinking puts thinking between tool_use blocks, an
+        # order the flattened fields below cannot express.
+        return "assistant", [dict(block) for block in message.provider_anthropic_blocks]
     blocks: list[JsonObject] = []
     for reasoning in message.provider_reasoning:
         if reasoning.kind == "exposed_reasoning_content":

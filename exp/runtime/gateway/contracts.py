@@ -287,6 +287,23 @@ class GatewayMessage(ContractModel):
     like the other carriers so item-free digests are unperturbed; a present
     item joins replay identity through :func:`canonical_request_sha256`.
     """
+    provider_anthropic_blocks: tuple[JsonObject, ...] | None = Field(default=None, exclude=True)
+    """The caller's assistant content blocks in their ORIGINAL order, when a
+    thinking block is among them.
+
+    The flattened fields (``content``, ``tool_calls``, ``provider_reasoning``)
+    lose the order of blocks within one assistant turn; the Anthropic wire
+    re-emits them as thinking, then text, then tool_use. With interleaved
+    thinking a turn is [thinking, tool_use, thinking, text, tool_use ...], and
+    Anthropic verifies the LATEST assistant message byte-for-byte against the
+    signatures it issued: a reordered turn is refused as "thinking or
+    redacted_thinking blocks in the latest assistant message cannot be
+    modified" (134 requests / 48h on one Messages-surface client,
+    2026-09-07). The Anthropic wire replays these verbatim when they are
+    present and the flattened reasoning was not narrowed; every other wire
+    keeps reading the flattened fields. Excluded from serialization like the
+    other carriers.
+    """
     provider_anthropic_block: JsonObject | None = Field(default=None, exclude=True)
     """One verbatim Anthropic content block the gateway carries opaquely.
 

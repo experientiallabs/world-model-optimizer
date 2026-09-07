@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from exp.runtime.openai_protocol.structured_text import (
-    JSON_OBJECT_TRANSLATION_DISCLOSURE,
+    chat_json_object_output,
     chat_structured_text,
     responses_structured_text,
 )
@@ -15,13 +15,22 @@ from exp.runtime.openai_protocol.wire_models import (
 )
 
 
-def test_chat_json_object_translates_to_a_permissive_non_strict_schema() -> None:
-    """json_object becomes an open, non-strict json_schema ("any JSON object")."""
-    result = chat_structured_text(_ChatResponseFormat(type="json_object"))
-    assert result is not None
-    assert result.name == "json_object"
-    assert result.json_schema == {"type": "object"}
-    assert result.strict is False
+def test_chat_json_object_is_a_schema_free_mode_not_a_schema() -> None:
+    """json_object selects the canonical JSON-object mode and yields no structured text."""
+    fmt = _ChatResponseFormat(type="json_object")
+    assert chat_structured_text(fmt) is None
+    assert chat_json_object_output(fmt) is True
+
+
+def test_chat_json_object_output_is_false_for_other_formats() -> None:
+    """Only json_object selects the schema-free mode."""
+    schema = _StructuredSchema(name="answer", schema={"type": "object"}, strict=True)
+    assert chat_json_object_output(None) is False
+    assert chat_json_object_output(_ChatResponseFormat(type="text")) is False
+    assert (
+        chat_json_object_output(_ChatResponseFormat(type="json_schema", json_schema=schema))
+        is False
+    )
 
 
 def test_chat_json_schema_is_carried_verbatim() -> None:
@@ -53,8 +62,3 @@ def test_responses_text_and_none_yield_no_structured_text() -> None:
     """`text` and an absent Responses format carry no structured output."""
     assert responses_structured_text(None) is None
     assert responses_structured_text(_ResponseText(format=_ResponseFormat(type="text"))) is None
-
-
-def test_translation_disclosure_token_is_the_unified_form() -> None:
-    """The json_object translation discloses with the unified path->action(reason) token."""
-    assert JSON_OBJECT_TRANSLATION_DISCLOSURE == "response_format->translated(json_object)"

@@ -131,6 +131,8 @@ def openai_responses_stream_payload(
         if request.structured_text.description is not None:
             format_payload["description"] = request.structured_text.description
         text_payload["format"] = format_payload
+    elif request.json_object_output:
+        text_payload["format"] = {"type": "json_object"}
     if text_payload:
         payload["text"] = text_payload
     if request.maximum_output_tokens is not None:
@@ -250,6 +252,8 @@ def openai_compatible_stream_payload(
         if request.structured_text.description is not None:
             schema["description"] = request.structured_text.description
         payload["response_format"] = {"type": "json_schema", "json_schema": schema}
+    elif request.json_object_output:
+        payload["response_format"] = {"type": "json_object"}
     if request.maximum_output_tokens is not None:
         payload[token_limit_key] = request.maximum_output_tokens
     effective_reasoning_effort = request.reasoning_effort or reasoning_effort

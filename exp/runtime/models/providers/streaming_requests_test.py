@@ -39,6 +39,7 @@ from exp.runtime.models.providers.gemini_requests import gemini_generate_request
 from exp.runtime.models.providers.generation_route_compat import (
     compatible_generation_parameter_profile_indexes,
 )
+from exp.runtime.models.providers.messages_payloads import JSON_OBJECT_SYSTEM_INSTRUCTION
 from exp.runtime.models.providers.streaming_requests import (
     TOOL_RESULT_IMAGE_DROP_DISCLOSURE,
     TOOL_RESULT_IMAGE_PLACEHOLDER,
@@ -186,23 +187,127 @@ def test_openai_compatible_stream_payload_forwards_top_p_and_usage() -> None:
     assert payload["top_p"] == 1.0
 
 
-def test_openai_compatible_payload_serves_a_translated_json_object_as_open_json_schema() -> None:
-    """A translated json_object (open, non-strict schema) serves as a valid json_schema
-    on an openai_compatible rung (Azure/DeepSeek), preserving the caller's JSON intent."""
-    request = GatewayRequest(
+def _json_object_request() -> GatewayRequest:
+    """One Chat request in schema-free JSON-object mode with a leading system turn."""
+    return GatewayRequest(
         surface=GatewayApiSurface.CHAT_COMPLETIONS,
-        messages=(GatewayMessage(role="user", content="hello"),),
-        structured_text=StructuredTextFormat(
-            name="json_object", json_schema={"type": "object"}, strict=False
+        messages=(
+            GatewayMessage(role="system", content="You are terse."),
+            GatewayMessage(role="user", content="hello"),
         ),
+        json_object_output=True,
     )
 
-    payload = openai_compatible_stream_payload("exact-model", request)
 
-    assert payload["response_format"] == {
-        "type": "json_schema",
-        "json_schema": {"name": "json_object", "schema": {"type": "object"}, "strict": False},
-    }
+def test_openai_compatible_payload_passes_json_object_through_natively() -> None:
+    """json_object mode is the native Chat response_format on OpenAI-compatible rungs
+    (OpenAI, Azure, OpenRouter, Fireworks); no schema is invented."""
+    payload = openai_compatible_stream_payload("exact-model", _json_object_request())
+
+    assert payload["response_format"] == {"type": "json_object"}
+
+
+def test_openai_responses_payload_passes_json_object_through_natively() -> None:
+    """A Chat json_object served by a Responses rung uses the native text.format mode."""
+    payload = openai_responses_stream_payload(
+        "exact-model", _json_object_request(), supports_temperature=True
+    )
+
+    assert payload["text"] == {"format": {"type": "json_object"}}
+
+
+def test_anthropic_payload_carries_json_object_as_a_trailing_system_instruction() -> None:
+    """Anthropic has no JSON mode: the caller's system prompt is preserved first and the
+    JSON-object instruction is appended; no output_config schema is emitted."""
+    payload = anthropic_messages_stream_payload("claude", _json_object_request())
+
+    assert payload["system"] == "You are terse.\n\n" + JSON_OBJECT_SYSTEM_INSTRUCTION
+    assert "output_config" not in payload
+    assert payload["messages"] == [{"role": "user", "content": [{"type": "text", "text": "hello"}]}]
+
+
+def test_anthropic_payload_json_object_without_caller_system_prompt() -> None:
+    """With no caller system turn, the instruction is the whole system prompt."""
+    request = _json_object_request().model_copy(
+        update={"messages": (GatewayMessage(role="user", content="hello"),)}
+    )
+    payload = anthropic_messages_stream_payload("claude", request)
+
+    assert payload["system"] == JSON_OBJECT_SYSTEM_INSTRUCTION
+
+
+def test_gemini_payload_requests_json_mime_type_without_a_schema() -> None:
+    """Gemini json_object mode sets responseMimeType only; no empty responseJsonSchema."""
+    payload = gemini_generate_content_stream_payload("gemini", _json_object_request())
+
+    generation = payload["generationConfig"]
+    assert isinstance(generation, dict)
+    assert generation["responseMimeType"] == "application/json"
+    assert "responseJsonSchema" not in generation
+
+
+def test_bedrock_payload_carries_json_object_as_a_trailing_system_instruction() -> None:
+    """Converse has no JSON mode: the instruction trails the caller's system blocks and no
+    outputConfig textFormat schema is emitted."""
+    payload = bedrock_converse_stream_payload("anthropic.claude", _json_object_request())
+
+    assert payload["system"] == [
+        {"text": "You are terse."},
+        {"text": JSON_OBJECT_SYSTEM_INSTRUCTION},
+    ]
+    assert "outputConfig" not in payload
+
+
+def test_json_object_mode_is_absent_from_every_dialect_without_the_flag() -> None:
+    """A plain Chat request emits no JSON-object artifacts on any dialect."""
+    request = _json_object_request().model_copy(update={"json_object_output": False})
+
+    assert "response_format" not in openai_compatible_stream_payload("m", request)
+    assert "text" not in openai_responses_stream_payload("m", request, supports_temperature=True)
+    assert anthropic_messages_stream_payload("m", request)["system"] == "You are terse."
+    gemini_generation = gemini_generate_content_stream_payload("m", request).get(
+        "generationConfig", {}
+    )
+    assert isinstance(gemini_generation, dict)
+    assert "responseMimeType" not in gemini_generation
+    assert bedrock_converse_stream_payload("m", request)["system"] == [{"text": "You are terse."}]
+
+
+def test_json_object_mode_is_admitted_on_every_supported_dialect() -> None:
+    """Route admission keeps json_object off the strict-schema check: a mixed route of
+    Anthropic, Gemini, Bedrock and OpenAI-compatible rungs is fully compatible and the
+    provider request keeps the mode."""
+    profiles = (
+        GatewayWireProfile(dialect="anthropic_messages", url="https://a.test", model_id="claude"),
+        GatewayWireProfile(dialect="gemini_generate_content", url="https://g.test", model_id="g"),
+        GatewayWireProfile(dialect="bedrock_converse_stream", url="https://b.test", model_id="b"),
+        GatewayWireProfile(dialect="openai_compatible", url="https://o.test", model_id="gpt"),
+    )
+    request = _json_object_request()
+
+    assert compatible_generation_parameter_profile_indexes(profiles, request) == (0, 1, 2, 3)
+    public_request, provider_request = route_generation_parameter_requests(profiles, request)
+    assert public_request.json_object_output is True
+    assert provider_request.json_object_output is True
+    assert provider_request.structured_text is None
+    for profile in profiles:
+        assert dialect_stream_payload(profile, provider_request)
+
+
+def test_json_object_mode_rejection_names_response_format_type() -> None:
+    """A route with a dialect that cannot honor json_object fails on the public field the
+    caller sent, never on an internal strict-schema path."""
+    # Every implemented dialect honors json_object, so the profile validator has to be
+    # bypassed to reach the defensive route check.
+    unknown = GatewayWireProfile(dialect="openai_compatible", url="https://u.test", model_id="m")
+    object.__setattr__(unknown, "dialect", "unknown_wire")
+
+    with pytest.raises(ProviderParameterError) as raised:
+        route_generation_parameter_requests((unknown,), _json_object_request())
+    assert raised.value.param == "response_format.type"
+    assert raised.value.code == "unsupported_parameter"
+    assert "response_format.type" in str(raised.value)
+    assert "strict" not in str(raised.value)
 
 
 def test_openai_compatible_stream_payload_omits_absent_top_p() -> None:
@@ -1136,17 +1241,15 @@ def test_generation_parameter_selection_serves_with_drop_when_no_rung_honors() -
     assert compatible_generation_parameter_profile_indexes(profiles, request) == (0, 1)
 
 
-def test_translated_json_object_narrows_away_from_a_schema_closing_rung() -> None:
-    """A translated json_object (open, non-strict schema) narrows to a rung that serves
-    open JSON, and rejects only when every rung is a schema-closing (Anthropic) dialect —
-    never silently closing 'any object' into 'no properties allowed'. This rides the
-    existing non-strict-schema route check (a schema-closing dialect enforces the schema),
-    which the strict=False translation now reaches."""
+def test_non_strict_json_schema_narrows_away_from_a_schema_closing_rung() -> None:
+    """A real non-strict json_schema narrows to a rung that serves open schemas, and
+    rejects on the strict path only when every rung is a schema-closing (Anthropic)
+    dialect. This check is reserved for actual schemas; json_object mode never reaches it."""
     open_request = GatewayRequest(
         surface=GatewayApiSurface.CHAT_COMPLETIONS,
         messages=(GatewayMessage(role="user", content="hi"),),
         structured_text=StructuredTextFormat(
-            name="json_object", json_schema={"type": "object"}, strict=False
+            name="answer", json_schema={"type": "object"}, strict=False
         ),
     )
     anthropic = GatewayWireProfile(

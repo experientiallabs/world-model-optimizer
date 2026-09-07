@@ -117,9 +117,9 @@ def test_chat_decoder_preserves_every_supported_semantic_field() -> None:
     assert request.metadata == {"cohort": "test"}
 
 
-def test_chat_decoder_translates_json_object_to_a_permissive_schema() -> None:
-    """response_format json_object is admitted and translated to an open, non-strict
-    json_schema so the caller's JSON intent serves on every rung, with disclosure."""
+def test_chat_decoder_carries_json_object_as_its_own_mode() -> None:
+    """response_format json_object rides json_object_output, not a permissive schema,
+    and is not disclosed as a translation."""
     request = decode_chat(
         {
             "model": "coding",
@@ -127,10 +127,9 @@ def test_chat_decoder_translates_json_object_to_a_permissive_schema() -> None:
             "response_format": {"type": "json_object"},
         }
     ).request
-    assert request.structured_text is not None
-    assert request.structured_text.json_schema == {"type": "object"}
-    assert request.structured_text.strict is False
-    assert request.ignored_parameters == ("response_format->translated(json_object)",)
+    assert request.json_object_output is True
+    assert request.structured_text is None
+    assert request.ignored_parameters == ()
 
 
 def test_chat_decoder_admits_sampling_penalties() -> None:

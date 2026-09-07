@@ -109,6 +109,16 @@ GATEWAY_GENERATION_PARAMETER_CONTRACT_VERSION = 2
 _STRICT_STRUCTURED_OUTPUT_DIALECTS = frozenset(
     {"anthropic_messages", "gemini_generate_content", "bedrock_converse_stream"}
 )
+_JSON_OBJECT_OUTPUT_DIALECTS = frozenset(
+    {
+        "openai_responses",
+        "openai_compatible",
+        "anthropic_messages",
+        "gemini_generate_content",
+        "bedrock_converse_stream",
+    }
+)
+"""Dialects that honor schema-free JSON mode, natively or via a system instruction."""
 _NO_PARALLEL_TOOL_CONTROL_DIALECTS = frozenset(
     {"gemini_generate_content", "bedrock_converse_stream"}
 )
@@ -441,6 +451,18 @@ def route_generation_parameter_requests(
                 "Set it to true or choose a different model."
             ),
             param=path,
+            code="unsupported_parameter",
+        )
+    if request.json_object_output and any(
+        profile.dialect not in _JSON_OBJECT_OUTPUT_DIALECTS for profile in profiles
+    ):
+        raise ProviderParameterError(
+            message=(
+                "The parameter 'response_format.type' value 'json_object' is not "
+                "supported by every deployment in this model route. Use "
+                "'json_schema' or choose a different model."
+            ),
+            param="response_format.type",
             code="unsupported_parameter",
         )
 

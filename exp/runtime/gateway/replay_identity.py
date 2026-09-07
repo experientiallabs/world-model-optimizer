@@ -113,6 +113,7 @@ def provider_replay_authority(request: GatewayRequest) -> JsonObject | None:
         and request.speed is None
         and request.inference_geo is None
         and request.service_tier is None
+        and not request.json_object_output
         and not request.provider_beta_tokens
         and not request.provider_server_tools
         and not request.provider_native_tools
@@ -136,6 +137,9 @@ def provider_replay_authority(request: GatewayRequest) -> JsonObject | None:
     if request.service_tier is not None:
         # A provider tier changes pricing and scheduling for the same body.
         envelope["service_tier"] = request.service_tier
+    if request.json_object_output:
+        # Schema-free JSON mode changes the answer shape for the same body.
+        envelope["json_object_output"] = True
     if retained_tools:
         envelope["tools"] = retained_tools
     if request.provider_beta_tokens:

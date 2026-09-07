@@ -41,6 +41,7 @@ def converse_request(
     structured_output_description: str | None = None,
     structured_output_schema: JsonObject | None = None,
     strict_tool_names: Collection[str] = (),
+    json_object_instruction: str | None = None,
 ) -> JsonObject:
     """Translate one EXP request into boto Converse keyword arguments.
 
@@ -57,6 +58,8 @@ def converse_request(
         structured_output_description: Optional description for that output contract.
         structured_output_schema: Strict JSON schema admitted for structured output.
         strict_tool_names: Tool definitions whose schemas Bedrock must enforce.
+        json_object_instruction: Optional trailing system text requesting
+            schema-free JSON output (Converse has no native JSON mode).
 
     Returns:
         Keyword arguments accepted by ``bedrock-runtime`` Converse.
@@ -77,6 +80,7 @@ def converse_request(
             structured_output_description=structured_output_description,
             structured_output_schema=structured_output_schema,
             strict_tool_names=strict_tool_names,
+            json_object_instruction=json_object_instruction,
         ),
     }
 
@@ -93,6 +97,7 @@ def converse_body(
     structured_output_description: str | None = None,
     structured_output_schema: JsonObject | None = None,
     strict_tool_names: Collection[str] = (),
+    json_object_instruction: str | None = None,
 ) -> JsonObject:
     """Translate one EXP request into the Converse wire document.
 
@@ -110,6 +115,8 @@ def converse_body(
         structured_output_description: Optional description for that output contract.
         structured_output_schema: Strict JSON schema admitted for structured output.
         strict_tool_names: Tool definitions whose schemas Bedrock must enforce.
+        json_object_instruction: Optional trailing system text requesting
+            schema-free JSON output (Converse has no native JSON mode).
 
     Returns:
         The native Converse request document.
@@ -158,6 +165,8 @@ def converse_body(
             _message_blocks(message),
         )
 
+    if json_object_instruction is not None:
+        system.append({"text": json_object_instruction})
     payload: JsonObject = {"messages": messages}
     inference = _inference_config(
         request,

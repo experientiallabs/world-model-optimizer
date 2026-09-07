@@ -55,6 +55,7 @@ def gemini_generate_request(
     reasoning_effort: str | None = None,
     stop_sequences: tuple[str, ...] = (),
     response_json_schema: JsonObject | None = None,
+    json_object_output: bool = False,
 ) -> JsonObject:
     """Convert a EXP request into Gemini's native generateContent payload.
 
@@ -71,6 +72,8 @@ def gemini_generate_request(
         reasoning_effort: Catalog-pinned reasoning effort used when the request omits one.
         stop_sequences: Exact stop strings admitted for the selected route.
         response_json_schema: Strict JSON schema admitted for structured output.
+        json_object_output: Whether to request schema-free JSON output
+            (``responseMimeType`` only, no ``responseJsonSchema``).
 
     Returns:
         A native payload for the generateContent and streamGenerateContent
@@ -119,6 +122,8 @@ def gemini_generate_request(
     if response_json_schema is not None:
         generation["responseMimeType"] = "application/json"
         generation["responseJsonSchema"] = response_json_schema
+    elif json_object_output:
+        generation["responseMimeType"] = "application/json"
     effective_reasoning_effort = request.reasoning_effort or reasoning_effort
     if supports_reasoning and effective_reasoning_effort is not None:
         generation["thinkingConfig"] = {

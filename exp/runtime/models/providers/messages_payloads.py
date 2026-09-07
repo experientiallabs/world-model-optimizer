@@ -34,6 +34,16 @@ from exp.runtime.models.providers.wire_messages import (
 )
 from exp.runtime.openai_protocol.model_adapter import model_request as gateway_model_request
 
+JSON_OBJECT_SYSTEM_INSTRUCTION = (
+    "Output format: the caller will pass your entire reply to a strict JSON "
+    "parser, so it must be exactly one raw JSON object. Begin the reply with "
+    "'{' as the very first character and end it with '}' as the very last. "
+    "Do not begin with ```json or any code fence, do not use markdown, and do "
+    "not add any words before or after the object. A reply that starts with "
+    "anything other than '{' is a failure."
+)
+"""System instruction that carries ``json_object_output`` on wires with no native JSON mode."""
+
 
 def anthropic_messages_stream_payload(
     model_id: str,
@@ -114,6 +124,10 @@ def anthropic_messages_stream_payload(
             existing.extend(blocks)
         else:
             messages.append({"role": role, "content": blocks})
+    if request.json_object_output:
+        # Anthropic has no schema-free JSON mode, so the caller's intent rides
+        # the system prompt as a trailing instruction.
+        system_parts.append((JSON_OBJECT_SYSTEM_INSTRUCTION, ()))
     payload: JsonObject = {
         "model": model_id,
         "messages": messages,
@@ -439,6 +453,7 @@ def gemini_generate_content_stream_payload(
             response_json_schema=(
                 request.structured_text.json_schema if request.structured_text is not None else None
             ),
+            json_object_output=request.json_object_output,
         )
     except (ProviderParameterError, ProviderCapabilityError):
         raise
@@ -498,6 +513,9 @@ def bedrock_converse_stream_payload(
                 request.structured_text.json_schema if request.structured_text is not None else None
             ),
             strict_tool_names=tuple(tool.name for tool in request.tools if tool.strict),
+            json_object_instruction=(
+                JSON_OBJECT_SYSTEM_INSTRUCTION if request.json_object_output else None
+            ),
         )
     except (ProviderParameterError, ProviderCapabilityError):
         raise

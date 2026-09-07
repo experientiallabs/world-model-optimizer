@@ -403,9 +403,8 @@ class _StructuredSchema(_WireModel):
 class _ChatResponseFormat(_WireModel):
     """Supported Chat text, JSON-object, or strict structured-text format.
 
-    ``json_object`` is admitted so the gateway can translate it to a permissive
-    ``json_schema`` and serve the caller's "give me JSON" intent on every rung
-    (the serving lanes emit only ``json_schema``); it carries no ``json_schema``
+    ``json_object`` is the schema-free JSON mode; each wire dialect honors it
+    natively or through an injected instruction. It carries no ``json_schema``
     details, exactly like ``text``.
     """
 

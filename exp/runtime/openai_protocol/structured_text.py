@@ -6,24 +6,21 @@ from exp.runtime.gateway.contracts import StructuredTextFormat
 from exp.runtime.openai_protocol.errors import invalid_field
 from exp.runtime.openai_protocol.wire_models import _ChatResponseFormat, _ResponseText
 
-# Disclosure for a translated ``json_object`` (served as a permissive non-strict
-# json_schema = "any JSON object", so no rung tightens it into a fixed shape).
-JSON_OBJECT_TRANSLATION_DISCLOSURE = "response_format->translated(json_object)"
+
+def chat_json_object_output(value: _ChatResponseFormat | None) -> bool:
+    """Return whether the Chat response format selects schema-free JSON mode."""
+    return value is not None and value.type == "json_object"
 
 
 def chat_structured_text(value: _ChatResponseFormat | None) -> StructuredTextFormat | None:
     """Convert the Chat response format to the internal structured-text shape.
 
-    ``json_object`` translates to a permissive non-strict json_schema so the
-    caller's JSON intent serves on every rung (lanes emit only json_schema);
-    dropping it would return prose to a caller who asked for JSON.
+    ``json_object`` is not a schema: it rides ``json_object_output`` on the
+    canonical request (see :func:`chat_json_object_output`) and yields no
+    structured text here.
     """
-    if value is None or value.type == "text":
+    if value is None or value.type in {"text", "json_object"}:
         return None
-    if value.type == "json_object":
-        return StructuredTextFormat(
-            name="json_object", json_schema={"type": "object"}, strict=False
-        )
     schema = value.json_schema
     if schema is None:
         raise invalid_field("response_format.json_schema")

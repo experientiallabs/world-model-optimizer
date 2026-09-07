@@ -703,7 +703,7 @@ def _messages(messages: tuple[_Message, ...], prefix: str) -> tuple[GatewayMessa
             # The scheme is fixed by the carrier's own opaque prefix. A known
             # prefix MUST parse as that provider's carrier. Text under no known
             # prefix is the plaintext an exposure-gated rung itself returned on
-            # a non-tool turn (Tencent/DeepSeek): it decodes as caller-owned
+            # an assistant turn (Tencent/DeepSeek): it decodes as caller-owned
             # history and route admission decides which rungs may carry it.
             scheme = scheme_for_carrier(message.reasoning_content)
             if scheme is None:
@@ -723,8 +723,8 @@ def _messages(messages: tuple[_Message, ...], prefix: str) -> tuple[GatewayMessa
                 except ValidationError as exc:
                     raise invalid_field(
                         param,
-                        f"'{param}' must be non-empty plaintext reasoning within the size bound "
-                        "or a gateway-issued carrier.",
+                        f"'{param}' plaintext reasoning exceeds 8,388,608 characters. "
+                        "Shorten the replayed reasoning_content and retry.",
                     ) from exc
             else:
                 try:

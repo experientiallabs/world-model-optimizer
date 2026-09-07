@@ -534,15 +534,6 @@ def test_chat_decoder_accepts_plaintext_reasoning_as_exposed_history() -> None:
     tool_turn_message = tool_turn.request.messages[1]
     assert tool_turn_message.provider_reasoning[0].kind == "exposed_reasoning_content"
     assert tool_turn_message.tool_calls[0].name == "lookup"
-    # An empty string is not reasoning; it names its field.
-    with pytest.raises(OpenAIProtocolError) as raised:
-        decode_chat(
-            {
-                "model": "coding",
-                "messages": [{"role": "assistant", "content": "x", "reasoning_content": ""}],
-            }
-        )
-    assert raised.value.detail.param == "messages.0.reasoning_content"
 
 
 @pytest.mark.parametrize(
@@ -3562,7 +3553,10 @@ def test_a_name_on_a_non_tool_message_stays_a_named_400() -> None:
     assert "name is valid only for tool messages" in str(error.value.detail.message)
 
 
-def test_replayed_reasoning_content_degrades_instead_of_wedging_cross_model_sessions() -> None:
+@pytest.mark.parametrize("reasoning", ["", " \n\t", "The user wants the time; call get_time."])
+def test_replayed_reasoning_content_degrades_instead_of_wedging_cross_model_sessions(
+    reasoning: str,
+) -> None:
     """The prod OpenCode + gpt-6-astra wedge: rc in history serves everywhere.
 
     A session that touched a reasoning-exposed rung (or whose AI-SDK client
@@ -3604,7 +3598,7 @@ def test_replayed_reasoning_content_degrades_instead_of_wedging_cross_model_sess
                 {"role": "user", "content": "what time is it"},
                 {
                     "role": "assistant",
-                    "reasoning_content": "The user wants the time; call get_time.",
+                    "reasoning_content": reasoning,
                     "tool_calls": [
                         {
                             "id": "call_rc1",
@@ -3648,7 +3642,7 @@ def test_replayed_reasoning_content_degrades_instead_of_wedging_cross_model_sess
         exposed, provider_exposed.model_copy(update={"stream": True})
     )
     exposed_messages = cast(list[JsonObject], exposed_payload["messages"])
-    assert exposed_messages[1]["reasoning_content"] == "The user wants the time; call get_time."
+    assert exposed_messages[1]["reasoning_content"] == reasoning
     assert exposed_messages[1]["tool_calls"]
 
     # Repro B: rc on a plain assistant turn, non-exposed route.
@@ -3657,7 +3651,7 @@ def test_replayed_reasoning_content_degrades_instead_of_wedging_cross_model_sess
             "model": "coding",
             "messages": [
                 {"role": "user", "content": "hi"},
-                {"role": "assistant", "content": "A", "reasoning_content": "thinking..."},
+                {"role": "assistant", "content": "A", "reasoning_content": reasoning},
                 {"role": "user", "content": "again"},
             ],
         }
@@ -3909,3 +3903,39 @@ def test_structured_format_description_bounds_are_uniform_and_named() -> None:
         )
     assert responses_over.value.detail.param == "text.format.description"
     assert "at most 65,536 characters" in str(responses_over.value.detail.message)
+
+
+@pytest.mark.parametrize("reasoning", ["", " \n\t", None])
+def test_reasoning_echo_keeps_empty_distinct_from_null(reasoning: str | None) -> None:
+    """An empty field creates a replay block; null stays absent."""
+    decoded = decode_chat(
+        {
+            "model": "coding",
+            "messages": [{"role": "assistant", "content": "done", "reasoning_content": reasoning}],
+        }
+    )
+    blocks = decoded.request.messages[0].provider_reasoning
+    if reasoning is None:
+        assert blocks == ()
+    else:
+        assert len(blocks) == 1
+        assert blocks[0].kind == "exposed_reasoning_content"
+        assert blocks[0].content == reasoning
+
+
+def test_oversized_plaintext_reasoning_names_limit_and_remedy() -> None:
+    """Admit the exact plaintext limit and reject its first excess character."""
+    limit = 8 * 1024 * 1024
+    body: JsonObject = {
+        "model": "coding",
+        "messages": [{"role": "assistant", "content": "done", "reasoning_content": "x" * limit}],
+    }
+    assert decode_chat(body).request.messages[0].provider_reasoning
+    body["messages"] = [
+        {"role": "assistant", "content": "done", "reasoning_content": "x" * (limit + 1)}
+    ]
+    with pytest.raises(OpenAIProtocolError) as error:
+        decode_chat(body)
+    assert error.value.detail.param == "messages.0.reasoning_content"
+    assert "8,388,608 characters" in error.value.detail.message
+    assert "Shorten" in error.value.detail.message

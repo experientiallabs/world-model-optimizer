@@ -80,17 +80,16 @@ class ExposedReasoningContentBlock(ContractModel):
     """Caller-replayed plaintext reasoning for an exposure-gated rung.
 
     A rung stamped ``reasoning_output_exposed`` (Tencent Hunyuan, DeepSeek)
-    returns the model's reasoning as plaintext ``reasoning_content`` on every
-    non-tool turn; the provider's own wire accepts that text back verbatim on
-    later assistant turns and validates nothing about it. The caller echoing
-    it is therefore ordinary conversation history — no different from prior
-    assistant ``content`` — so it is carried as this block and forwarded only
-    to rungs that expose their reasoning. Tool turns keep the sealed carrier
-    (``SealedReasoningContentBlock``), which additionally pins the issuing rung.
+    accepts caller-owned ``reasoning_content`` on assistant history, including
+    tool-call turns. Preserve an explicitly empty string: providers can require
+    the field's presence even when that turn performed no reasoning. Missing
+    or null fields produce no block, and unsupported rungs omit exposed blocks
+    with a disclosure. Gateway-issued sealed carriers retain their separate
+    authenticated contract.
     """
 
     kind: Literal["exposed_reasoning_content"] = "exposed_reasoning_content"
-    content: str = Field(min_length=1, max_length=8 * 1024 * 1024)
+    content: str = Field(max_length=8 * 1024 * 1024)
 
 
 ProviderReasoningBlock = Annotated[

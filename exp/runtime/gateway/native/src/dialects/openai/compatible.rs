@@ -56,10 +56,15 @@ impl Normalizer {
                             .map(str::to_string)
                             .or_else(|| value.as_i64().map(|numeric| numeric.to_string()))
                     }),
-                    error
-                        .get("message")
-                        .and_then(Value::as_str)
-                        .map(str::to_string),
+                    error.get("message").and_then(Value::as_str).map(|message| {
+                        // An aggregator's generic sentence yields to the
+                        // upstream provider's own (OpenRouter metadata.raw).
+                        crate::param_attribution::upstream_relayed_message(
+                            &Value::Object(error.clone()),
+                            message,
+                        )
+                        .unwrap_or_else(|| message.to_string())
+                    }),
                 ),
                 None => (None, None),
             };

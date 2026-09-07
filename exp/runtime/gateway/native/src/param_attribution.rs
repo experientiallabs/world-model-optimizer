@@ -196,7 +196,82 @@ pub fn rejected_model_not_found(dialect: Dialect, body: &str) -> bool {
 pub fn rejected_detail(dialect: Dialect, body: &str, request_words: &[&str]) -> Option<String> {
     let value: Value = serde_json::from_str(body).ok()?;
     let message = error_message_field(dialect, &value)?;
+    if dialect == Dialect::OpenAiCompatible {
+        if let Some(relayed) = value
+            .get("error")
+            .and_then(|error| upstream_relayed_message(error, message))
+        {
+            return sanitized_detail(&relayed, request_words);
+        }
+    }
     sanitized_detail(message, request_words)
+}
+
+/// Aggregator sentences that say nothing about what was refused.
+const GENERIC_AGGREGATOR_MESSAGES: &[&str] = &["provider returned error", "provider error"];
+
+/// The upstream provider's own sentence behind an aggregator's generic one.
+///
+/// OpenRouter answers a rejected relay with "Provider returned error" and
+/// puts the upstream body in `error.metadata.raw` (a JSON document or plain
+/// text) plus the upstream's name in `error.metadata.provider_name`. The
+/// generic sentence leaves the caller nothing to act on (673 such 400s across
+/// 137 orgs in the 24h to 2026-09-07 00:20 UTC), so when the aggregator's
+/// message is generic the upstream sentence is read instead, prefixed with
+/// the provider's name. Only the message field of a JSON `raw` is used; a
+/// plain-text `raw` is taken whole. The result still passes the same
+/// identifier screen and length bound as any relayed sentence.
+pub fn upstream_relayed_message(error: &Value, message: &str) -> Option<String> {
+    let lowered = message.trim().trim_end_matches('.').to_ascii_lowercase();
+    if !GENERIC_AGGREGATOR_MESSAGES.contains(&lowered.as_str()) {
+        return None;
+    }
+    let metadata = error.get("metadata")?;
+    let raw = metadata.get("raw")?;
+    let upstream = match raw {
+        Value::String(text) => match serde_json::from_str::<Value>(text) {
+            Ok(document) => json_error_sentence(&document)?,
+            Err(_) => text.trim().to_string(),
+        },
+        Value::Object(_) => json_error_sentence(raw)?,
+        _ => return None,
+    };
+    if upstream.is_empty() {
+        return None;
+    }
+    let provider = metadata
+        .get("provider_name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|name| {
+            !name.is_empty()
+                && name.chars().all(|c| {
+                    c.is_ascii_alphanumeric() || c == ' ' || c == '-' || c == '_' || c == '.'
+                })
+        });
+    Some(match provider {
+        Some(name) => format!("{name}: {upstream}"),
+        None => upstream,
+    })
+}
+
+/// The human sentence of one upstream error document, whichever documented
+/// spelling it uses (`error.message`, `message`, `detail`, or a bare string
+/// `error`).
+fn json_error_sentence(document: &Value) -> Option<String> {
+    let error = document.get("error");
+    let candidates = [
+        error.and_then(|error| error.get("message")),
+        document.get("message"),
+        document.get("detail"),
+        error.filter(|value| value.is_string()),
+    ];
+    candidates
+        .into_iter()
+        .flatten()
+        .find_map(|value| value.as_str())
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty())
 }
 
 /// The provider's own error code or type from one client-error body, as a
@@ -504,6 +579,36 @@ mod tests {
         // Any other message keeps the content-free failure.
         let other = r#"{"error": {"message": "This model is not available to your account."}}"#;
         assert_eq!(rejected_parameter(Dialect::OpenAiCompatible, other), None);
+    }
+
+    #[test]
+    fn an_aggregators_generic_sentence_yields_to_the_upstream_message() {
+        let body = r#"{"error":{"message":"Provider returned error","code":400,
+            "metadata":{"raw":"{\"error\":{\"message\":\"Input exceeds the maximum context window.\",\"type\":\"invalid_request_error\"}}",
+            "provider_name":"Relace"}}}"#;
+        assert_eq!(
+            rejected_detail(Dialect::OpenAiCompatible, body, &[]).as_deref(),
+            Some("Relace: Input exceeds the maximum context window.")
+        );
+        // A plain-text raw is relayed whole; a specific aggregator sentence is kept.
+        let plain = r#"{"error":{"message":"Provider returned error","code":400,
+            "metadata":{"raw":"model is overloaded, try again","provider_name":"Fugu"}}}"#;
+        assert_eq!(
+            rejected_detail(Dialect::OpenAiCompatible, plain, &[]).as_deref(),
+            Some("Fugu: model is overloaded, try again")
+        );
+        let specific = r#"{"error":{"message":"temperature must be <= 1","code":400,
+            "metadata":{"raw":"{\"error\":{\"message\":\"ignored\"}}"}}}"#;
+        assert_eq!(
+            rejected_detail(Dialect::OpenAiCompatible, specific, &[]).as_deref(),
+            Some("temperature must be <= 1")
+        );
+        // Without metadata the generic sentence stays what it was.
+        let bare = r#"{"error":{"message":"Provider returned error","code":400}}"#;
+        assert_eq!(
+            rejected_detail(Dialect::OpenAiCompatible, bare, &[]).as_deref(),
+            Some("Provider returned error")
+        );
     }
 
     #[test]

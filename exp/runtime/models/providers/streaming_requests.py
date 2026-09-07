@@ -39,6 +39,7 @@ from exp.runtime.models.providers.fireworks import (
 from exp.runtime.models.providers.generation_parameter_validation import (
     anthropic_reasoning_disengaged,
     mid_conversation_system_present,
+    require_assistant_prefill_supported,
     serves_reasoning_summary,
 )
 from exp.runtime.models.providers.generation_parameter_validation import (
@@ -263,12 +264,9 @@ def route_generation_parameter_requests(
             sampling_supported(profile, top_p=top_p) for profile in profiles
         )
 
-    # Sampling controls a rung cannot carry at all (a reasoning model whose
-    # provider rejects temperature outright) are DROPPED with disclosure, not
-    # refused: the model still answers, with its own default. The 400 stays
-    # only for a value outside a supporting route's declared range, which is
-    # a genuine caller error. (2026-09-06: 1,483 rejections in six hours across
-    # 289 orgs on one alias for a field OpenAI itself simply refuses.)
+    # Sampling a rung cannot carry is DROPPED with disclosure, not refused; the
+    # 400 stays only for a value outside a supporting route's declared range
+    # (2026-09-06: 1,483 rejections / 289 orgs on one alias OpenAI itself refuses).
     if request.temperature is not None:
         if srn_only_block():
             ignore("temperature", "temperature->dropped(set_reasoning_effort_none)")
@@ -864,6 +862,8 @@ def route_generation_parameter_requests(
             param="messages",
             code="invalid_parameter",
         )
+
+    require_assistant_prefill_supported(profiles, request)
 
     # A system turn after conversation began has positional semantics that
     # instruction-hoisting wires cannot preserve; those rungs narrow out.

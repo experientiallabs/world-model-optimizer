@@ -25,6 +25,19 @@ from exp.runtime.models.providers.wire_messages import (
     responses_items,
 )
 
+_INPUT_MESSAGE_ROLES = frozenset({"user", "system", "developer"})
+
+
+def _without_input_message_status(item: JsonObject) -> JsonObject:
+    """Drop ``status`` from a replayed input message; every other item is verbatim."""
+    if (
+        "status" in item
+        and item.get("type") in (None, "message")
+        and item.get("role") in _INPUT_MESSAGE_ROLES
+    ):
+        return {key: value for key, value in item.items() if key != "status"}
+    return item
+
 
 def openai_responses_stream_payload(
     model_id: str,
@@ -64,9 +77,14 @@ def openai_responses_stream_payload(
     for message in request.messages:
         if message.provider_native_item is not None:
             # Codex-native input items (tool namespaces, freeform tool
-            # history) re-emit byte-for-byte at their position; route
-            # admission already required every rung to speak this wire.
-            items.append(message.provider_native_item)
+            # history, hosted tool echoes) re-emit byte-for-byte at their
+            # position; route admission already required every rung to speak
+            # this wire. The one exception is an input MESSAGE carrying the
+            # output-only ``status`` a client copied from a prior response:
+            # the input-message schema has no such field and OpenAI answers
+            # 400 "Unknown parameter: 'input[N].status'". Hosted tool items
+            # keep theirs (their schema defines it).
+            items.append(_without_input_message_status(message.provider_native_item))
         elif message.role in {"system", "developer"}:
             if message.content is None:
                 raise ProviderResponseError("instruction messages require text")

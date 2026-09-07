@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 
 from exp.runtime.gateway.contracts import GatewayRequest
+from exp.runtime.models.providers.anthropic_tool_compat import anthropic_rejects_assistant_prefill
 from exp.runtime.models.providers.base import GatewayWireProfile
 from exp.runtime.models.providers.errors import ProviderParameterError
 from exp.runtime.models.providers.reasoning_compat import supported_reasoning_efforts
@@ -106,6 +107,41 @@ def anthropic_reasoning_disengaged(request: GatewayRequest) -> bool:
     thinking_on = config is not None and config.get("type") in {"enabled", "adaptive"}
     effort_on = request.reasoning_effort is not None and request.reasoning_effort != "none"
     return not thinking_on and not effort_on
+
+
+def require_assistant_prefill_supported(
+    profiles: Sequence[GatewayWireProfile], request: GatewayRequest
+) -> None:
+    """Refuse a trailing assistant turn before dispatch on rungs whose model rejects it.
+
+    Anthropic's 4.6+ and 5-generation releases answer assistant prefill with a
+    400 after the request was dispatched and billed for admission. The rungs
+    that carry such a model narrow out here with the same fact stated for the
+    caller; a route with no other rung surfaces it as the request's 400.
+
+    Raises:
+        ProviderParameterError: The final message is an assistant turn and a
+            profile's model refuses prefill.
+    """
+    if not request.messages or request.messages[-1].role != "assistant":
+        return
+    if request.messages[-1].provider_native_item is not None:
+        return
+    for profile in profiles:
+        if profile.dialect not in {
+            "anthropic_messages",
+            "bedrock_converse_stream",
+        } or not anthropic_rejects_assistant_prefill(profile.model_id):
+            continue
+        raise ProviderParameterError(
+            message=(
+                f"{profile.model_id} does not accept an assistant message as the final "
+                "turn (assistant prefill). End the conversation with a user message, or "
+                "choose a model alias that supports prefill."
+            ),
+            param="messages",
+            code="unsupported_parameter",
+        )
 
 
 def mid_conversation_system_present(request: GatewayRequest) -> bool:

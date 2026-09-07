@@ -25,6 +25,9 @@ from exp.runtime.gateway.contracts import (
     StructuredTextFormat,
     ThinkingBlock,
 )
+from exp.runtime.models.providers.anthropic_tool_compat import (
+    anthropic_rejects_assistant_prefill,
+)
 from exp.runtime.models.providers.base import GatewayWireProfile
 from exp.runtime.models.providers.bedrock_requests import converse_body
 from exp.runtime.models.providers.errors import (
@@ -2605,6 +2608,52 @@ def test_context_management_forwards_on_anthropic_and_discloses_elsewhere() -> N
     public, provider = route_generation_parameter_requests((fallback,), request)
     assert "context_management" in public.ignored_parameters
     assert provider.context_management is None
+
+
+def test_assistant_prefill_narrows_out_rungs_whose_model_rejects_it() -> None:
+    """A trailing assistant turn is refused BEFORE dispatch on the Anthropic
+    releases that 400 it (live 2026-09-07: 4.6+ and every 5-generation
+    release), in any id spelling, and passes everywhere else."""
+    request = GatewayRequest(
+        surface=GatewayApiSurface.MESSAGES,
+        messages=(
+            GatewayMessage(role="user", content="Say a colour."),
+            GatewayMessage(role="assistant", content="The colour is"),
+        ),
+        stream=True,
+        include_usage=True,
+    )
+    rejecting = GatewayWireProfile(
+        dialect="anthropic_messages", url="https://anthropic.test", model_id="claude-opus-5"
+    )
+    bedrock = GatewayWireProfile(
+        dialect="bedrock_converse_stream",
+        url="https://bedrock.test",
+        model_id="anthropic.claude-fable-5-1-20260901-v1:0",
+    )
+    accepting = GatewayWireProfile(
+        dialect="anthropic_messages", url="https://anthropic.test", model_id="claude-sonnet-4-5"
+    )
+    for profile in (rejecting, bedrock):
+        with pytest.raises(ProviderParameterError) as prefill:
+            route_generation_parameter_requests((profile,), request)
+        assert prefill.value.param == "messages"
+        assert "assistant prefill" in str(prefill.value)
+        assert profile.model_id in str(prefill.value)
+    public, _provider = route_generation_parameter_requests((accepting,), request)
+    assert public.ignored_parameters == ()
+    # Exact releases only: a later point release is NOT assumed from its
+    # generation, while a dated snapshot and a Bedrock suffix inherit.
+    assert anthropic_rejects_assistant_prefill("claude-opus-5-20260901")
+    assert anthropic_rejects_assistant_prefill("anthropic.claude-sonnet-4-6-v1:0")
+    assert not anthropic_rejects_assistant_prefill("claude-opus-5-1")
+    assert not anthropic_rejects_assistant_prefill("claude-sonnet-5-2")
+    assert not anthropic_rejects_assistant_prefill("claude-sonnet-4-5")
+    # The same conversation ending in a user turn passes on the rejecting rung.
+    user_last = request.model_copy(
+        update={"messages": (*request.messages, GatewayMessage(role="user", content="go on"))}
+    )
+    route_generation_parameter_requests((rejecting,), user_last)
 
 
 def test_mid_conversation_system_stays_positional_on_capable_wires() -> None:

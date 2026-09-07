@@ -5,8 +5,7 @@
 use serde_json::Value;
 
 use super::super::{
-    finish_open_tools, finish_open_tools_truncated, malformed, parse_object, refusal_failure,
-    Normalizer,
+    finish_open_tools, finish_open_tools_truncated, malformed, parse_object, Normalizer,
 };
 use crate::errors::Failure;
 use crate::events::{openai_compatible_usage, require_string, require_u64, Event, ToolAccumulator};
@@ -35,7 +34,15 @@ impl Normalizer {
                 events.push(Event::Usage(usage));
             }
             if self.refusal_seen || matches!(finish, Some("content_filter" | "safety")) {
-                events.push(Event::Failed(refusal_failure()));
+                // A `content_filter`/`safety` finish reason names the category;
+                // a bare visible-refusal delta names none (Unspecified).
+                let reason = match finish {
+                    Some(code @ ("content_filter" | "safety")) => {
+                        crate::stream_errors::refusal_reason(Some(code), None)
+                    }
+                    _ => crate::errors::RefusalReason::Unspecified,
+                };
+                events.push(Event::Failed(Failure::refusal(reason)));
             } else if finish == Some("length") {
                 events.push(Event::Incomplete);
             } else {

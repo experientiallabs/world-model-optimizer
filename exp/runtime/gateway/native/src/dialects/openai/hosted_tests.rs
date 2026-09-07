@@ -326,6 +326,60 @@ fn hosted_progress_before_its_item_fails_with_the_event_named() {
     );
 }
 
+/// The astra cyber-policy kill: a `response.failed` whose error names
+/// `cyber_policy` classifies as a refusal that carries the bounded category
+/// onto BOTH caller surfaces, while the raw provider prose stays ledger-only.
+#[test]
+fn a_cyber_policy_response_failed_carries_the_reason_on_both_surfaces() {
+    let mut normalizer = Normalizer::new(Dialect::OpenAiResponses);
+    let failed = hosted_frame(serde_json::json!({
+        "type": "response.failed",
+        "response": {
+            "status": "failed",
+            "error": {"code": "cyber_policy", "message": "blocked by our cybersecurity policy"},
+        },
+    }));
+    let events = normalizer
+        .feed(&failed)
+        .expect("failed terminal normalizes");
+    let failure = match events.as_slice() {
+        [Event::Failed(failure)] => failure.clone(),
+        other => panic!("unexpected events: {other:?}"),
+    };
+    assert_eq!(failure.failure_class, crate::errors::FailureClass::Refusal);
+    assert_eq!(
+        failure.refusal_reason,
+        Some(crate::errors::RefusalReason::CyberPolicy)
+    );
+    // The raw provider sentence reaches the ledger detail only.
+    assert!(failure
+        .provider_detail
+        .as_deref()
+        .is_some_and(|detail| detail.contains("cyber_policy")));
+
+    let public = failure.public_error();
+    assert_eq!(public.status_code, 400);
+    assert_eq!(public.code, "refusal");
+    assert_eq!(
+        public.message,
+        "provider refused the request: cybersecurity policy"
+    );
+    // Chat / Responses surface (OpenAI envelope).
+    let chat_body = public.json_body();
+    assert_eq!(chat_body["error"]["refusal_reason"], "cyber_policy");
+    assert_eq!(chat_body["error"]["code"], "refusal");
+    assert!(!chat_body
+        .to_string()
+        .contains("blocked by our cybersecurity"));
+    // Messages surface (Anthropic envelope).
+    let messages_body = crate::encode_messages::anthropic_error_body(&public);
+    assert_eq!(messages_body["error"]["refusal_reason"], "cyber_policy");
+    assert_eq!(messages_body["error"]["type"], "invalid_request_error");
+    assert!(!messages_body
+        .to_string()
+        .contains("blocked by our cybersecurity"));
+}
+
 /// A failed terminal still folds the usage the provider billed.
 #[test]
 fn a_failed_terminal_reports_its_billed_usage() {

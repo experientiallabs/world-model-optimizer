@@ -62,6 +62,9 @@ fn a_text_less_refusal_is_an_invalid_request_error_on_the_messages_surface() {
             "error": {
                 "type": "invalid_request_error",
                 "message": "provider refused the request",
+                // A refusal with no named reason still carries the category,
+                // as `unspecified`, on the Anthropic envelope.
+                "refusal_reason": "unspecified",
             },
         })
     );

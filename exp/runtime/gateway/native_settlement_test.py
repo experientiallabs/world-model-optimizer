@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from exp.runtime.gateway.contracts import GatewayEventKind, GatewayFailureClass
+from exp.runtime.gateway.contracts import (
+    GatewayEventKind,
+    GatewayFailureClass,
+    GatewayRefusalReason,
+)
 from exp.runtime.gateway.native_settlement import (
     _usage_from_payload,  # noqa: PLC2701 - direct unit coverage for normalization.
     first_token_at_from_settlement,
@@ -120,6 +124,40 @@ def test_terminal_from_settlement_carries_the_provider_detail() -> None:
     )
     assert blank is not None
     assert blank.provider_detail is None
+
+
+def test_terminal_from_settlement_carries_the_refusal_reason() -> None:
+    """A refusal settlement threads the bounded category through, and an
+    unknown token fails closed to None instead of raising."""
+    _terminal, failure = terminal_from_settlement(
+        {
+            "outcome": "failed",
+            "usage": None,
+            "tool_names": [],
+            "failure": {
+                "failure_class": "refusal",
+                "safe_message": "provider refused the request: cybersecurity policy",
+                "refusal_reason": "cyber_policy",
+            },
+        }
+    )
+    assert failure is not None
+    assert failure.refusal_reason is GatewayRefusalReason.CYBER_POLICY
+
+    _t, unknown = terminal_from_settlement(
+        {
+            "outcome": "failed",
+            "usage": None,
+            "tool_names": [],
+            "failure": {
+                "failure_class": "refusal",
+                "safe_message": "provider refused the request",
+                "refusal_reason": "reason_a_stale_worker_does_not_know",
+            },
+        }
+    )
+    assert unknown is not None
+    assert unknown.refusal_reason is None
 
 
 def test_customer_owned_failures_settle_as_the_callers_invalid_request() -> None:

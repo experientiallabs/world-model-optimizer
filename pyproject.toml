@@ -8,7 +8,7 @@ requires-python = ">=3.12"
 dependencies = [
     # Cross-platform advisory locking for durable registries edited in place. Declared directly
     # because `exp.common.core.locks` imports it and Unix-only `fcntl` is not a portable boundary.
-    "exp-gateway-native>=0.3.42,<0.4",  # compiled gateway data plane; checkouts build it via [tool.uv.sources]
+    "exp-gateway-native>=0.3.43,<0.4",  # compiled gateway data plane; checkouts build it via [tool.uv.sources]
     "filelock>=3.12",
     "typer>=0.16",
     "click>=8.2",  # pins no_args_is_help semantics: help + usage-error exit 2 (<8.2 exited 0)

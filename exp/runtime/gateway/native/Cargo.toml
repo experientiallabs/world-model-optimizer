@@ -1,6 +1,6 @@
 [package]
 name = "exp-gateway-native"
-version = "0.3.42"
+version = "0.3.43"
 edition = "2021"
 description = "Rust data plane for the Experiential local gateway (PoC), embedded as a PyO3 extension."
 license = "Apache-2.0"

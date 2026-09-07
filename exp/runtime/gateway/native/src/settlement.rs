@@ -85,6 +85,10 @@ fn settle_argument(
             // class only); accounting persists it on the failed-attempt row so
             // an operator sees WHY the provider refused the call.
             "provider_detail": failure.provider_detail,
+            // The bounded refusal category (refusal class only), so the
+            // control plane can count refusals by reason without parsing the
+            // free-form provider_detail.
+            "refusal_reason": failure.refusal_reason.map(|reason| reason.as_str()),
             // The customer's own BYOK credential/account failure: the ledger
             // files it as the caller's invalid request (see
             // native_accounting.ledger_failure).

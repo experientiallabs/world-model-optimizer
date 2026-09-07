@@ -622,11 +622,17 @@ pub fn simplified_event(event: &Event) -> Value {
         Event::Completed | Event::StoppedAtSequence(_) => serde_json::json!({"kind": "completed"}),
         Event::Incomplete => serde_json::json!({"kind": "incomplete"}),
         Event::PausedTurn => serde_json::json!({"kind": "paused_turn"}),
-        Event::Failed(failure) => serde_json::json!({
-            "kind": "failed",
-            "failure_class": failure.failure_class.as_str(),
-            "safe_message": failure.safe_message,
-        }),
+        Event::Failed(failure) => {
+            let mut value = serde_json::json!({
+                "kind": "failed",
+                "failure_class": failure.failure_class.as_str(),
+                "safe_message": failure.safe_message,
+            });
+            if let Some(reason) = failure.refusal_reason {
+                value["refusal_reason"] = serde_json::json!(reason.as_str());
+            }
+            value
+        }
     }
 }
 

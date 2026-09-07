@@ -130,7 +130,9 @@ GEMINI_PROMPT_BLOCK_EVENTS: tuple[JsonObject, ...] = (
     {
         "kind": "failed",
         "failure_class": "refusal",
-        "safe_message": "provider refused the request",
+        # PROHIBITED_CONTENT names the content-policy category.
+        "safe_message": "provider refused the request: content policy",
+        "refusal_reason": "content_policy",
     },
 )
 
@@ -230,11 +232,14 @@ def _simplified(event: GatewayEvent) -> JsonObject:
     if event.kind is GatewayEventKind.INCOMPLETE:
         return {"kind": "incomplete"}
     assert event.failure is not None
-    return {
+    failed: JsonObject = {
         "kind": "failed",
         "failure_class": event.failure.failure_class.value,
         "safe_message": event.failure.safe_message,
     }
+    if event.failure.refusal_reason is not None:
+        failed["refusal_reason"] = event.failure.refusal_reason.value
+    return failed
 
 
 def test_native_gemini_normalizer_matches_the_golden_fixture() -> None:
@@ -253,7 +258,8 @@ def test_native_gemini_normalizer_matches_the_golden_fixture() -> None:
         {
             "kind": "failed",
             "failure_class": "refusal",
-            "safe_message": "provider refused the request",
+            "safe_message": "provider refused the request: content policy",
+            "refusal_reason": "content_policy",
         }
     ]
 
@@ -494,7 +500,9 @@ def test_native_bedrock_normalizer_matches_the_golden_fixture() -> None:
         {
             "kind": "failed",
             "failure_class": "refusal",
-            "safe_message": "provider refused the request",
+            # guardrail_intervened is a content-policy verdict.
+            "safe_message": "provider refused the request: content policy",
+            "refusal_reason": "content_policy",
         },
     ]
 

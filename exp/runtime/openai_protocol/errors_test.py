@@ -6,7 +6,11 @@ from datetime import UTC, datetime
 
 import pytest
 
-from exp.runtime.gateway.contracts import GatewayFailure, GatewayFailureClass
+from exp.runtime.gateway.contracts import (
+    GatewayFailure,
+    GatewayFailureClass,
+    GatewayRefusalReason,
+)
 from exp.runtime.models.providers.errors import (
     ProviderParameterError,
     UnsupportedReasoningEffortError,
@@ -18,6 +22,14 @@ from exp.runtime.openai_protocol.errors import (
     OpenAIProtocolError,
     public_failure_error,
 )
+
+
+def _error_body(error: OpenAIProtocolError) -> dict[str, object]:
+    """The inner ``error`` object of a public error envelope, narrowed to a dict."""
+    body = error.json_body()
+    inner = body["error"]
+    assert isinstance(inner, dict)
+    return inner
 
 
 def test_monthly_quota_failure_uses_openai_insufficient_quota_shape() -> None:
@@ -112,6 +124,47 @@ def test_refusal_failure_is_a_request_error_not_a_routing_failure() -> None:
     assert error.detail.type == "invalid_request_error"
     assert error.detail.message == "provider refused the request"
     assert error.retry_after_seconds is None
+    # A refusal with no named reason is explicitly unspecified so a client can
+    # always read the field.
+    assert error.detail.refusal_reason is GatewayRefusalReason.UNSPECIFIED
+    assert _error_body(error)["refusal_reason"] == "unspecified"
+
+
+def test_refusal_error_carries_its_bounded_category() -> None:
+    """A classified refusal names its category on the public error and body,
+    while the status, code, and type stay the same for every existing client."""
+    for reason, wire in [
+        (GatewayRefusalReason.CYBER_POLICY, "cyber_policy"),
+        (GatewayRefusalReason.CBRN, "cbrn"),
+        (GatewayRefusalReason.CONTENT_POLICY, "content_policy"),
+        (GatewayRefusalReason.RECITATION, "recitation"),
+        (GatewayRefusalReason.DATA_INSPECTION, "data_inspection"),
+    ]:
+        error = public_failure_error(
+            GatewayFailure(
+                failure_class=GatewayFailureClass.REFUSAL,
+                safe_message="provider refused the request: content policy",
+                refusal_reason=reason,
+            )
+        )
+        assert error.status_code == 400
+        assert error.detail.code == "refusal"
+        assert error.detail.type == "invalid_request_error"
+        assert error.detail.refusal_reason is reason
+        assert _error_body(error)["refusal_reason"] == wire
+
+
+def test_non_refusal_error_omits_the_refusal_reason_field() -> None:
+    """The refusal_reason field is additive: every other error keeps its exact
+    envelope shape with no refusal_reason key at all."""
+    error = public_failure_error(
+        GatewayFailure(
+            failure_class=GatewayFailureClass.THROTTLED,
+            safe_message="provider throttled the request",
+        )
+    )
+    assert error.detail.refusal_reason is None
+    assert "refusal_reason" not in _error_body(error)
 
 
 def test_guardrail_failure_uses_content_filter_shape() -> None:

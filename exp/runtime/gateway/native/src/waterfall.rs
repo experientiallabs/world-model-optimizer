@@ -324,6 +324,9 @@ pub async fn acquire_attempt(ctx: &WaterfallContext<'_>, guard: &mut AttemptGuar
                 // Ownership survives the round trip too: the echoed exhaustion
                 // must still render as the customer's 400.
                 "customer_owned": failure.customer_owned,
+                // The refusal category survives the round trip so an exhausted
+                // refusal ladder still names its reason to the caller.
+                "refusal_reason": failure.refusal_reason.map(|reason| reason.as_str()),
             })),
         }));
         let started_text = match ctx.bridge.call("start_attempt", argument).await {

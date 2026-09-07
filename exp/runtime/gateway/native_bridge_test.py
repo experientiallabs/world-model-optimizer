@@ -628,7 +628,11 @@ def test_hunyuan_tool_turn_reasoning_round_trips_as_a_sealed_carrier(
     assert json.loads(modified.value.public_error_json)["param"] == "messages.reasoning_content"
 
 
-def test_hunyuan_plain_turn_plaintext_reasoning_replays_verbatim(tmp_path: Path) -> None:
+@pytest.mark.parametrize("thinking", ["", "The user wants a directory listing; ls is the command."])
+def test_hunyuan_plain_turn_plaintext_reasoning_replays_verbatim(
+    tmp_path: Path,
+    thinking: str,
+) -> None:
     """A Terminus-shaped loop round-trips the plaintext the rung itself returned.
 
     Terminus-2 parses commands out of assistant TEXT and feeds the output back
@@ -646,7 +650,6 @@ def test_hunyuan_plain_turn_plaintext_reasoning_replays_verbatim(tmp_path: Path)
     control = NativeControlPlane(
         load_gateway_components(tmp_path, environment={"TEST_PROVIDER_KEY": "k"})
     )
-    thinking = "The user wants a directory listing; ls is the command."
     body = json.dumps(
         {
             "model": "coding",
@@ -751,7 +754,11 @@ def test_hunyuan_mixed_carrier_and_plaintext_history_round_trips(tmp_path: Path)
     assert messages[3]["reasoning_content"] == plain
 
 
-def test_plaintext_reasoning_degrades_on_a_route_without_exposure(tmp_path: Path) -> None:
+@pytest.mark.parametrize("reasoning", ["", "private"])
+def test_plaintext_reasoning_degrades_on_a_route_without_exposure(
+    tmp_path: Path,
+    reasoning: str,
+) -> None:
     """A rung that cannot replay plaintext reasoning drops it with disclosure.
 
     The block is baked into the caller's transcript (an earlier exposed-rung
@@ -767,7 +774,7 @@ def test_plaintext_reasoning_degrades_on_a_route_without_exposure(tmp_path: Path
             "model": "coding",
             "messages": [
                 {"role": "user", "content": "hi"},
-                {"role": "assistant", "content": "x", "reasoning_content": "private"},
+                {"role": "assistant", "content": "x", "reasoning_content": reasoning},
                 {"role": "user", "content": "again"},
             ],
         }

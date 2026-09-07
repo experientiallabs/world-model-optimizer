@@ -430,18 +430,17 @@ exceeds the largest declared context window on the route. Anything under the bou
 and is left to the provider's precise count; output budgets are never refused here, a too-small
 ceiling is an `incomplete` answer.
 
-Exposure-gated reasoning rungs (Tencent Hunyuan, DeepSeek — rows the catalog stamps
-`reasoning_output_exposed`) return the model's plaintext `reasoning_content` on every non-tool
-Chat turn, and the caller may echo that text back verbatim on later assistant turns: the
-decoder carries it as an `exposed_reasoning_content` block, route narrowing forwards it only to
-rungs that expose their reasoning (a route with no exposing rung rejects it by name as
-`messages.reasoning_content`; a mixed waterfall prefers the exposing rung and discloses the drop
-on the others), and the payload builder writes it back onto the wire unchanged. The provider's
-own API accepts and does not validate that text, so it is ordinary caller-owned history, exactly
-like a prior assistant `content`. A TOOL turn's reasoning still round-trips only as the sealed,
-rung-pinned carrier (`x-experiential-hunyuan-reasoning-v1:`), which the same decoder recognizes
-by prefix. This is what lets a Terminus-style loop (commands parsed from assistant text, output
-fed back as user messages) and Harbor's interleaved-thinking replay both preserve thinking.
+Exposure-gated reasoning rungs (Tencent Hunyuan and DeepSeek, rows stamped
+`reasoning_output_exposed`) accept caller-owned plaintext `reasoning_content` on assistant
+history, including tool-call turns. The decoder preserves the text verbatim, including an
+explicitly empty string: a provider can require the field even when the turn performed no
+reasoning. Missing or null values remain absent. Plaintext is bounded to 8,388,608 characters;
+values exceeding that limit receive a named error with the limit and a retry instruction.
+Route narrowing prefers exposing rungs and discloses
+`messages.reasoning_content->dropped(unsupported_by_provider)` when a rung cannot replay it,
+including routes with no exposing rung. Gateway-issued carriers are recognized by their
+scheme prefix and retain strict parsing, authentication, and route binding; malformed carriers
+never become plaintext history.
 
 Route admission preserves caller capabilities in three verbatim-preference layers before any
 coercion: operationally dead rungs are skipped (`dispatchable_route_profiles`), generation

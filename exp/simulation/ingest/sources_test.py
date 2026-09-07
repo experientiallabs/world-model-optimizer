@@ -32,6 +32,30 @@ _MINIMAL_VENDOR_EXPORTS: dict[str, JsonValue] = {
             }
         ]
     },
+    "datadog": [
+        {
+            "trace_id": "trace-1",
+            "span_id": "span-0",
+            "name": "answer",
+            "start": 1_788_516_258_420_588_000,
+            "duration": 130_000,
+            "meta": {
+                "span.kind": "llm",
+                "model_name": "gpt-test",
+                "model_provider": "openai",
+            },
+            "metrics": {"input_tokens": 10, "output_tokens": 20},
+            "meta_struct": {
+                "_llmobs": {
+                    "meta": {
+                        "input": {"messages": [_USER]},
+                        "output": {"content": "here is the plan"},
+                        "span": {"kind": "llm"},
+                    }
+                }
+            },
+        }
+    ],
     "langfuse": {
         "id": "trace-1",
         "timestamp": "2026-02-01T00:00:00Z",
@@ -147,6 +171,7 @@ def test_declared_sources_are_the_supported_set() -> None:
     assert CANONICAL_TRACE_SOURCES == (
         "braintrust",
         "chat-json",
+        "datadog",
         "langfuse",
         "langsmith",
         "mastra",

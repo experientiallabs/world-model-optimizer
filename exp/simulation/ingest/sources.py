@@ -19,6 +19,7 @@ from typing import Protocol
 
 from exp.simulation.ingest.braintrust import BRAINTRUST_SOURCE
 from exp.simulation.ingest.chat_json import CHAT_JSON_SOURCE
+from exp.simulation.ingest.datadog import DATADOG_SOURCE
 from exp.simulation.ingest.langfuse import LANGFUSE_SOURCE
 from exp.simulation.ingest.langsmith import LANGSMITH_SOURCE
 from exp.simulation.ingest.mastra import MASTRA_SOURCE
@@ -53,6 +54,7 @@ class _TraceFileLoader(Protocol):
 _LOADERS: dict[str, _TraceFileLoader] = {
     "braintrust": BRAINTRUST_SOURCE.load,
     "chat-json": CHAT_JSON_SOURCE.load,
+    "datadog": DATADOG_SOURCE.load,
     "langfuse": LANGFUSE_SOURCE.load,
     "langsmith": LANGSMITH_SOURCE.load,
     "mastra": MASTRA_SOURCE.load,

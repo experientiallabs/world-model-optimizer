@@ -1154,9 +1154,13 @@ def test_sweep_replays_the_original_completed_settlement(tmp_path: Path) -> None
 
 def test_abandoned_inflight_attempts_are_swept_after_the_deadline(tmp_path: Path) -> None:
     """An admitted request the data plane never settles is closed by the sweep."""
-    control, raw_key = _control_plane(tmp_path, request_timeout_seconds=0.01)
+    # Expiry is deterministic: the deadline moves into the past, the same
+    # pattern the accounting tests use, so no sleep or timeout tuning is needed.
+    control, raw_key = _control_plane(tmp_path)
     abandoned = _admit_started(control, raw_key, _chat_body())
-    time.sleep(0.05)
+    entry = control._accounting.entry(str(abandoned["request_id"]))  # noqa: SLF001 - fault injection for the test.
+    assert entry is not None
+    entry.deadline_monotonic = time.monotonic() - 60.0
     with mock.patch("exp.runtime.gateway.native_accounting._SWEEP_GRACE_SECONDS", 0.0):
         second = _admit(control, raw_key, _chat_body())
     assert control._accounting.entry(str(abandoned["request_id"])) is None  # noqa: SLF001

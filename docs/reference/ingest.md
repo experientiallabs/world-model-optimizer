@@ -14,6 +14,7 @@ loader. Each source is declared, never guessed:
 | `mastra` | Mastra spans, or a `spans` envelope. |
 | `phoenix` | Phoenix and OpenInference spans, native nested, flat dotted, or OTLP JSON. |
 | `chat-json` | OpenAI-style chat conversations, one object, an array, or bare message arrays. |
+| `datadog` | Datadog LLM Observability spans, a v0.4 array of trace arrays, or a `spans` envelope. |
 
 Every file source accepts JSON or JSONL. A malformed JSONL line is never skipped silently: it is
 retained as an explicit normalization issue. Every normalized trace keeps the immutable source

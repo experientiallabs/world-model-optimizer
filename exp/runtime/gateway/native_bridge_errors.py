@@ -116,6 +116,11 @@ _ATTACHMENT_CAPABILITY_MESSAGES = {
         "selected model route. Send the media inline or choose a model alias "
         "served by the provider that holds the upload."
     ),
+    "forced_tool_choice": (
+        "The selected model rejects a forced tool_choice ('required' or a named tool), "
+        "and the gateway will not silently weaken it to 'auto'. Send tool_choice 'auto' "
+        "(the model may still call the tool) or choose a different model alias."
+    ),
 }
 """Why an attachment was refused, since the field itself is the caller's message.
 

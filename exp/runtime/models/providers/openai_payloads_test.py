@@ -3,6 +3,7 @@ are exercised in streaming_requests_test.py."""
 
 from __future__ import annotations
 
+from exp.common.core.artifacts import JsonObject
 from exp.runtime.gateway.contracts import GatewayApiSurface, GatewayMessage, GatewayRequest
 from exp.runtime.models.providers.openai_payloads import (
     openai_compatible_stream_payload,
@@ -61,3 +62,38 @@ def test_responses_wire_keeps_the_developer_role_it_defines() -> None:
     items = payload["input"]
     assert isinstance(items, list)
     assert {"role": "developer", "content": "Now be terse."} in items
+
+
+def test_replayed_responses_items_drop_the_output_only_status_field() -> None:
+    """A replayed input MESSAGE loses the output-only ``status`` a client copied
+    from a prior response (OpenAI: "Unknown parameter: 'input[N].status'");
+    every other item, hosted tool echoes included, re-emits verbatim."""
+    replayed: JsonObject = {
+        "type": "message",
+        "role": "user",
+        "content": [{"type": "input_text", "text": "run it again"}],
+        "status": "completed",
+    }
+    hosted: JsonObject = {"type": "web_search_call", "id": "ws_1", "status": "completed"}
+    request = GatewayRequest(
+        surface=GatewayApiSurface.RESPONSES,
+        messages=(
+            GatewayMessage(role="user", content="run it"),
+            GatewayMessage(role="user", provider_native_item=replayed),
+            GatewayMessage(role="assistant", provider_native_item=hosted),
+        ),
+        stream=True,
+        include_usage=True,
+    )
+    payload = openai_responses_stream_payload("gpt-6-astra", request, supports_temperature=False)
+    items = payload["input"]
+    assert isinstance(items, list)
+    assert {
+        "type": "message",
+        "role": "user",
+        "content": [{"type": "input_text", "text": "run it again"}],
+    } in items
+    # A hosted tool echo keeps its status: that schema defines the field.
+    assert hosted in items
+    # The caller's own item object is left untouched.
+    assert replayed["status"] == "completed"

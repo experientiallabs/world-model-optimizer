@@ -227,6 +227,28 @@ def test_audio_capability_error_explains_the_refusal(
     assert "audio_input" not in error.detail.message
 
 
+def test_forced_tool_choice_refusal_tells_the_caller_what_to_send_instead() -> None:
+    """The forced-choice refusal names the field AND the way out ('auto'), on
+    every surface: the generic "remove the unsupported field" wording left 64
+    callers in two hours (2026-09-06) with nothing actionable."""
+    for surface in (
+        GatewayApiSurface.CHAT_COMPLETIONS,
+        GatewayApiSurface.RESPONSES,
+        GatewayApiSurface.MESSAGES,
+    ):
+        error = _public_capability_error(
+            ProviderCapabilityError(capability="forced_tool_choice"),
+            surface,
+            public_stream=True,
+            public_tools=True,
+        )
+        assert error.status_code == 400
+        assert error.detail.param == "tool_choice"
+        assert error.detail.code == "unsupported_capability"
+        assert "tool_choice 'auto'" in error.detail.message
+        assert "forced_tool_choice" not in error.detail.message
+
+
 def test_public_capability_error_never_exposes_internal_labels() -> None:
     """Internal route requirements fail against model without leaking their names."""
     error = _public_capability_error(

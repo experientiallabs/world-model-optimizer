@@ -11,6 +11,7 @@ call the provider is known to 400.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator, Mapping
 
 from pydantic import JsonValue
@@ -51,6 +52,47 @@ def anthropic_rejects_forced_tool_choice(model_id: str) -> bool:
     return any(
         normalized == release or normalized.startswith(f"{release}-")
         for release in _ANTHROPIC_FORCED_TOOL_CHOICE_REJECTING_RELEASES
+    )
+
+
+_ANTHROPIC_PREFILL_REJECTING_RELEASES = (
+    "claude-opus-4-6",
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-sonnet-4-6",
+    "claude-sonnet-5",
+    "claude-opus-5",
+    "claude-fable-5",
+    "claude-fable-5-1",
+)
+"""Exact releases that answer a trailing assistant turn with a 400 by name.
+
+"This model does not support assistant message prefill. The conversation
+must end with a user message." Live-verified with the house key on
+2026-09-07: every release above rejects a two-turn user/assistant prefill,
+while claude-sonnet-4-5 and claude-haiku-4-5 answer it. Entries are exact
+RELEASES matched as a whole id segment (so a dated snapshot and a Bedrock
+``anthropic.claude-opus-5-v1:0`` spelling inherit their release's rule) and
+never generation prefixes: a new point release must be probed and added
+deliberately. The ledger for the 48h to 2026-09-07 00:30 UTC carried 128
+such provider 400s across 64 orgs, each dispatched before the caller learned
+the conversation shape was the problem."""
+
+
+def anthropic_rejects_assistant_prefill(model_id: str) -> bool:
+    """Return whether one Anthropic model refuses an assistant message as the final turn.
+
+    Args:
+        model_id: Exact provider model identifier, in any of the Anthropic,
+            Bedrock, or Vertex spellings.
+
+    Returns:
+        ``True`` when the model answers assistant prefill with a 400.
+    """
+    normalized = model_id.lower().replace(".", "-").replace("_", "-")
+    return any(
+        re.search(rf"(^|[^a-z0-9]){re.escape(release)}([^a-z0-9]|$)", normalized) is not None
+        for release in _ANTHROPIC_PREFILL_REJECTING_RELEASES
     )
 
 

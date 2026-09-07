@@ -22,6 +22,7 @@ from typing import cast
 
 from exp.common.core.artifacts import JsonObject
 from exp.common.models.gateway_catalog import ExactModelDeployment
+from exp.runtime.gateway.attempt_tokens import worst_case_attempt_tokens
 from exp.runtime.gateway.boundary import boundary_protocol_error
 from exp.runtime.gateway.budgets import (
     BudgetReservationRejected,
@@ -490,6 +491,13 @@ class NativeAttemptAccounting:
                 policy_sheds=policy_sheds,
                 forced_overflow=forced_overflow,
             )
+            # Reserve the worst-case in-flight tokens alongside the worst-case
+            # cost. The platform's token windows (promo free-tier, strict; org
+            # rate limits, soft) count these dispatched reservations, so a
+            # concurrent burst binds instead of leaking past the cap.
+            reserved_input_tokens, reserved_output_tokens = worst_case_attempt_tokens(
+                entry.request, deployment
+            )
             try:
                 attempt_id = self._write_ledger.start_attempt(
                     snapshot=route.snapshot,
@@ -499,6 +507,8 @@ class NativeAttemptAccounting:
                     maximum_cost_micro_usd=maximum_attempt_cost_micro_usd(
                         entry.request, deployment
                     ),
+                    reserved_input_tokens=reserved_input_tokens,
+                    reserved_output_tokens=reserved_output_tokens,
                     route_reason=route.route_reason,
                     fallback_reason=route.fallback_reason,
                     dispatch_reason=dispatch_reason,

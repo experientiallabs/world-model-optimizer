@@ -12,13 +12,14 @@ from typing import assert_never
 
 from pydantic import Field, model_validator
 
-from exp.common.core.artifacts import ContractModel, canonical_json_bytes, stable_id
+from exp.common.core.artifacts import ContractModel, stable_id
 from exp.common.models.gateway_catalog import (
     CatalogSnapshotDigestError,
     ExactModelDeployment,
     ExactModelPool,
     read_pinned_normalized_snapshot,
 )
+from exp.runtime.gateway.attempt_tokens import worst_case_attempt_tokens
 from exp.runtime.gateway.auth import utc_text
 from exp.runtime.gateway.contracts import GatewayRequest
 from exp.runtime.gateway.embeddings_contracts import (
@@ -28,7 +29,6 @@ from exp.runtime.gateway.embeddings_contracts import (
 )
 from exp.runtime.gateway.images_contracts import ImagesRequest, images_ceiling_micro_usd
 from exp.runtime.gateway.interfaces import GatewayClock
-from exp.runtime.gateway.replay_identity import provider_replay_authority
 from exp.runtime.gateway.sqlite.migrations import initialize_database, persistent_connection
 from exp.runtime.gateway.sqlite.store import SystemGatewayClock
 
@@ -39,7 +39,6 @@ MAXIMUM_MICRO_USD = 9_223_372_036_854_775_807
 # per-attempt reservation, not a wire capability: it never rejects or clamps a
 # caller's requested output. Settlement always charges actual tokens, so a
 # longer real response simply over-spends its reservation.
-DEFAULT_RESERVATION_OUTPUT_TOKENS = 32_768
 
 
 class BudgetScopeKind(StrEnum):
@@ -573,45 +572,7 @@ def _completion_attempt_cost_micro_usd(
     bounded by the context window. Cached and reasoning tokens are subsets of the
     totals, so the worst case charges the higher rate for the whole leg.
     """
-    input_tokens = len(canonical_json_bytes(request))
-    # Excluded provider carriers (replayed reasoning, native items, verbatim
-    # configurations) are provider-read input the plain serialization does
-    # not cover; their envelope bytes keep the bound an upper bound so a
-    # carrier-heavy request cannot cross a pricing threshold unreserved.
-    replay_envelope = provider_replay_authority(request)
-    if replay_envelope is not None:
-        input_tokens += len(canonical_json_bytes(replay_envelope))
-    output_tokens = request.maximum_output_tokens
-    deployment_ceiling = (
-        deployment.capabilities.maximum_output_tokens
-        if deployment.capabilities is not None
-        else None
-    )
-    # The physical call can never emit more than the deployment's own ceiling,
-    # so clamp the caller's requested output to it before the worst case. A huge
-    # or unbounded caller value would otherwise inflate the estimate past
-    # MAXIMUM_MICRO_USD, return None, and mis-terminalize a fundable request as
-    # a quota refusal. Settlement still charges actual tokens, not this bound.
-    if output_tokens is None:
-        output_tokens = deployment_ceiling
-    elif deployment_ceiling is not None:
-        output_tokens = min(output_tokens, deployment_ceiling)
-    if output_tokens is None:
-        # No caller value and no deployment ceiling: reserve against a realistic
-        # default instead of failing closed. An output bound is not a price, so
-        # its absence must not unprice an otherwise fully priced route. The
-        # model can never emit more than its context window, so a smaller known
-        # window still bounds the default.
-        context_window = (
-            deployment.capabilities.context_window_tokens
-            if deployment.capabilities is not None
-            else None
-        )
-        output_tokens = (
-            min(DEFAULT_RESERVATION_OUTPUT_TOKENS, context_window)
-            if context_window is not None
-            else DEFAULT_RESERVATION_OUTPUT_TOKENS
-        )
+    input_tokens, output_tokens = worst_case_attempt_tokens(request, deployment)
     prices = deployment.gateway.prices
     capabilities = deployment.gateway.capabilities
     # The byte bound never undercounts tokens, so a request whose canonical

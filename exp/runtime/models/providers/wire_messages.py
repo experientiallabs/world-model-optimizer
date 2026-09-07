@@ -256,6 +256,47 @@ def _anthropic_multimodal_blocks(message: GatewayMessage) -> list[JsonObject]:
     return blocks
 
 
+_UNMARKABLE_REPLAY_BLOCKS = frozenset({"thinking", "redacted_thinking"})
+
+
+def ordered_blocks_with_markers(blocks: tuple[JsonObject, ...]) -> list[JsonObject]:
+    """Replay an ordered turn: empty text drops, its cache marker survives.
+
+    Same rule as :func:`retained_cache_marked_blocks`, extended to a turn that
+    mixes block kinds: a displaced marker lands on the closest retained block
+    before it that can carry one (text or tool_use; the wire refuses markers
+    on thinking blocks), else on the first such block after it. Signed
+    blocks themselves are never touched.
+    """
+    retained: list[JsonObject] = []
+    displaced: object | None = None
+
+    def markable(block: JsonObject) -> bool:
+        return block.get("type") not in _UNMARKABLE_REPLAY_BLOCKS
+
+    for block in blocks:
+        if block.get("type") == "text" and not block.get("text"):
+            marker = block.get("cache_control")
+            if marker is None:
+                continue
+            carrier = next(
+                (index for index in range(len(retained) - 1, -1, -1) if markable(retained[index])),
+                None,
+            )
+            if carrier is not None:
+                if "cache_control" not in retained[carrier]:
+                    retained[carrier] = {**retained[carrier], "cache_control": marker}
+            else:
+                displaced = marker
+            continue
+        kept = dict(block)
+        if displaced is not None and markable(kept) and "cache_control" not in kept:
+            kept["cache_control"] = displaced
+            displaced = None
+        retained.append(kept)
+    return retained
+
+
 def _reasoning_intact(message: GatewayMessage) -> bool:
     """Whether the flattened reasoning still holds every thinking block the caller sent.
 
@@ -333,7 +374,7 @@ def anthropic_blocks(message: GatewayMessage) -> tuple[str, list[JsonObject]]:
         # verifies the latest assistant message against its signatures, and
         # interleaved thinking puts thinking between tool_use blocks, an
         # order the flattened fields below cannot express.
-        return "assistant", [dict(block) for block in message.provider_anthropic_blocks]
+        return "assistant", ordered_blocks_with_markers(message.provider_anthropic_blocks)
     blocks: list[JsonObject] = []
     for reasoning in message.provider_reasoning:
         if reasoning.kind == "exposed_reasoning_content":

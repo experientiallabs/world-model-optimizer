@@ -745,9 +745,9 @@ def _gateway_messages(message: _Message, index: int) -> list[GatewayMessage]:
     content_parts: list[MessageContentPart] = []
     tool_calls: list[ToolCall] = []
     reasoning: list[ProviderReasoningBlock] = []
-    # The segment's blocks as the caller sent them (empty text dropped, as the
-    # wire rejects it): an assistant turn carrying thinking replays in this
-    # order on the Anthropic wire so its signatures still verify.
+    # The segment's blocks as the caller sent them: an assistant turn carrying
+    # thinking replays in this order on the Anthropic wire so its signatures
+    # still verify (empty text drops at emission, its cache marker migrated).
     ordered_blocks: list[JsonObject] = []
 
     def flush() -> None:
@@ -805,6 +805,10 @@ def _gateway_messages(message: _Message, index: int) -> list[GatewayMessage]:
             # rejects a standalone empty block, so it never becomes a part.
             if block.text:
                 content_parts.append(TextContentPart(text=block.text))
+            # The ordered replay keeps an empty text block only for the cache
+            # marker it may carry; emission drops the block and migrates the
+            # marker (``ordered_blocks_with_markers``).
+            if block.text or block.cache_control is not None:
                 ordered_blocks.append(
                     block.model_dump(mode="json", exclude_none=True, exclude={"citations"})
                 )

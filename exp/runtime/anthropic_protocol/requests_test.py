@@ -199,6 +199,30 @@ def test_interleaved_thinking_turn_keeps_its_block_order_for_replay() -> None:
     assert role == "assistant"
     assert wire == blocks
 
+    # An empty text block carrying Claude Code's cache marker drops (the wire
+    # rejects it) and its breakpoint lands on the closest prior block that can
+    # carry one, skipping the signed thinking block.
+    marked = decode_messages(
+        _body(
+            messages=[
+                {"role": "user", "content": "go"},
+                {
+                    "role": "assistant",
+                    "content": [
+                        *blocks[:3],
+                        {"type": "text", "text": "", "cache_control": {"type": "ephemeral"}},
+                        *blocks[3:],
+                    ],
+                },
+            ]
+        )
+    )
+    _role, migrated = anthropic_blocks(marked.request.messages[1])
+    assert len(migrated) == len(blocks)
+    assert migrated[1] == {**blocks[1], "cache_control": {"type": "ephemeral"}}
+    assert migrated[2] == blocks[2]
+    assert [block["type"] for block in migrated] == [block["type"] for block in blocks]
+
     # A turn without thinking has no signatures to protect and stays flattened.
     plain = decode_messages(
         _body(

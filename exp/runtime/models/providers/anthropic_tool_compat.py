@@ -90,8 +90,16 @@ def anthropic_rejects_assistant_prefill(model_id: str) -> bool:
         ``True`` when the model answers assistant prefill with a 400.
     """
     normalized = model_id.lower().replace(".", "-").replace("_", "-")
+    # A listed release matches as a whole segment: what follows may be the
+    # end, a non-alphanumeric separator, a dated snapshot (8+ digits), or a
+    # provider suffix (``-v1:0``), but never a SHORT digit group, which is a
+    # different point release (``claude-opus-5-1`` is not ``claude-opus-5``).
     return any(
-        re.search(rf"(^|[^a-z0-9]){re.escape(release)}([^a-z0-9]|$)", normalized) is not None
+        re.search(
+            rf"(?:^|[^a-z0-9]){re.escape(release)}(?![a-z0-9])(?!-\d{{1,7}}(?![0-9]))",
+            normalized,
+        )
+        is not None
         for release in _ANTHROPIC_PREFILL_REJECTING_RELEASES
     )
 

@@ -25,6 +25,9 @@ from exp.runtime.gateway.contracts import (
     StructuredTextFormat,
     ThinkingBlock,
 )
+from exp.runtime.models.providers.anthropic_tool_compat import (
+    anthropic_rejects_assistant_prefill,
+)
 from exp.runtime.models.providers.base import GatewayWireProfile
 from exp.runtime.models.providers.bedrock_requests import converse_body
 from exp.runtime.models.providers.errors import (
@@ -2639,6 +2642,13 @@ def test_assistant_prefill_narrows_out_rungs_whose_model_rejects_it() -> None:
         assert profile.model_id in str(prefill.value)
     public, _provider = route_generation_parameter_requests((accepting,), request)
     assert public.ignored_parameters == ()
+    # Exact releases only: a later point release is NOT assumed from its
+    # generation, while a dated snapshot and a Bedrock suffix inherit.
+    assert anthropic_rejects_assistant_prefill("claude-opus-5-20260901")
+    assert anthropic_rejects_assistant_prefill("anthropic.claude-sonnet-4-6-v1:0")
+    assert not anthropic_rejects_assistant_prefill("claude-opus-5-1")
+    assert not anthropic_rejects_assistant_prefill("claude-sonnet-5-2")
+    assert not anthropic_rejects_assistant_prefill("claude-sonnet-4-5")
     # The same conversation ending in a user turn passes on the rejecting rung.
     user_last = request.model_copy(
         update={"messages": (*request.messages, GatewayMessage(role="user", content="go on"))}

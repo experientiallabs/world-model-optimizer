@@ -174,6 +174,73 @@ def test_thinking_config_is_carried_verbatim() -> None:
         decode_messages(_body(thinking={"type": "adaptive", "budget_tokens": 64}))
 
 
+def test_interleaved_thinking_turn_keeps_its_block_order_for_replay() -> None:
+    """A thinking turn carries its blocks in the caller's order alongside the
+    flattened fields, so the Anthropic wire can replay it byte-for-byte:
+    interleaved thinking puts thinking between tool_use blocks, and the
+    provider refuses a reordered latest assistant message."""
+    blocks: list[JsonObject] = [
+        {"type": "thinking", "thinking": "plan", "signature": "sig-a"},
+        {"type": "tool_use", "id": "call-1", "name": "read", "input": {"path": "a"}},
+        {"type": "thinking", "thinking": "next", "signature": "sig-b"},
+        {"type": "text", "text": "reading"},
+        {"type": "tool_use", "id": "call-2", "name": "read", "input": {"path": "b"}},
+    ]
+    decoded = decode_messages(
+        _body(
+            messages=[{"role": "user", "content": "go"}, {"role": "assistant", "content": blocks}]
+        )
+    )
+    assistant = decoded.request.messages[1]
+    assert assistant.provider_anthropic_blocks == tuple(blocks)
+    assert [block.kind for block in assistant.provider_reasoning] == ["thinking", "thinking"]
+    assert [call.call_id for call in assistant.tool_calls] == ["call-1", "call-2"]
+    role, wire = anthropic_blocks(assistant)
+    assert role == "assistant"
+    assert wire == blocks
+
+    # An empty text block carrying Claude Code's cache marker drops (the wire
+    # rejects it) and its breakpoint lands on the closest prior block that can
+    # carry one, skipping the signed thinking block.
+    marked = decode_messages(
+        _body(
+            messages=[
+                {"role": "user", "content": "go"},
+                {
+                    "role": "assistant",
+                    "content": [
+                        *blocks[:3],
+                        {"type": "text", "text": "", "cache_control": {"type": "ephemeral"}},
+                        *blocks[3:],
+                    ],
+                },
+            ]
+        )
+    )
+    _role, migrated = anthropic_blocks(marked.request.messages[1])
+    assert len(migrated) == len(blocks)
+    assert migrated[1] == {**blocks[1], "cache_control": {"type": "ephemeral"}}
+    assert migrated[2] == blocks[2]
+    assert [block["type"] for block in migrated] == [block["type"] for block in blocks]
+
+    # A turn without thinking has no signatures to protect and stays flattened.
+    plain = decode_messages(
+        _body(
+            messages=[
+                {"role": "user", "content": "go"},
+                {"role": "assistant", "content": [{"type": "text", "text": "ok"}, blocks[1]]},
+            ]
+        )
+    )
+    assert plain.request.messages[1].provider_anthropic_blocks is None
+
+    # Reasoning narrowed away (nothing left to verify) falls back to the
+    # flattened emission rather than replaying thinking the rung dropped.
+    stripped = assistant.model_copy(update={"provider_reasoning": ()})
+    _role, fallback = anthropic_blocks(stripped)
+    assert [block["type"] for block in fallback] == ["text", "tool_use", "tool_use"]
+
+
 def test_thinking_history_blocks_ride_the_opaque_carrier_in_order() -> None:
     """Assistant reasoning history translates losslessly with byte-exact signatures."""
     decoded = decode_messages(

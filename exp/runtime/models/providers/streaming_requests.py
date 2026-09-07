@@ -40,6 +40,7 @@ from exp.runtime.models.providers.generation_parameter_validation import (
     anthropic_reasoning_disengaged,
     mid_conversation_system_present,
     require_assistant_prefill_supported,
+    require_tool_names_supported,
     serves_reasoning_summary,
 )
 from exp.runtime.models.providers.generation_parameter_validation import (
@@ -864,9 +865,8 @@ def route_generation_parameter_requests(
         )
 
     require_assistant_prefill_supported(profiles, request)
-
-    # A system turn after conversation began has positional semantics that
-    # instruction-hoisting wires cannot preserve; those rungs narrow out.
+    require_tool_names_supported(profiles, request)
+    # A mid-conversation system turn narrows out instruction-hoisting wires.
     if mid_conversation_system_present(request) and any(
         profile.dialect in {"gemini_generate_content", "bedrock_converse_stream"}
         for profile in profiles
@@ -953,9 +953,8 @@ def route_generation_parameter_requests(
     elif request.parallel_tool_calls is not None and all(
         profile.dialect in _NO_PARALLEL_TOOL_CONTROL_DIALECTS for profile in profiles
     ):
-        # No rung carries a parallel-tool control: `true` is the provider's own
-        # default (dropped); `false` is serialized by the data plane. A mixed
-        # route keeps the field; toggle-less rungs are shaped per rung at dispatch.
+        # No rung carries a parallel-tool control: `true` drops (provider default),
+        # `false` is serialized by the data plane; mixed routes shape per rung.
         if request.parallel_tool_calls:
             ignore("parallel_tool_calls", "parallel_tool_calls->dropped(provider_default)")
         else:

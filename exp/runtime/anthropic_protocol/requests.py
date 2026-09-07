@@ -745,12 +745,17 @@ def _gateway_messages(message: _Message, index: int) -> list[GatewayMessage]:
     content_parts: list[MessageContentPart] = []
     tool_calls: list[ToolCall] = []
     reasoning: list[ProviderReasoningBlock] = []
+    # The segment's blocks as the caller sent them: an assistant turn carrying
+    # thinking replays in this order on the Anthropic wire so its signatures
+    # still verify (empty text drops at emission, its cache marker migrated).
+    ordered_blocks: list[JsonObject] = []
 
     def flush() -> None:
         """Emit the pending content, tool calls, and reasoning as one message."""
         content = "".join(part.text for part in text_parts) if text_parts else None
         attachments = any(part.kind != "text" for part in content_parts)
         if content is None and not tool_calls and not reasoning and not attachments:
+            ordered_blocks.clear()
             return
         out.append(
             GatewayMessage(
@@ -763,12 +768,14 @@ def _gateway_messages(message: _Message, index: int) -> list[GatewayMessage]:
                 # blocks are the same text in the same order, so a multimodal
                 # turn keeps its cache markers when it re-emits.
                 provider_text_blocks=_marked_text_blocks(tuple(text_parts)),
+                provider_anthropic_blocks=tuple(ordered_blocks) if reasoning else None,
             )
         )
         text_parts.clear()
         content_parts.clear()
         tool_calls.clear()
         reasoning.clear()
+        ordered_blocks.clear()
 
     for block_index, block in enumerate(message.content):
         if isinstance(block, _TextBlock):
@@ -798,6 +805,13 @@ def _gateway_messages(message: _Message, index: int) -> list[GatewayMessage]:
             # rejects a standalone empty block, so it never becomes a part.
             if block.text:
                 content_parts.append(TextContentPart(text=block.text))
+            # The ordered replay keeps an empty text block only for the cache
+            # marker it may carry; emission drops the block and migrates the
+            # marker (``ordered_blocks_with_markers``).
+            if block.text or block.cache_control is not None:
+                ordered_blocks.append(
+                    block.model_dump(mode="json", exclude_none=True, exclude={"citations"})
+                )
         elif isinstance(block, ImageBlock):
             if message.role != "user":
                 raise invalid_field(
@@ -823,6 +837,7 @@ def _gateway_messages(message: _Message, index: int) -> list[GatewayMessage]:
                 if isinstance(block, _ThinkingBlock)
                 else RedactedThinkingBlock(data=block.data)
             )
+            ordered_blocks.append(block.model_dump(mode="json", exclude_none=True))
         elif isinstance(block, _ToolUseBlock):
             if message.role != "assistant":
                 raise invalid_field(
@@ -844,6 +859,7 @@ def _gateway_messages(message: _Message, index: int) -> list[GatewayMessage]:
                     ),
                 )
             )
+            ordered_blocks.append(block.model_dump(mode="json", exclude_none=True))
         elif isinstance(block, (_ServerToolUseBlock, _WebSearchToolResultBlock)):
             if message.role != "assistant":
                 raise invalid_field(

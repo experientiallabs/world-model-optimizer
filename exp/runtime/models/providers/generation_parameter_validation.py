@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
 
 from exp.runtime.gateway.contracts import GatewayRequest
@@ -142,6 +143,43 @@ def require_assistant_prefill_supported(
             param="messages",
             code="unsupported_parameter",
         )
+
+
+_ANTHROPIC_TOOL_NAME = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
+_ANTHROPIC_TOOL_NAME_DIALECTS = frozenset({"anthropic_messages", "bedrock_converse_stream"})
+
+
+def require_tool_names_supported(
+    profiles: Sequence[GatewayWireProfile], request: GatewayRequest
+) -> None:
+    """Refuse a tool name the Anthropic wire will 400 by name, before dispatch.
+
+    Anthropic (and Bedrock, which relays the same rule) accepts tool names
+    matching ``^[a-zA-Z0-9_-]{1,128}$``; a client sending dots, spaces, or
+    a longer name learned that only from the provider's 400 after dispatch
+    ("tools.0.custom.name: String should match pattern"). The rung narrows
+    out with the index named; the name itself is caller content and stays
+    out of the message.
+
+    Raises:
+        ProviderParameterError: A profile speaks an Anthropic wire and a tool
+            name does not match.
+    """
+    if not request.tools or not any(
+        profile.dialect in _ANTHROPIC_TOOL_NAME_DIALECTS for profile in profiles
+    ):
+        return
+    for index, tool in enumerate(request.tools):
+        if _ANTHROPIC_TOOL_NAME.fullmatch(tool.name) is None:
+            raise ProviderParameterError(
+                message=(
+                    f"tools[{index}].name is not accepted by this model route: tool names "
+                    "must match ^[a-zA-Z0-9_-]{1,128} (letters, digits, underscore, "
+                    "hyphen). Rename the tool or choose a different model alias."
+                ),
+                param=f"tools[{index}].name",
+                code="invalid_parameter",
+            )
 
 
 def mid_conversation_system_present(request: GatewayRequest) -> bool:
